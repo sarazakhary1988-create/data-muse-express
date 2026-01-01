@@ -1,13 +1,215 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Helmet } from 'react-helmet';
+import { AnimatedBackground } from '@/components/AnimatedBackground';
+import { Sidebar } from '@/components/Sidebar';
+import { SearchInput } from '@/components/SearchInput';
+import { HeroSection } from '@/components/HeroSection';
+import { FeatureGrid } from '@/components/FeatureGrid';
+import { ResearchProgress, defaultResearchSteps } from '@/components/ResearchProgress';
+import { ResultsView } from '@/components/ResultsView';
+import { ReportViewer } from '@/components/ReportViewer';
+import { TaskHistory } from '@/components/TaskHistory';
+import { useResearchStore, ResearchTask } from '@/store/researchStore';
+import { useResearchEngine } from '@/hooks/useResearchEngine';
+
+type ViewType = 'search' | 'results' | 'report' | 'history';
 
 const Index = () => {
+  const [activeView, setActiveView] = useState<ViewType>('search');
+  const [researchSteps, setResearchSteps] = useState(defaultResearchSteps);
+  
+  const { 
+    isSearching, 
+    currentTask, 
+    reports,
+    setCurrentTask 
+  } = useResearchStore();
+  
+  const { startResearch } = useResearchEngine();
+
+  const currentReport = reports.find(r => r.taskId === currentTask?.id);
+
+  // Update research steps during search
+  useEffect(() => {
+    if (!isSearching || !currentTask) {
+      setResearchSteps(defaultResearchSteps);
+      return;
+    }
+
+    const progress = currentTask.progress;
+    
+    setResearchSteps(prev => prev.map((step, index) => {
+      if (index === 0) {
+        return { 
+          ...step, 
+          status: progress >= 20 ? 'completed' : progress > 0 ? 'active' : 'pending'
+        };
+      }
+      if (index === 1) {
+        return { 
+          ...step, 
+          status: progress >= 45 ? 'completed' : progress >= 20 ? 'active' : 'pending'
+        };
+      }
+      if (index === 2) {
+        return { 
+          ...step, 
+          status: progress >= 70 ? 'completed' : progress >= 45 ? 'active' : 'pending'
+        };
+      }
+      if (index === 3) {
+        return { 
+          ...step, 
+          status: progress >= 100 ? 'completed' : progress >= 70 ? 'active' : 'pending'
+        };
+      }
+      return step;
+    }));
+  }, [isSearching, currentTask?.progress]);
+
+  const handleSearch = async (query: string) => {
+    try {
+      await startResearch(query);
+      setActiveView('results');
+    } catch (error) {
+      console.error('Research failed:', error);
+    }
+  };
+
+  const handleSelectTask = (task: ResearchTask) => {
+    setCurrentTask(task);
+    if (task.status === 'completed') {
+      setActiveView('results');
+    }
+  };
+
+  const handleViewReport = () => {
+    if (currentReport) {
+      setActiveView('report');
+    }
+  };
+
+  const handleBackToSearch = () => {
+    setActiveView('search');
+  };
+
+  const renderContent = () => {
+    switch (activeView) {
+      case 'search':
+        return (
+          <div className="w-full max-w-5xl mx-auto px-4 py-8 md:py-16">
+            <HeroSection />
+            <SearchInput onSearch={handleSearch} />
+            
+            <AnimatePresence>
+              {isSearching && currentTask && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="mt-8"
+                >
+                  <ResearchProgress 
+                    steps={researchSteps} 
+                    currentProgress={currentTask.progress} 
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+            
+            {!isSearching && <FeatureGrid />}
+          </div>
+        );
+
+      case 'results':
+        if (!currentTask) {
+          setActiveView('search');
+          return null;
+        }
+        return (
+          <div className="w-full max-w-5xl mx-auto px-4 py-8">
+            <ResultsView 
+              task={currentTask} 
+              onBack={handleBackToSearch}
+              onViewReport={handleViewReport}
+            />
+          </div>
+        );
+
+      case 'report':
+        if (!currentReport) {
+          setActiveView('search');
+          return null;
+        }
+        return (
+          <div className="w-full max-w-4xl mx-auto px-4 py-8">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
+              <button
+                onClick={() => setActiveView('results')}
+                className="text-sm text-muted-foreground hover:text-foreground mb-4 flex items-center gap-2 transition-colors"
+              >
+                ← Back to Results
+              </button>
+              <ReportViewer report={currentReport} />
+            </motion.div>
+          </div>
+        );
+
+      case 'history':
+        return (
+          <div className="w-full max-w-3xl mx-auto px-4 py-8">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
+              <h2 className="text-2xl font-bold mb-6">Research History</h2>
+              <TaskHistory onSelectTask={handleSelectTask} />
+            </motion.div>
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
+    <>
+      <Helmet>
+        <title>NexusAI - AI-Powered Research Engine</title>
+        <meta 
+          name="description" 
+          content="Deep web research, intelligent data extraction, and comprehensive report generation. Find accurate information from any source." 
+        />
+      </Helmet>
+
+      <div className="flex min-h-screen bg-background">
+        <AnimatedBackground />
+        
+        {/* Sidebar */}
+        <Sidebar activeView={activeView} onViewChange={setActiveView} />
+        
+        {/* Main Content */}
+        <main className="flex-1 overflow-auto">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeView}
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.3 }}
+              className="min-h-full"
+            >
+              {renderContent()}
+            </motion.div>
+          </AnimatePresence>
+        </main>
       </div>
-    </div>
+    </>
   );
 };
 
