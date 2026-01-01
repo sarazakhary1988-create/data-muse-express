@@ -11,156 +11,160 @@ interface MapRequest {
   limit?: number;
 }
 
-// Input validation
 const MAX_URL_LENGTH = 2048;
-const MAX_SEARCH_LENGTH = 500;
-const BLOCKED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0', '::1', '[::1]'];
+const MAX_SEARCH_LENGTH = 300;
+const MAX_LIMIT = 500;
 
-function validateUrl(url: string): { valid: boolean; error?: string; formattedUrl?: string } {
-  if (!url || typeof url !== 'string') {
-    return { valid: false, error: 'URL is required and must be a string' };
-  }
-  
-  if (url.length > MAX_URL_LENGTH) {
-    return { valid: false, error: `URL must be less than ${MAX_URL_LENGTH} characters` };
-  }
+const REQUEST_TIMEOUT_MS = 12_000;
+const MAX_XML_BYTES = 1_200_000;
+
+const BLOCKED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0', '::1', '[::1]'];
+const BLOCKED_IP_PATTERNS = [
+  /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/,
+  /^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/,
+  /^192\.168\.\d{1,3}\.\d{1,3}$/,
+  /^169\.254\.\d{1,3}\.\d{1,3}$/,
+];
+
+function normalizeText(s: string): string {
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+function validateUrl(url: string): { ok: boolean; error?: string; formatted?: string } {
+  if (!url || typeof url !== 'string') return { ok: false, error: 'URL is required' };
+  if (url.length > MAX_URL_LENGTH) return { ok: false, error: `URL too long (>${MAX_URL_LENGTH})` };
 
   try {
-    let formattedUrl = url.trim();
-    if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
-      formattedUrl = `https://${formattedUrl}`;
+    let formatted = url.trim();
+    if (!formatted.startsWith('http://') && !formatted.startsWith('https://')) {
+      formatted = `https://${formatted}`;
     }
-    const parsed = new URL(formattedUrl);
+    const parsed = new URL(formatted);
 
-    if (!['http:', 'https:'].includes(parsed.protocol)) {
-      return { valid: false, error: 'Only HTTP/HTTPS URLs are allowed' };
-    }
+    if (!['http:', 'https:'].includes(parsed.protocol)) return { ok: false, error: 'Only HTTP/HTTPS URLs are allowed' };
 
     const hostname = parsed.hostname.toLowerCase();
-    if (BLOCKED_HOSTS.includes(hostname)) {
-      return { valid: false, error: 'URL not allowed' };
-    }
+    if (BLOCKED_HOSTS.includes(hostname)) return { ok: false, error: 'URL not allowed' };
+    for (const p of BLOCKED_IP_PATTERNS) if (p.test(hostname)) return { ok: false, error: 'URL not allowed' };
 
-    return { valid: true, formattedUrl };
+    return { ok: true, formatted: parsed.toString() };
   } catch {
-    return { valid: false, error: 'Invalid URL format' };
+    return { ok: false, error: 'Invalid URL' };
   }
 }
 
-serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
+async function fetchText(url: string): Promise<{ ok: boolean; status: number; text: string } > {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    let body: unknown;
-    try {
-      body = await req.json();
-    } catch {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Invalid JSON body' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const { url, search, limit = 20 } = body as MapRequest;
-
-    // Validate URL
-    const urlValidation = validateUrl(url);
-    if (!urlValidation.valid) {
-      console.error('URL validation failed:', urlValidation.error);
-      return new Response(
-        JSON.stringify({ success: false, error: urlValidation.error }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const formattedUrl = urlValidation.formattedUrl!;
-    const domain = new URL(formattedUrl).hostname.replace('www.', '');
-    const searchTerm = search?.trim().slice(0, MAX_SEARCH_LENGTH) || '';
-
-    // Use AI to generate likely URLs for this site
-    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
-    if (!lovableApiKey) {
-      console.log('LOVABLE_API_KEY not configured - returning base URL');
-      return new Response(
-        JSON.stringify({ success: true, links: [formattedUrl], mapMethod: 'fallback' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    console.log('AI-powered URL mapping for:', domain, 'search:', searchTerm);
-
-    const systemPrompt = `You are an expert at understanding website structures. Given a domain, generate a list of likely URLs that would exist on that site.
-
-For financial sites like Tadawul, Argaam, Reuters, Bloomberg:
-- Include news, market data, company listings, IPO sections
-- Generate realistic URL patterns for that specific site
-
-For other sites:
-- Generate typical page URLs based on the domain type
-
-Return ONLY a JSON array of URL strings, nothing else.`;
-
-    const userPrompt = `Generate ${limit} likely URLs for the website: ${domain}
-Base URL: ${formattedUrl}
-${searchTerm ? `Focus on pages related to: ${searchTerm}` : ''}
-
-Return a JSON array of full URLs. Example:
-["https://domain.com/page1", "https://domain.com/page2"]`;
-
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
+    const resp = await fetch(url, {
+      method: 'GET',
+      redirect: 'follow',
+      signal: controller.signal,
       headers: {
-        'Authorization': `Bearer ${lovableApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        temperature: 0.3,
-      }),
+        'User-Agent': 'LovableResearchBot/1.0',
+        'Accept': 'text/plain,application/xml,text/xml,*/*;q=0.5'
+      }
     });
 
-    if (!response.ok) {
-      console.error('AI Gateway error:', response.status);
+    if (!resp.ok) return { ok: false, status: resp.status, text: '' };
+
+    const buf = new Uint8Array(await resp.arrayBuffer());
+    const sliced = buf.byteLength > MAX_XML_BYTES ? buf.slice(0, MAX_XML_BYTES) : buf;
+    const text = new TextDecoder('utf-8').decode(sliced);
+
+    return { ok: true, status: resp.status, text };
+  } catch {
+    return { ok: false, status: 0, text: '' };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+function parseSitemapUrls(xml: string): string[] {
+  const urls: string[] = [];
+  const re = /<loc>([^<]+)<\/loc>/gim;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(xml)) !== null) {
+    const u = m[1].trim();
+    if (u.startsWith('http')) urls.push(u);
+  }
+  return urls;
+}
+
+async function discoverSitemaps(baseUrl: string): Promise<string[]> {
+  const out = new Set<string>();
+  try {
+    const robotsUrl = new URL('/robots.txt', baseUrl).toString();
+    const r = await fetchText(robotsUrl);
+    if (r.ok && r.text) {
+      for (const line of r.text.split('\n')) {
+        const m = line.match(/^\s*Sitemap:\s*(.+)\s*$/i);
+        if (m?.[1]) out.add(m[1].trim());
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  // common fallbacks
+  try { out.add(new URL('/sitemap.xml', baseUrl).toString()); } catch {}
+  try { out.add(new URL('/sitemap_index.xml', baseUrl).toString()); } catch {}
+
+  return Array.from(out);
+}
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+
+  try {
+    const body = await req.json() as MapRequest;
+    const url = body.url;
+
+    const v = validateUrl(url);
+    if (!v.ok || !v.formatted) {
       return new Response(
-        JSON.stringify({ success: true, links: [formattedUrl], mapMethod: 'fallback' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ success: false, error: v.error || 'Invalid URL' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const aiResponse = await response.json();
-    const content = aiResponse.choices?.[0]?.message?.content || '';
+    const limit = Math.max(1, Math.min(typeof body.limit === 'number' ? Math.floor(body.limit) : 120, MAX_LIMIT));
+    const search = typeof body.search === 'string' ? body.search.trim().slice(0, MAX_SEARCH_LENGTH) : '';
+    const searchLower = search.toLowerCase();
 
-    // Parse the JSON array
-    let links: string[] = [formattedUrl];
-    try {
-      const jsonMatch = content.match(/\[[\s\S]*\]/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        if (Array.isArray(parsed)) {
-          links = parsed.filter((l): l is string => typeof l === 'string' && l.startsWith('http'));
+    console.log('[research-map] mapping', v.formatted, { limit, search });
+
+    const sitemaps = await discoverSitemaps(v.formatted);
+    const urls: string[] = [];
+
+    for (const sm of sitemaps.slice(0, 4)) {
+      const res = await fetchText(sm);
+      if (!res.ok || !res.text) continue;
+      const found = parseSitemapUrls(res.text);
+      for (const u of found) {
+        if (urls.length >= limit) break;
+        if (searchLower) {
+          const uLow = u.toLowerCase();
+          if (!uLow.includes(searchLower)) continue;
         }
+        urls.push(u);
       }
-    } catch (parseError) {
-      console.error('Failed to parse URL list:', parseError);
+      if (urls.length >= limit) break;
     }
 
-    console.log('AI URL mapping successful, found:', links.length, 'URLs');
+    // Always include base URL at least
+    if (urls.length === 0) urls.push(v.formatted);
 
     return new Response(
-      JSON.stringify({ success: true, links, mapMethod: 'ai-powered' }),
+      JSON.stringify({ success: true, links: urls, mapMethod: 'sitemap' }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
-
-  } catch (error) {
-    console.error('Error in AI mapping:', error);
+  } catch (e) {
+    console.error('[research-map] error', e);
     return new Response(
-      JSON.stringify({ success: false, error: 'URL mapping failed' }),
+      JSON.stringify({ success: false, error: e instanceof Error ? e.message : 'Map failed' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
