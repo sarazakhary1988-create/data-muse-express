@@ -21,12 +21,19 @@ export class MemorySystem {
   // Persist memories to localStorage
   private storageKey = 'research-agent-memory';
 
+  private isLoaded = false;
+
   constructor() {
-    this.loadFromStorage();
+    // Defer localStorage access to avoid SSR/hydration issues
+    if (typeof window !== 'undefined') {
+      this.loadFromStorage();
+    }
   }
 
   private loadFromStorage(): void {
+    if (this.isLoaded) return;
     try {
+      if (typeof localStorage === 'undefined') return;
       const stored = localStorage.getItem(this.storageKey);
       if (stored) {
         const data = JSON.parse(stored);
@@ -34,6 +41,7 @@ export class MemorySystem {
         this.sourceQualityScores = new Map(Object.entries(data.sourceQuality || {}));
         this.queryPatterns = new Map(Object.entries(data.queryPatterns || {}));
       }
+      this.isLoaded = true;
     } catch (error) {
       console.error('Failed to load memory from storage:', error);
     }
@@ -41,6 +49,7 @@ export class MemorySystem {
 
   private saveToStorage(): void {
     try {
+      if (typeof localStorage === 'undefined') return;
       const data = {
         memories: this.memories.slice(-200), // Keep last 200 memories
         sourceQuality: Object.fromEntries(this.sourceQualityScores),
@@ -279,8 +288,20 @@ export class MemorySystem {
     this.patterns.clear();
     this.sourceQualityScores.clear();
     this.queryPatterns.clear();
-    localStorage.removeItem(this.storageKey);
+    this.isLoaded = false;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(this.storageKey);
+    }
   }
 }
 
-export const memorySystem = new MemorySystem();
+// Lazy singleton to avoid SSR issues
+let _memorySystem: MemorySystem | null = null;
+export const memorySystem = new Proxy({} as MemorySystem, {
+  get(_, prop) {
+    if (!_memorySystem) {
+      _memorySystem = new MemorySystem();
+    }
+    return (_memorySystem as any)[prop];
+  }
+});
