@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Building2, TrendingUp, Users, Globe, BookOpen, Newspaper, 
-  DollarSign, Search, Briefcase, Scale, ArrowRight, Sparkles,
-  ChevronRight
+  DollarSign, Search, Briefcase, Scale, Sparkles,
+  ChevronRight, ArrowRight, Loader2, CheckCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { toast } from '@/hooks/use-toast';
 
 interface Template {
   id: string;
@@ -20,7 +21,7 @@ interface Template {
   icon: React.ElementType;
   category: string;
   depth: 'Deep' | 'Wide';
-  fields: { name: string; label: string; placeholder: string; type?: 'text' | 'textarea' }[];
+  fields: { name: string; label: string; placeholder: string; type?: 'text' | 'textarea'; required?: boolean }[];
   promptTemplate: string;
 }
 
@@ -33,8 +34,8 @@ const templates: Template[] = [
     category: 'Business Intelligence',
     depth: 'Deep',
     fields: [
-      { name: 'company', label: 'Your Company', placeholder: 'e.g., Apple' },
-      { name: 'competitors', label: 'Competitors', placeholder: 'e.g., Samsung, Google, Microsoft' },
+      { name: 'company', label: 'Your Company', placeholder: 'e.g., Apple', required: true },
+      { name: 'competitors', label: 'Competitors', placeholder: 'e.g., Samsung, Google, Microsoft', required: true },
       { name: 'focus', label: 'Focus Areas', placeholder: 'e.g., pricing, features, market share' },
     ],
     promptTemplate: 'Conduct a comprehensive competitor analysis for {company} against {competitors}. Focus on: {focus}. Include market positioning, product comparison, pricing strategies, and competitive advantages.',
@@ -47,7 +48,7 @@ const templates: Template[] = [
     category: 'Business Intelligence',
     depth: 'Wide',
     fields: [
-      { name: 'market', label: 'Market/Industry', placeholder: 'e.g., Electric Vehicles' },
+      { name: 'market', label: 'Market/Industry', placeholder: 'e.g., Electric Vehicles', required: true },
       { name: 'region', label: 'Geographic Region', placeholder: 'e.g., North America, Global' },
       { name: 'timeframe', label: 'Time Horizon', placeholder: 'e.g., 2024-2030' },
     ],
@@ -61,7 +62,7 @@ const templates: Template[] = [
     category: 'Business Intelligence',
     depth: 'Deep',
     fields: [
-      { name: 'company', label: 'Company Name', placeholder: 'e.g., Tesla Inc.' },
+      { name: 'company', label: 'Company Name', placeholder: 'e.g., Tesla Inc.', required: true },
       { name: 'aspects', label: 'Research Aspects', placeholder: 'e.g., financials, leadership, strategy' },
     ],
     promptTemplate: 'Conduct a comprehensive deep dive on {company}. Research: {aspects}. Include company history, business model, financial performance, leadership team, competitive position, and future outlook.',
@@ -74,7 +75,7 @@ const templates: Template[] = [
     category: 'Business Intelligence',
     depth: 'Deep',
     fields: [
-      { name: 'target', label: 'Target Company', placeholder: 'e.g., Startup XYZ' },
+      { name: 'target', label: 'Target Company', placeholder: 'e.g., Startup XYZ', required: true },
       { name: 'purpose', label: 'Purpose', placeholder: 'e.g., acquisition, investment, partnership' },
       { name: 'concerns', label: 'Key Concerns', placeholder: 'e.g., legal, financial, operational risks' },
     ],
@@ -88,7 +89,7 @@ const templates: Template[] = [
     category: 'Finance',
     depth: 'Deep',
     fields: [
-      { name: 'asset', label: 'Investment Asset', placeholder: 'e.g., NVIDIA stock, Bitcoin' },
+      { name: 'asset', label: 'Investment Asset', placeholder: 'e.g., NVIDIA stock, Bitcoin', required: true },
       { name: 'horizon', label: 'Investment Horizon', placeholder: 'e.g., 1 year, 5 years' },
       { name: 'criteria', label: 'Evaluation Criteria', placeholder: 'e.g., growth potential, risk level' },
     ],
@@ -102,7 +103,7 @@ const templates: Template[] = [
     category: 'People',
     depth: 'Deep',
     fields: [
-      { name: 'person', label: 'Person Name', placeholder: 'e.g., Satya Nadella' },
+      { name: 'person', label: 'Person Name', placeholder: 'e.g., Satya Nadella', required: true },
       { name: 'context', label: 'Context', placeholder: 'e.g., CEO of Microsoft, AI strategy' },
     ],
     promptTemplate: 'Research {person} ({context}). Include career history, achievements, leadership style, public statements, strategic decisions, and industry influence.',
@@ -115,7 +116,7 @@ const templates: Template[] = [
     category: 'Strategy',
     depth: 'Wide',
     fields: [
-      { name: 'industry', label: 'Industry', placeholder: 'e.g., Healthcare, FinTech' },
+      { name: 'industry', label: 'Industry', placeholder: 'e.g., Healthcare, FinTech', required: true },
       { name: 'timeframe', label: 'Timeframe', placeholder: 'e.g., 2024-2025' },
     ],
     promptTemplate: 'Identify and analyze emerging trends in the {industry} industry for {timeframe}. Include technology disruptions, regulatory changes, consumer behavior shifts, and key innovations.',
@@ -128,8 +129,8 @@ const templates: Template[] = [
     category: 'Strategy',
     depth: 'Deep',
     fields: [
-      { name: 'company', label: 'Company', placeholder: 'e.g., Your Company' },
-      { name: 'targetMarket', label: 'Target Market', placeholder: 'e.g., Japan, Brazil' },
+      { name: 'company', label: 'Company', placeholder: 'e.g., Your Company', required: true },
+      { name: 'targetMarket', label: 'Target Market', placeholder: 'e.g., Japan, Brazil', required: true },
       { name: 'product', label: 'Product/Service', placeholder: 'e.g., SaaS platform' },
     ],
     promptTemplate: 'Research market entry strategy for {company} expanding to {targetMarket} with {product}. Include market size, regulations, cultural factors, competition, and entry barriers.',
@@ -142,7 +143,7 @@ const templates: Template[] = [
     category: 'Academic',
     depth: 'Deep',
     fields: [
-      { name: 'topic', label: 'Research Topic', placeholder: 'e.g., Machine Learning in Healthcare' },
+      { name: 'topic', label: 'Research Topic', placeholder: 'e.g., Machine Learning in Healthcare', required: true },
       { name: 'focus', label: 'Focus Area', placeholder: 'e.g., diagnostic accuracy, patient outcomes' },
     ],
     promptTemplate: 'Conduct an academic literature review on {topic}. Focus on: {focus}. Include key papers, methodologies, findings, gaps in research, and future directions.',
@@ -155,7 +156,7 @@ const templates: Template[] = [
     category: 'Current Events',
     depth: 'Wide',
     fields: [
-      { name: 'event', label: 'Event/Topic', placeholder: 'e.g., Fed interest rate decision' },
+      { name: 'event', label: 'Event/Topic', placeholder: 'e.g., Fed interest rate decision', required: true },
       { name: 'impact', label: 'Impact Analysis', placeholder: 'e.g., stock market, consumer spending' },
     ],
     promptTemplate: 'Analyze {event} and its implications. Focus on: {impact}. Include background, key stakeholders, short-term and long-term effects, and market reactions.',
@@ -172,22 +173,60 @@ export const ResearchTemplates = ({ onUseTemplate }: ResearchTemplatesProps) => 
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
   const [formData, setFormData] = useState<Record<string, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [recentlyUsed, setRecentlyUsed] = useState<string[]>([]);
 
   const filteredTemplates = selectedCategory 
     ? templates.filter(t => t.category === selectedCategory)
     : templates;
 
-  const handleUseTemplate = () => {
+  const validateForm = (): boolean => {
+    if (!selectedTemplate) return false;
+    
+    const requiredFields = selectedTemplate.fields.filter(f => f.required);
+    for (const field of requiredFields) {
+      if (!formData[field.name]?.trim()) {
+        toast({
+          title: "Missing Required Field",
+          description: `Please fill in the "${field.label}" field`,
+          variant: "destructive"
+        });
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const handleUseTemplate = async () => {
     if (!selectedTemplate) return;
+    if (!validateForm()) return;
+    
+    setIsSubmitting(true);
     
     let prompt = selectedTemplate.promptTemplate;
     selectedTemplate.fields.forEach(field => {
-      prompt = prompt.replace(`{${field.name}}`, formData[field.name] || field.placeholder);
+      const value = formData[field.name]?.trim() || field.placeholder;
+      prompt = prompt.replace(`{${field.name}}`, value);
     });
     
-    onUseTemplate(prompt);
-    setSelectedTemplate(null);
-    setFormData({});
+    // Track recently used
+    setRecentlyUsed(prev => {
+      const updated = [selectedTemplate.id, ...prev.filter(id => id !== selectedTemplate.id)].slice(0, 3);
+      return updated;
+    });
+
+    toast({
+      title: "Starting Research",
+      description: `Using ${selectedTemplate.name} template...`,
+    });
+
+    try {
+      await onUseTemplate(prompt);
+      setSelectedTemplate(null);
+      setFormData({});
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const getCategoryIcon = (category: string) => {
@@ -202,15 +241,44 @@ export const ResearchTemplates = ({ onUseTemplate }: ResearchTemplatesProps) => 
     }
   };
 
+  const recentTemplates = templates.filter(t => recentlyUsed.includes(t.id));
+
   return (
     <div className="w-full max-w-6xl mx-auto px-4 py-8">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
         <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center p-3 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 mb-4">
+            <Sparkles className="w-8 h-8 text-primary" />
+          </div>
           <h1 className="text-3xl font-bold mb-2">Research Templates</h1>
           <p className="text-muted-foreground max-w-2xl mx-auto">
             Pre-built research workflows designed by experts. Select a template, fill in the details, and let AI do the research.
           </p>
         </div>
+
+        {/* Recently Used */}
+        {recentTemplates.length > 0 && (
+          <div className="mb-8">
+            <h3 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-2">
+              <CheckCircle className="w-4 h-4" />
+              Recently Used
+            </h3>
+            <div className="flex gap-2 flex-wrap">
+              {recentTemplates.map(template => (
+                <Button
+                  key={template.id}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedTemplate(template)}
+                  className="gap-2"
+                >
+                  <template.icon className="w-4 h-4" />
+                  {template.name}
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Category Filter */}
         <div className="flex flex-wrap justify-center gap-2 mb-8">
@@ -219,7 +287,7 @@ export const ResearchTemplates = ({ onUseTemplate }: ResearchTemplatesProps) => 
             size="sm"
             onClick={() => setSelectedCategory(null)}
           >
-            All
+            All Templates
           </Button>
           {categories.map(category => {
             const Icon = getCategoryIcon(category);
@@ -249,23 +317,26 @@ export const ResearchTemplates = ({ onUseTemplate }: ResearchTemplatesProps) => 
             >
               <Card 
                 variant="glass" 
-                className="p-5 h-full flex flex-col hover:shadow-lg hover:shadow-primary/10 transition-all cursor-pointer group"
+                className="p-5 h-full flex flex-col hover:shadow-xl hover:shadow-primary/10 transition-all cursor-pointer group hover:border-primary/30"
                 onClick={() => setSelectedTemplate(template)}
               >
                 <div className="flex items-start justify-between mb-3">
-                  <div className="p-2 rounded-lg bg-primary/10">
+                  <div className="p-2.5 rounded-xl bg-gradient-to-br from-primary/10 to-accent/10 group-hover:from-primary/20 group-hover:to-accent/20 transition-colors">
                     <template.icon className="w-5 h-5 text-primary" />
                   </div>
-                  <Badge variant={template.depth === 'Deep' ? 'default' : 'secondary'}>
-                    {template.depth}
+                  <Badge variant={template.depth === 'Deep' ? 'default' : 'secondary'} className="text-xs">
+                    {template.depth} Research
                   </Badge>
                 </div>
-                <h3 className="font-semibold mb-2">{template.name}</h3>
+                <h3 className="font-semibold mb-2 group-hover:text-primary transition-colors">{template.name}</h3>
                 <p className="text-sm text-muted-foreground flex-1">{template.description}</p>
-                <Button variant="ghost" size="sm" className="mt-4 w-full justify-between group-hover:text-primary">
-                  Use Template
-                  <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                </Button>
+                <div className="flex items-center justify-between mt-4 pt-3 border-t border-border/50">
+                  <span className="text-xs text-muted-foreground">{template.fields.length} fields</span>
+                  <div className="flex items-center gap-1 text-sm text-primary group-hover:gap-2 transition-all">
+                    Use Template
+                    <ArrowRight className="w-4 h-4" />
+                  </div>
+                </div>
               </Card>
             </motion.div>
           ))}
@@ -273,11 +344,13 @@ export const ResearchTemplates = ({ onUseTemplate }: ResearchTemplatesProps) => 
       </motion.div>
 
       {/* Template Dialog */}
-      <Dialog open={!!selectedTemplate} onOpenChange={() => setSelectedTemplate(null)}>
+      <Dialog open={!!selectedTemplate} onOpenChange={() => { setSelectedTemplate(null); setFormData({}); }}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              {selectedTemplate && <selectedTemplate.icon className="w-5 h-5 text-primary" />}
+            <DialogTitle className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-primary/10">
+                {selectedTemplate && <selectedTemplate.icon className="w-5 h-5 text-primary" />}
+              </div>
               {selectedTemplate?.name}
             </DialogTitle>
             <DialogDescription>{selectedTemplate?.description}</DialogDescription>
@@ -286,12 +359,16 @@ export const ResearchTemplates = ({ onUseTemplate }: ResearchTemplatesProps) => 
           <div className="space-y-4 py-4">
             {selectedTemplate?.fields.map(field => (
               <div key={field.name} className="space-y-2">
-                <Label>{field.label}</Label>
+                <Label className="flex items-center gap-1">
+                  {field.label}
+                  {field.required && <span className="text-destructive">*</span>}
+                </Label>
                 {field.type === 'textarea' ? (
                   <Textarea
                     value={formData[field.name] || ''}
                     onChange={(e) => setFormData(prev => ({ ...prev, [field.name]: e.target.value }))}
                     placeholder={field.placeholder}
+                    className="resize-none"
                   />
                 ) : (
                   <Input
@@ -305,10 +382,21 @@ export const ResearchTemplates = ({ onUseTemplate }: ResearchTemplatesProps) => 
           </div>
 
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setSelectedTemplate(null)}>Cancel</Button>
-            <Button onClick={handleUseTemplate} className="gap-2">
-              <Sparkles className="w-4 h-4" />
-              Start Research
+            <Button variant="outline" onClick={() => { setSelectedTemplate(null); setFormData({}); }}>
+              Cancel
+            </Button>
+            <Button onClick={handleUseTemplate} disabled={isSubmitting} className="gap-2">
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Starting...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  Start Research
+                </>
+              )}
             </Button>
           </div>
         </DialogContent>
