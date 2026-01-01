@@ -54,7 +54,10 @@ export const useResearchEngine = () => {
     addReport, 
     setIsSearching,
     setSearchQuery,
-    deepVerifyMode
+    deepVerifyMode,
+    setDeepVerifySources,
+    updateDeepVerifySource,
+    clearDeepVerifySources
   } = useResearchStore();
 
   const extractDomain = (url: string): string => {
@@ -176,18 +179,25 @@ ${results.map((r, i) => `${i + 1}. [${r.title}](${r.url})`).join('\n')}
   const crawlOfficialSources = useCallback(async (query: string, taskId: string): Promise<ResearchResult[]> => {
     const officialResults: ResearchResult[] = [];
     
+    // Initialize sources status
+    const initialSources = DEEP_VERIFY_SOURCES.map(s => ({
+      name: s.name,
+      url: s.baseUrl,
+      status: 'pending' as const,
+      pagesFound: 0
+    }));
+    setDeepVerifySources(initialSources);
+    
     for (const source of DEEP_VERIFY_SOURCES) {
       try {
-        // Map the website to find relevant pages
-        toast({
-          title: `Deep Verify: ${source.name}`,
-          description: `Mapping ${source.baseUrl}...`,
-        });
+        // Update status to mapping
+        updateDeepVerifySource(source.name, { status: 'mapping' });
 
         const mapResult = await researchApi.map(source.baseUrl, query, 50);
         
         if (!mapResult.success || !mapResult.links || mapResult.links.length === 0) {
           console.log(`No pages found for ${source.name} (${source.baseUrl})`);
+          updateDeepVerifySource(source.name, { status: 'failed', pagesFound: 0 });
           continue;
         }
 
@@ -210,10 +220,8 @@ ${results.map((r, i) => `${i + 1}. [${r.title}](${r.url})`).join('\n')}
           relevantUrls.push(...mapResult.links.slice(0, 2));
         }
 
-        toast({
-          title: `Deep Verify: ${source.name}`,
-          description: `Scraping ${relevantUrls.length} pages...`,
-        });
+        // Update status to scraping
+        updateDeepVerifySource(source.name, { status: 'scraping', pagesFound: relevantUrls.length });
 
         // Scrape the relevant pages
         const scrapePromises = relevantUrls.map(async (url: string) => {
@@ -252,14 +260,18 @@ ${results.map((r, i) => `${i + 1}. [${r.title}](${r.url})`).join('\n')}
             });
           }
         });
+        
+        // Mark source as completed
+        updateDeepVerifySource(source.name, { status: 'completed' });
 
       } catch (error) {
         console.error(`Error crawling ${source.baseUrl}:`, error);
+        updateDeepVerifySource(source.name, { status: 'failed' });
       }
     }
 
     return officialResults;
-  }, []);
+  }, [setDeepVerifySources, updateDeepVerifySource]);
 
   const startResearch = useCallback(async (query: string) => {
     const taskId = `task-${Date.now()}`;

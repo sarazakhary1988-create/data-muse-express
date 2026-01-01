@@ -43,6 +43,13 @@ export interface ReportSection {
   order: number;
 }
 
+export interface DeepVerifySource {
+  name: string;
+  url: string;
+  status: 'pending' | 'mapping' | 'scraping' | 'completed' | 'failed';
+  pagesFound?: number;
+}
+
 interface ResearchStore {
   tasks: ResearchTask[];
   currentTask: ResearchTask | null;
@@ -50,6 +57,7 @@ interface ResearchStore {
   isSearching: boolean;
   searchQuery: string;
   deepVerifyMode: boolean;
+  deepVerifySources: DeepVerifySource[];
   
   // Actions
   setSearchQuery: (query: string) => void;
@@ -59,6 +67,9 @@ interface ResearchStore {
   addReport: (report: Report) => void;
   setIsSearching: (isSearching: boolean) => void;
   setDeepVerifyMode: (enabled: boolean) => void;
+  setDeepVerifySources: (sources: DeepVerifySource[]) => void;
+  updateDeepVerifySource: (name: string, updates: Partial<DeepVerifySource>) => void;
+  clearDeepVerifySources: () => void;
   clearTasks: () => void;
 }
 
@@ -69,6 +80,7 @@ export const useResearchStore = create<ResearchStore>((set) => ({
   isSearching: false,
   searchQuery: '',
   deepVerifyMode: false,
+  deepVerifySources: [],
   
   setSearchQuery: (query) => set({ searchQuery: query }),
   
@@ -95,6 +107,16 @@ export const useResearchStore = create<ResearchStore>((set) => ({
   setIsSearching: (isSearching) => set({ isSearching }),
   
   setDeepVerifyMode: (enabled) => set({ deepVerifyMode: enabled }),
+  
+  setDeepVerifySources: (sources) => set({ deepVerifySources: sources }),
+  
+  updateDeepVerifySource: (name, updates) => set((state) => ({
+    deepVerifySources: state.deepVerifySources.map((s) =>
+      s.name === name ? { ...s, ...updates } : s
+    )
+  })),
+  
+  clearDeepVerifySources: () => set({ deepVerifySources: [] }),
   
   clearTasks: () => set({ tasks: [], currentTask: null, reports: [] }),
 }));

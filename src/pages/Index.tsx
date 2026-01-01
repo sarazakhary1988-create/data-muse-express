@@ -6,7 +6,7 @@ import { Sidebar, ViewType } from '@/components/Sidebar';
 import { SearchInput } from '@/components/SearchInput';
 import { HeroSection } from '@/components/HeroSection';
 import { FeatureGrid } from '@/components/FeatureGrid';
-import { ResearchProgress, defaultResearchSteps } from '@/components/ResearchProgress';
+import { ResearchProgress, defaultResearchSteps, deepVerifyResearchSteps } from '@/components/ResearchProgress';
 import { ResultsView } from '@/components/ResultsView';
 import { ReportViewer } from '@/components/ReportViewer';
 import { TaskHistory } from '@/components/TaskHistory';
@@ -22,6 +22,8 @@ const Index = () => {
     isSearching, 
     currentTask, 
     reports,
+    deepVerifyMode,
+    deepVerifySources,
     setCurrentTask,
     setSearchQuery
   } = useResearchStore();
@@ -30,43 +32,76 @@ const Index = () => {
 
   const currentReport = reports.find(r => r.taskId === currentTask?.id);
 
-  // Update research steps during search
+  // Update research steps based on mode and progress
   useEffect(() => {
     if (!isSearching || !currentTask) {
-      setResearchSteps(defaultResearchSteps);
+      setResearchSteps(deepVerifyMode ? deepVerifyResearchSteps : defaultResearchSteps);
       return;
     }
 
     const progress = currentTask.progress;
+    const baseSteps = deepVerifyMode ? deepVerifyResearchSteps : defaultResearchSteps;
     
-    setResearchSteps(prev => prev.map((step, index) => {
-      if (index === 0) {
-        return { 
-          ...step, 
-          status: progress >= 20 ? 'completed' : progress > 0 ? 'active' : 'pending'
-        };
-      }
-      if (index === 1) {
-        return { 
-          ...step, 
-          status: progress >= 45 ? 'completed' : progress >= 20 ? 'active' : 'pending'
-        };
-      }
-      if (index === 2) {
-        return { 
-          ...step, 
-          status: progress >= 70 ? 'completed' : progress >= 45 ? 'active' : 'pending'
-        };
-      }
-      if (index === 3) {
-        return { 
-          ...step, 
-          status: progress >= 100 ? 'completed' : progress >= 70 ? 'active' : 'pending'
-        };
-      }
-      return step;
-    }));
-  }, [isSearching, currentTask?.progress]);
+    if (deepVerifyMode) {
+      // Deep Verify mode progress thresholds
+      setResearchSteps(baseSteps.map((step, index) => {
+        if (index === 0) { // Deep Verify Sources
+          return { 
+            ...step, 
+            status: progress >= 25 ? 'completed' : progress > 0 ? 'active' : 'pending'
+          };
+        }
+        if (index === 1) { // Web Search
+          return { 
+            ...step, 
+            status: progress >= 45 ? 'completed' : progress >= 25 ? 'active' : 'pending'
+          };
+        }
+        if (index === 2) { // Content Extraction
+          return { 
+            ...step, 
+            status: progress >= 70 ? 'completed' : progress >= 45 ? 'active' : 'pending'
+          };
+        }
+        if (index === 3) { // Compiling Report
+          return { 
+            ...step, 
+            status: progress >= 100 ? 'completed' : progress >= 70 ? 'active' : 'pending'
+          };
+        }
+        return step;
+      }));
+    } else {
+      // Standard mode progress thresholds
+      setResearchSteps(baseSteps.map((step, index) => {
+        if (index === 0) {
+          return { 
+            ...step, 
+            status: progress >= 20 ? 'completed' : progress > 0 ? 'active' : 'pending'
+          };
+        }
+        if (index === 1) {
+          return { 
+            ...step, 
+            status: progress >= 45 ? 'completed' : progress >= 20 ? 'active' : 'pending'
+          };
+        }
+        if (index === 2) {
+          return { 
+            ...step, 
+            status: progress >= 70 ? 'completed' : progress >= 45 ? 'active' : 'pending'
+          };
+        }
+        if (index === 3) {
+          return { 
+            ...step, 
+            status: progress >= 100 ? 'completed' : progress >= 70 ? 'active' : 'pending'
+          };
+        }
+        return step;
+      }));
+    }
+  }, [isSearching, currentTask?.progress, deepVerifyMode]);
 
   const handleSearch = async (query: string) => {
     try {
@@ -117,7 +152,9 @@ const Index = () => {
                 >
                   <ResearchProgress 
                     steps={researchSteps} 
-                    currentProgress={currentTask.progress} 
+                    currentProgress={currentTask.progress}
+                    deepVerifyMode={deepVerifyMode}
+                    deepVerifySources={deepVerifySources}
                   />
                 </motion.div>
               )}
