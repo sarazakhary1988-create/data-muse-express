@@ -13,6 +13,10 @@ import { TaskHistory } from '@/components/TaskHistory';
 import { UrlScraper } from '@/components/UrlScraper';
 import { AgentStatusPanel } from '@/components/AgentStatusPanel';
 import { ScheduledTasksView } from '@/components/scheduled/ScheduledTasksView';
+import { ResearchTemplates } from '@/components/templates/ResearchTemplates';
+import { HypothesisLab } from '@/components/hypothesis/HypothesisLab';
+import { LeadEnrichment } from '@/components/leads/LeadEnrichment';
+import { IntegrationsPage } from '@/components/integrations/IntegrationsPage';
 import { useResearchStore, ResearchTask } from '@/store/researchStore';
 import { useResearchEngine } from '@/hooks/useResearchEngine';
 
@@ -137,6 +141,10 @@ const Index = () => {
     setActiveView('search');
   };
 
+  const handleUseTemplate = (prompt: string) => {
+    handleSearch(prompt);
+  };
+
   const renderContent = () => {
     switch (activeView) {
       case 'search':
@@ -167,6 +175,18 @@ const Index = () => {
             {!isSearching && <FeatureGrid />}
           </div>
         );
+
+      case 'templates':
+        return <ResearchTemplates onUseTemplate={handleUseTemplate} />;
+
+      case 'hypothesis':
+        return <HypothesisLab />;
+
+      case 'leads':
+        return <LeadEnrichment />;
+
+      case 'integrations':
+        return <IntegrationsPage />;
 
       case 'scraper':
         return (
