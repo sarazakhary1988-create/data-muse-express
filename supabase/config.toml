@@ -56,7 +56,7 @@ verify_jwt = false
 [functions.ai-web-search]
 verify_jwt = false
 
-[functions.tavily-search]
+[functions.web-search]
 verify_jwt = false
 
 [functions.research-orchestrator]

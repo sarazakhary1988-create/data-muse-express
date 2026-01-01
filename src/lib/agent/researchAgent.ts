@@ -117,7 +117,7 @@ export class ResearchAgent {
 
     console.log(`[ResearchAgent] ========== STARTING MANUS 1.6 MAX RESEARCH ENGINE ==========`);
     console.log(`[ResearchAgent] Query: "${query}"`);
-    console.log(`[ResearchAgent] Mode: REAL-TIME DATA (Tavily → Internal Search → Extract → Analyze → Report)`);
+    console.log(`[ResearchAgent] Mode: REAL-TIME DATA (Embedded Web Search → Internal Sitemap → Extract → Analyze → Report)`);
     console.log(`[ResearchAgent] Format: ${reportFormat}`);
     
     this.reportFormat = reportFormat;
@@ -134,11 +134,11 @@ export class ResearchAgent {
       this.callbacks.onPlanUpdate?.(this.currentPlan);
       this.stateMachine.updateContext({ plan: this.currentPlan });
 
-      // Phase 2: REAL-TIME WEB SEARCH via Tavily + Internal
-      console.log(`[ResearchAgent] 🔍 Phase 2: REAL-TIME WEB SEARCH (Tavily + Internal)`);
+      // Phase 2: REAL-TIME WEB SEARCH via Embedded Search (DuckDuckGo/Google/Bing) + Internal
+      console.log(`[ResearchAgent] 🔍 Phase 2: REAL-TIME WEB SEARCH (Embedded Multi-Engine + Internal Sitemap)`);
       await this.stateMachine.transition('searching');
       this.callbacks.onProgress?.(15);
-      this.callbacks.onDecision?.('Searching the web with Tavily', 0.9);
+      this.callbacks.onDecision?.('Searching the web via embedded search engines', 0.9);
 
       // Execute real-time search using Tavily as primary, internal as fallback
       const searchResult = await researchApi.search(query, 15, true, {
@@ -148,12 +148,12 @@ export class ResearchAgent {
       });
 
       if (!searchResult.success || !searchResult.data || searchResult.data.length === 0) {
-        console.warn(`[ResearchAgent] Primary Tavily search returned no results, trying hybrid search`);
-        // Fallback to hybrid search
+        console.warn(`[ResearchAgent] Primary embedded search returned no results, trying hybrid search`);
+        // Fallback to hybrid search (embedded web search + sitemap discovery)
         const hybridResult = await researchApi.hybridSearch(query, { 
-          useTavily: true, 
+          useWebSearch: true, 
           useInternal: true,
-          tavilyOptions: { maxResults: 10 },
+          webSearchOptions: { maxResults: 10, searchEngine: 'all', scrapeContent: true },
           internalOptions: { limit: 10 }
         });
         if (hybridResult.success && hybridResult.data) {
@@ -705,18 +705,15 @@ Generate the research report:`;
       const countryCode = this.normalizeCountryToCode(options?.country);
       const isSaudi = this.isSaudiQuery(query, countryCode);
 
-      // Determine topic for Tavily based on query
-      const topic = this.detectTavilyTopic(query);
       
-      // Use hybrid search: Tavily for broad discovery + internal for authoritative sources
+      // Use hybrid search: embedded web search + internal sitemap discovery
       const searchResult = await researchApi.hybridSearch(query, {
-        useTavily: true,
+        useWebSearch: true,
         useInternal: true,
-        tavilyOptions: {
-          searchDepth: 'advanced',
-          topic,
-          days: 30,
+        webSearchOptions: {
+          searchEngine: 'all',
           maxResults: 10,
+          scrapeContent: true,
         },
         internalOptions: {
           limit: 10,
@@ -733,31 +730,30 @@ Generate the research report:`;
       }
       
       if (!searchResult.success || !searchResult.data || searchResult.data.length === 0) {
-        console.log('[ResearchAgent] No web search results found, trying Tavily-only fallback');
+        console.log('[ResearchAgent] No hybrid search results found, trying web-only fallback');
         
-        // Fallback to Tavily-only if hybrid fails
-        const tavilyResult = await researchApi.tavilySearch(query, {
-          searchDepth: 'advanced',
-          topic,
+        // Fallback to embedded web search only
+        const webResult = await researchApi.webSearch(query, {
+          searchEngine: 'all',
           maxResults: 15,
-          includeAnswer: true,
+          scrapeContent: true,
         });
         
-        if (tavilyResult.success && tavilyResult.data && tavilyResult.data.length > 0) {
-          console.log('[ResearchAgent] Tavily fallback returned', tavilyResult.data.length, 'results');
+        if (webResult.success && webResult.data && webResult.data.length > 0) {
+          console.log('[ResearchAgent] Web search fallback returned', webResult.data.length, 'results');
           
-          return tavilyResult.data.map((item, index) => ({
-            id: `tavily-${Date.now()}-${index}`,
+          return webResult.data.map((item, index) => ({
+            id: `web-${Date.now()}-${index}`,
             title: item.title || `Search Result ${index + 1}`,
             url: item.url,
             content: item.markdown || item.description || '',
             summary: item.description || '',
-            relevanceScore: item.score || (0.9 - (index * 0.05)),
+            relevanceScore: 0.9 - (index * 0.05),
             extractedAt: new Date(),
             metadata: {
               domain: new URL(item.url).hostname.replace('www.', ''),
               wordCount: (item.markdown || item.description || '').split(/\s+/).length,
-              publishDate: item.publishedDate,
+              publishDate: item.fetchedAt,
             }
           }));
         }

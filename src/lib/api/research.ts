@@ -46,6 +46,7 @@ export interface SearchResult {
     fetchedAt?: string;
     sourceStatus?: string;
     reliability?: number;
+    source?: string;
   }>;
   error?: string;
   searchMethod?: string;
@@ -107,78 +108,116 @@ export interface MapResult {
   error?: string;
 }
 
-export interface TavilySearchResult {
+export interface WebSearchResult {
   success: boolean;
   data?: Array<{
     url: string;
     title: string;
     description?: string;
     markdown?: string;
-    score?: number;
-    publishedDate?: string;
+    source?: string;
     fetchedAt?: string;
   }>;
-  answer?: string;
   error?: string;
   searchMethod?: string;
+  engines?: string[];
   timing?: { total: number };
 }
 
-// ============ RESEARCH API - NO EXTERNAL DEPENDENCIES ============
-// Uses only:
-// 1. Tavily (tavily-search) - for web search with TAVILY_API_KEY
-// 2. Internal research-search - for sitemap discovery and scraping
-// 3. Lovable AI - only for analysis/report generation (via research-analyze)
+// ============ RESEARCH API - ZERO EXTERNAL DEPENDENCIES ============
+// Uses ONLY embedded edge functions:
+// 1. web-search - embedded search engine scraping (DuckDuckGo/Google/Bing)
+// 2. research-search - sitemap discovery + internal scraping
+// 3. research-scrape - direct URL content extraction
+// 4. research-analyze - AI analysis (Lovable AI for report generation only)
+// 5. research-extract - structured data extraction
+// 6. research-map - URL discovery from sitemaps
 
 export const researchApi = {
-  // PRIMARY SEARCH: Uses Tavily (configured with TAVILY_API_KEY)
+  // PRIMARY SEARCH: Uses embedded web-search (zero external API dependencies)
   async search(
     query: string, 
     limit: number = 12, 
-    scrapeContent: boolean = false,
+    scrapeContent: boolean = true,
     options?: {
       strictMode?: boolean;
       minSources?: number;
       country?: string;
       tbs?: string; // Time filter
+      searchEngine?: 'duckduckgo' | 'google' | 'bing' | 'all';
     }
   ): Promise<SearchResult> {
     try {
-      console.log('[researchApi] Searching with Tavily:', query);
+      console.log('[researchApi] Embedded web search:', query);
       
-      // Use Tavily as primary search engine
-      const tavilyResult = await this.tavilySearch(query, {
+      // Use embedded web-search as primary (scrapes DuckDuckGo/Google/Bing)
+      const webSearchResult = await this.webSearch(query, {
         maxResults: limit,
-        searchDepth: 'advanced',
-        topic: 'general',
-        days: 30,
+        scrapeContent: scrapeContent,
+        searchEngine: options?.searchEngine || 'all',
       });
 
-      if (tavilyResult.success && tavilyResult.data && tavilyResult.data.length > 0) {
-        console.log('[researchApi] Tavily search success:', tavilyResult.data.length, 'results');
+      if (webSearchResult.success && webSearchResult.data && webSearchResult.data.length > 0) {
+        console.log('[researchApi] Embedded search success:', webSearchResult.data.length, 'results');
         return {
           success: true,
-          data: tavilyResult.data.map(item => ({
-            id: `tavily-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          data: webSearchResult.data.map((item, idx) => ({
+            id: `web-${Date.now()}-${idx}`,
             url: item.url,
             title: item.title,
             description: item.description || '',
             markdown: item.markdown || item.description || '',
             content: item.markdown || item.description || '',
             fetchedAt: item.fetchedAt,
-            reliability: item.score || 0.8,
+            reliability: 0.8 - (idx * 0.02),
+            source: item.source,
           })),
-          searchMethod: 'tavily',
-          timing: tavilyResult.timing,
+          searchMethod: 'embedded_web_search',
+          timing: webSearchResult.timing,
         };
       }
 
-      // Fallback to internal research-search if Tavily fails
-      console.log('[researchApi] Tavily returned no results, falling back to internal search');
+      // Fallback to internal sitemap-based search
+      console.log('[researchApi] Embedded search returned no results, falling back to sitemap search');
       return this.internalSearch(query, limit, options);
     } catch (err) {
       console.error('[researchApi] Search error:', err);
       return this.internalSearch(query, limit, options);
+    }
+  },
+
+  // EMBEDDED WEB SEARCH: Uses web-search edge function (scrapes search engines)
+  async webSearch(
+    query: string,
+    options?: {
+      maxResults?: number;
+      searchEngine?: 'duckduckgo' | 'google' | 'bing' | 'all';
+      scrapeContent?: boolean;
+      country?: string;
+    }
+  ): Promise<WebSearchResult> {
+    try {
+      console.log('[researchApi] Calling embedded web-search:', query);
+      
+      const { data, error } = await supabase.functions.invoke('web-search', {
+        body: { 
+          query, 
+          maxResults: options?.maxResults || 10,
+          searchEngine: options?.searchEngine || 'all',
+          scrapeContent: options?.scrapeContent !== false,
+          country: options?.country,
+        },
+      });
+
+      if (error) {
+        console.error('[researchApi] Web search error:', error);
+        return { success: false, error: error.message };
+      }
+
+      return data;
+    } catch (err) {
+      console.error('[researchApi] Web search error:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Web search failed' };
     }
   },
 
@@ -193,13 +232,13 @@ export const researchApi = {
     }
   ): Promise<SearchResult> {
     try {
-      console.log('[researchApi] Internal search:', query);
+      console.log('[researchApi] Internal sitemap search:', query);
       
       const { data, error } = await supabase.functions.invoke('research-search', {
         body: { 
           query, 
           limit, 
-          scrapeContent: false, 
+          scrapeContent: true, 
           lang: 'en',
           strictMode: options?.strictMode ?? false,
           minSources: options?.minSources ?? 2,
@@ -238,7 +277,7 @@ export const researchApi = {
           fetchedAt: item.fetchedAt,
           reliability: item.reliability || 0.7,
         })),
-        searchMethod: data.searchMethod || 'internal_fetch',
+        searchMethod: data.searchMethod || 'internal_sitemap',
         sourceStatuses: data.sourceStatuses,
         summary: data.summary,
       };
@@ -357,56 +396,16 @@ export const researchApi = {
     }
   },
 
-  // TAVILY SEARCH: Direct Tavily API call (uses configured TAVILY_API_KEY)
-  async tavilySearch(
-    query: string,
-    options?: {
-      searchDepth?: 'basic' | 'advanced';
-      topic?: 'general' | 'news' | 'finance';
-      days?: number;
-      maxResults?: number;
-      includeAnswer?: boolean;
-      includeDomains?: string[];
-      excludeDomains?: string[];
-    }
-  ): Promise<TavilySearchResult> {
-    try {
-      const { data, error } = await supabase.functions.invoke('tavily-search', {
-        body: { 
-          query, 
-          searchDepth: options?.searchDepth || 'advanced',
-          topic: options?.topic || 'general',
-          days: options?.days || 30,
-          maxResults: options?.maxResults || 10,
-          includeAnswer: options?.includeAnswer !== false,
-          includeDomains: options?.includeDomains,
-          excludeDomains: options?.excludeDomains,
-        },
-      });
-
-      if (error) {
-        console.error('Tavily search error:', error);
-        return { success: false, error: error.message };
-      }
-
-      return data;
-    } catch (err) {
-      console.error('Tavily search error:', err);
-      return { success: false, error: err instanceof Error ? err.message : 'Tavily search failed' };
-    }
-  },
-
-  // HYBRID SEARCH: Combines Tavily + internal sitemap discovery
+  // HYBRID SEARCH: Combines embedded web search + internal sitemap discovery
   async hybridSearch(
     query: string,
     options?: {
-      useTavily?: boolean;
+      useWebSearch?: boolean;
       useInternal?: boolean;
-      tavilyOptions?: {
-        searchDepth?: 'basic' | 'advanced';
-        topic?: 'general' | 'news' | 'finance';
-        days?: number;
+      webSearchOptions?: {
+        searchEngine?: 'duckduckgo' | 'google' | 'bing' | 'all';
         maxResults?: number;
+        scrapeContent?: boolean;
       };
       internalOptions?: {
         limit?: number;
@@ -415,37 +414,36 @@ export const researchApi = {
       };
     }
   ): Promise<SearchResult> {
-    const useTavily = options?.useTavily !== false;
+    const useWebSearch = options?.useWebSearch !== false;
     const useInternal = options?.useInternal !== false;
     
     const results: SearchResult['data'] = [];
-    let tavilyAnswer: string | undefined;
     const errors: string[] = [];
 
     // Run searches in parallel
     const promises: Promise<void>[] = [];
 
-    if (useTavily) {
+    if (useWebSearch) {
       promises.push(
-        this.tavilySearch(query, options?.tavilyOptions)
-          .then(tavilyResult => {
-            if (tavilyResult.success && tavilyResult.data) {
-              results.push(...tavilyResult.data.map(r => ({
+        this.webSearch(query, options?.webSearchOptions)
+          .then(webResult => {
+            if (webResult.success && webResult.data) {
+              results.push(...webResult.data.map((r, idx) => ({
                 url: r.url,
                 title: r.title,
                 description: r.description || '',
                 markdown: r.markdown || r.description || '',
                 fetchedAt: r.fetchedAt,
                 sourceStatus: 'success' as const,
-                reliability: r.score || 0.8,
+                reliability: 0.85 - (idx * 0.02),
+                source: r.source,
               })));
-              tavilyAnswer = tavilyResult.answer;
-            } else if (tavilyResult.error) {
-              errors.push(`Tavily: ${tavilyResult.error}`);
+            } else if (webResult.error) {
+              errors.push(`WebSearch: ${webResult.error}`);
             }
           })
           .catch(err => {
-            errors.push(`Tavily: ${err.message}`);
+            errors.push(`WebSearch: ${err.message}`);
           })
       );
     }
@@ -482,7 +480,7 @@ export const researchApi = {
     return {
       success: deduped.length > 0,
       data: deduped,
-      searchMethod: useTavily && useInternal ? 'hybrid' : useTavily ? 'tavily' : 'internal',
+      searchMethod: useWebSearch && useInternal ? 'hybrid_embedded' : useWebSearch ? 'embedded_web_search' : 'internal_sitemap',
       error: deduped.length === 0 && errors.length > 0 ? errors.join('; ') : undefined,
     };
   },
