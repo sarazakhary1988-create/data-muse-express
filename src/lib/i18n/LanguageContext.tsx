@@ -1,10 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { translations, Language, TranslationKeys } from './translations';
+import { translations, Language } from './translations';
+
+type TranslationData = typeof translations.en;
 
 interface LanguageContextType {
   language: Language;
   setLanguage: (lang: Language) => void;
-  t: TranslationKeys;
+  t: TranslationData;
   isRTL: boolean;
   dir: 'ltr' | 'rtl';
 }
@@ -42,7 +44,7 @@ export const LanguageProvider = ({ children }: LanguageProviderProps) => {
     }
   }, [language, dir, isRTL]);
 
-  const t = translations[language];
+  const t = translations[language] as TranslationData;
 
   return (
     <LanguageContext.Provider value={{ language, setLanguage, t, isRTL, dir }}>
