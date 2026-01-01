@@ -103,6 +103,23 @@ export interface MapResult {
   error?: string;
 }
 
+export interface TavilySearchResult {
+  success: boolean;
+  data?: Array<{
+    url: string;
+    title: string;
+    description?: string;
+    markdown?: string;
+    score?: number;
+    publishedDate?: string;
+    fetchedAt?: string;
+  }>;
+  answer?: string;
+  error?: string;
+  searchMethod?: string;
+  timing?: { total: number };
+}
+
 export const researchApi = {
   // Scrape a single URL using direct fetch + extraction
   async scrape(
@@ -304,6 +321,132 @@ export const researchApi = {
     return {
       success: true,
       links: [url]
+    };
+  },
+
+  // Tavily-powered web search for broader discovery
+  async tavilySearch(
+    query: string,
+    options?: {
+      searchDepth?: 'basic' | 'advanced';
+      topic?: 'general' | 'news' | 'finance';
+      days?: number;
+      maxResults?: number;
+      includeAnswer?: boolean;
+      includeDomains?: string[];
+      excludeDomains?: string[];
+    }
+  ): Promise<TavilySearchResult> {
+    try {
+      const { data, error } = await supabase.functions.invoke('tavily-search', {
+        body: { 
+          query, 
+          searchDepth: options?.searchDepth || 'advanced',
+          topic: options?.topic || 'general',
+          days: options?.days || 30,
+          maxResults: options?.maxResults || 10,
+          includeAnswer: options?.includeAnswer !== false,
+          includeDomains: options?.includeDomains,
+          excludeDomains: options?.excludeDomains,
+        },
+      });
+
+      if (error) {
+        console.error('Tavily search error:', error);
+        return { success: false, error: error.message };
+      }
+
+      return data;
+    } catch (err) {
+      console.error('Tavily search error:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Tavily search failed' };
+    }
+  },
+
+  // Combined search: Tavily + sitemap discovery
+  async hybridSearch(
+    query: string,
+    options?: {
+      useTavily?: boolean;
+      useSitemap?: boolean;
+      tavilyOptions?: {
+        searchDepth?: 'basic' | 'advanced';
+        topic?: 'general' | 'news' | 'finance';
+        days?: number;
+        maxResults?: number;
+      };
+      sitemapOptions?: {
+        limit?: number;
+        strictMode?: boolean;
+        country?: string;
+      };
+    }
+  ): Promise<SearchResult> {
+    const useTavily = options?.useTavily !== false;
+    const useSitemap = options?.useSitemap !== false;
+    
+    const results: SearchResult['data'] = [];
+    let tavilyAnswer: string | undefined;
+    const errors: string[] = [];
+
+    // Run searches in parallel
+    const promises: Promise<void>[] = [];
+
+    if (useTavily) {
+      promises.push(
+        this.tavilySearch(query, options?.tavilyOptions)
+          .then(tavilyResult => {
+            if (tavilyResult.success && tavilyResult.data) {
+              results.push(...tavilyResult.data.map(r => ({
+                url: r.url,
+                title: r.title,
+                description: r.description || '',
+                markdown: r.markdown || r.description || '',
+                fetchedAt: r.fetchedAt,
+                sourceStatus: 'success' as const,
+              })));
+              tavilyAnswer = tavilyResult.answer;
+            } else if (tavilyResult.error) {
+              errors.push(`Tavily: ${tavilyResult.error}`);
+            }
+          })
+          .catch(err => {
+            errors.push(`Tavily: ${err.message}`);
+          })
+      );
+    }
+
+    if (useSitemap) {
+      promises.push(
+        this.search(query, options?.sitemapOptions?.limit || 10, false, {
+          strictMode: options?.sitemapOptions?.strictMode,
+          country: options?.sitemapOptions?.country,
+        })
+          .then(sitemapResult => {
+            if (sitemapResult.success && sitemapResult.data) {
+              results.push(...sitemapResult.data);
+            } else if (sitemapResult.error) {
+              errors.push(`Sitemap: ${sitemapResult.error}`);
+            }
+          })
+          .catch(err => {
+            errors.push(`Sitemap: ${err.message}`);
+          })
+      );
+    }
+
+    await Promise.all(promises);
+
+    // Deduplicate by URL
+    const uniqueResults = Array.from(
+      new Map(results.map(r => [r.url, r])).values()
+    );
+
+    return {
+      success: uniqueResults.length > 0,
+      data: uniqueResults,
+      searchMethod: 'hybrid',
+      error: errors.length > 0 && uniqueResults.length === 0 ? errors.join('; ') : undefined,
     };
   }
 };
