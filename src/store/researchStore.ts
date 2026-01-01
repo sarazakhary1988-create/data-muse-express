@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import { AgentState, QualityScore, ExecutionMetrics, ClaimVerification, ResearchPlan } from '@/lib/agent/types';
 import { Discrepancy, QualityMetrics, SourceCoverage } from '@/lib/agent/dataConsolidator';
 import { TimeFrameValue } from '@/components/TimeFrameFilter';
+import { COUNTRY_OPTIONS } from '@/components/CountryFilter';
 
 export interface ResearchTask {
   id: string;
@@ -179,6 +180,7 @@ interface ResearchStore {
   deepVerifySourceConfigs: DeepVerifySourceConfig[];
   reportFormat: ReportFormat;
   timeFrameFilter: TimeFrameValue;
+  countryFilter: string;
   
   // Agent state
   agentState: AgentStateInfo;
@@ -200,9 +202,10 @@ interface ResearchStore {
   addCustomSource: (source: Omit<DeepVerifySourceConfig, 'id' | 'isCustom'>) => void;
   updateSource: (id: string, updates: Partial<DeepVerifySourceConfig>) => void;
   deleteSource: (id: string) => void;
-  clearTasks: () => void;
-  setReportFormat: (format: ReportFormat) => void;
-  setTimeFrameFilter: (filter: TimeFrameValue) => void;
+      clearTasks: () => void;
+      setReportFormat: (format: ReportFormat) => void;
+      setTimeFrameFilter: (filter: TimeFrameValue) => void;
+      setCountryFilter: (country: string) => void;
   
   // Agent state actions
   setAgentState: (state: AgentState) => void;
@@ -228,6 +231,7 @@ export const useResearchStore = create<ResearchStore>()(
       deepVerifySourceConfigs: DEFAULT_DEEP_VERIFY_SOURCES,
       reportFormat: 'detailed' as ReportFormat,
       timeFrameFilter: { type: 'all' } as TimeFrameValue,
+      countryFilter: 'global',
       
       // Agent state
       agentState: {
@@ -314,6 +318,8 @@ export const useResearchStore = create<ResearchStore>()(
       setReportFormat: (format) => set({ reportFormat: format }),
       
       setTimeFrameFilter: (filter) => set({ timeFrameFilter: filter }),
+      
+      setCountryFilter: (country) => set({ countryFilter: country }),
       
       // Agent state actions
       setAgentState: (state) => set((s) => ({

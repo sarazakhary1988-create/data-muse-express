@@ -357,18 +357,29 @@ export const ReportViewer = ({ report, validationData }: ReportViewerProps) => {
       animate={{ opacity: 1 }}
       className="w-full"
     >
-      <Card variant="glass" className="overflow-hidden">
-        <CardHeader className="border-b border-border/50 bg-card/50">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-                <FileText className="w-5 h-5 text-primary-foreground" />
+      <Card variant="glass" className="overflow-hidden shadow-2xl">
+        <CardHeader className="border-b border-border/50 bg-gradient-to-r from-card via-primary/5 to-card p-6 md:p-8">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary via-accent to-primary flex items-center justify-center shadow-lg shadow-primary/20">
+                <FileText className="w-6 h-6 text-primary-foreground" />
               </div>
-              <div>
-                <CardTitle className="text-xl">{report.title}</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Generated {new Date(report.createdAt).toLocaleDateString()}
-                </p>
+              <div className="flex-1 min-w-0">
+                <CardTitle className="text-xl md:text-2xl font-bold bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text leading-tight">
+                  {report.title}
+                </CardTitle>
+                <div className="flex items-center gap-3 mt-2 text-sm text-muted-foreground">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
+                    AI Generated
+                  </span>
+                  <span className="w-1 h-1 rounded-full bg-muted-foreground/50" />
+                  <span>{new Date(report.createdAt).toLocaleDateString('en-US', { 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                  })}</span>
+                </div>
               </div>
             </div>
             
@@ -473,58 +484,81 @@ export const ReportViewer = ({ report, validationData }: ReportViewerProps) => {
           </div>
         )}
 
-        <CardContent className="p-6 md:p-8">
+        <CardContent className="p-6 md:p-10 lg:p-12">
           <div ref={contentRef} className="prose prose-invert prose-sm max-w-none">
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{
                 h1: ({ children }) => (
-                  <h1 className="text-2xl font-bold text-foreground mt-8 mb-4 first:mt-0">{children}</h1>
+                  <h1 className="text-3xl font-bold text-foreground mt-10 mb-6 first:mt-0 bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-transparent">{children}</h1>
                 ),
                 h2: ({ children }) => (
-                  <h2 className="text-xl font-semibold text-foreground mt-6 mb-3 pb-2 border-b border-border/50">{children}</h2>
+                  <h2 className="text-xl font-semibold text-foreground mt-8 mb-4 pb-3 border-b-2 border-primary/20 flex items-center gap-2">
+                    <span className="w-1.5 h-6 bg-gradient-to-b from-primary to-accent rounded-full" />
+                    {children}
+                  </h2>
                 ),
                 h3: ({ children }) => (
-                  <h3 className="text-lg font-medium text-foreground mt-5 mb-2">{children}</h3>
+                  <h3 className="text-lg font-medium text-foreground mt-6 mb-3 pl-3 border-l-2 border-accent/30">{children}</h3>
                 ),
                 p: ({ children }) => (
-                  <p className="text-muted-foreground leading-relaxed mb-4">{children}</p>
+                  <p className="text-muted-foreground leading-relaxed mb-4 text-[15px]">{children}</p>
                 ),
                 ul: ({ children }) => (
-                  <ul className="list-disc list-inside space-y-2 mb-4 text-muted-foreground">{children}</ul>
+                  <ul className="space-y-2 mb-5 text-muted-foreground pl-1">{children}</ul>
                 ),
                 ol: ({ children }) => (
-                  <ol className="list-decimal list-inside space-y-2 mb-4 text-muted-foreground">{children}</ol>
+                  <ol className="list-decimal list-inside space-y-2 mb-5 text-muted-foreground">{children}</ol>
                 ),
-                li: ({ children }) => <li className="text-muted-foreground">{children}</li>,
+                li: ({ children }) => (
+                  <li className="text-muted-foreground flex items-start gap-2">
+                    <span className="text-primary mt-1.5">•</span>
+                    <span className="flex-1">{children}</span>
+                  </li>
+                ),
                 blockquote: ({ children }) => (
-                  <blockquote className="border-l-4 border-primary/50 pl-4 py-2 my-4 bg-primary/5 rounded-r-lg text-muted-foreground italic">
+                  <blockquote className="border-l-4 border-primary pl-5 py-3 my-6 bg-gradient-to-r from-primary/10 to-transparent rounded-r-xl text-foreground/90 italic shadow-sm">
                     {children}
                   </blockquote>
                 ),
                 code: ({ className, children }) => {
                   const isInline = !className;
                   if (isInline) {
-                    return <code className="px-1.5 py-0.5 bg-muted rounded text-sm font-mono text-primary">{children}</code>;
+                    return <code className="px-2 py-1 bg-primary/10 text-primary rounded-md text-sm font-mono border border-primary/20">{children}</code>;
                   }
-                  return <code className="block p-4 bg-muted rounded-lg overflow-x-auto text-sm font-mono">{children}</code>;
+                  return <code className="block p-4 bg-muted/50 rounded-xl overflow-x-auto text-sm font-mono border border-border">{children}</code>;
                 },
-                pre: ({ children }) => <pre className="bg-muted rounded-lg overflow-x-auto mb-4">{children}</pre>,
+                pre: ({ children }) => <pre className="bg-muted/50 rounded-xl overflow-x-auto mb-5 border border-border shadow-sm">{children}</pre>,
                 table: ({ children }) => (
-                  <div className="overflow-x-auto mb-4">
-                    <table className="w-full border-collapse border border-border rounded-lg">{children}</table>
+                  <div className="overflow-x-auto mb-6 rounded-xl border border-border shadow-sm">
+                    <table className="w-full border-collapse">{children}</table>
                   </div>
                 ),
+                thead: ({ children }) => (
+                  <thead className="bg-gradient-to-r from-primary/10 to-accent/10">{children}</thead>
+                ),
                 th: ({ children }) => (
-                  <th className="border border-border bg-muted px-4 py-2 text-left font-medium text-foreground">{children}</th>
+                  <th className="border-b border-border px-4 py-3 text-left font-semibold text-foreground text-sm uppercase tracking-wider">{children}</th>
                 ),
                 td: ({ children }) => (
-                  <td className="border border-border px-4 py-2 text-muted-foreground">{children}</td>
+                  <td className="border-b border-border/50 px-4 py-3 text-muted-foreground">{children}</td>
+                ),
+                tr: ({ children }) => (
+                  <tr className="hover:bg-muted/30 transition-colors">{children}</tr>
                 ),
                 a: ({ href, children }) => (
-                  <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80 underline underline-offset-2 transition-colors">
+                  <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-accent underline underline-offset-4 decoration-primary/30 hover:decoration-accent transition-all font-medium">
                     {children}
                   </a>
+                ),
+                hr: () => (
+                  <hr className="my-8 border-0 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
+                ),
+                strong: ({ children }) => (
+                  <strong className="font-semibold text-foreground">{children}</strong>
+                ),
+                em: ({ children }) => (
+                  <em className="italic text-foreground/80">{children}</em>
                 ),
               }}
             >
@@ -533,13 +567,19 @@ export const ReportViewer = ({ report, validationData }: ReportViewerProps) => {
           </div>
         </CardContent>
 
-        <div className="border-t border-border/50 bg-card/50 px-6 py-4">
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-3 h-3 text-primary" />
-              <span>Generated by NexusAI Research Engine</span>
+        <div className="border-t border-border/50 bg-gradient-to-r from-card via-primary/5 to-card px-6 py-5">
+          <div className="flex items-center justify-between text-sm">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-primary/10 rounded-full">
+                <Sparkles className="w-4 h-4 text-primary" />
+                <span className="text-foreground font-medium">NexusAI Research Engine</span>
+              </div>
             </div>
-            <span>{report.sections.length} sections</span>
+            <div className="flex items-center gap-4 text-muted-foreground">
+              <span>{report.sections.length} sections</span>
+              <span className="w-1 h-1 rounded-full bg-muted-foreground/50" />
+              <span>{new Date(report.createdAt).toLocaleDateString()}</span>
+            </div>
           </div>
         </div>
       </Card>
