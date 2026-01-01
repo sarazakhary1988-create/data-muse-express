@@ -1,8 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
 interface ReportData {
@@ -21,100 +21,110 @@ interface ReportData {
 // Simple PDF generation using text-based layout
 function generatePDFContent(report: ReportData): string {
   const lines: string[] = [];
-  
+
   // Header
-  lines.push('%PDF-1.4');
-  lines.push('1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj');
-  lines.push('2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj');
-  
+  lines.push("%PDF-1.4");
+  lines.push("1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj");
+  lines.push("2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj");
+
   // Build text content
   const textContent: string[] = [];
   textContent.push(`RESEARCH REPORT`);
-  textContent.push('');
+  textContent.push("");
   textContent.push(report.title);
-  textContent.push('');
+  textContent.push("");
   textContent.push(`Generated: ${new Date(report.metadata.generatedAt).toLocaleDateString()}`);
   textContent.push(`Sources: ${report.metadata.totalSources} | Verified Claims: ${report.metadata.verifiedClaims}`);
   textContent.push(`Confidence Score: ${(report.metadata.confidenceScore * 100).toFixed(1)}%`);
-  textContent.push('');
-  textContent.push('─'.repeat(60));
-  textContent.push('');
-  textContent.push('EXECUTIVE SUMMARY');
-  textContent.push('');
+  textContent.push("");
+  textContent.push("─".repeat(60));
+  textContent.push("");
+  textContent.push("EXECUTIVE SUMMARY");
+  textContent.push("");
   textContent.push(report.summary);
-  textContent.push('');
-  
+  textContent.push("");
+
   for (const section of report.sections) {
-    textContent.push('─'.repeat(60));
-    textContent.push('');
+    textContent.push("─".repeat(60));
+    textContent.push("");
     textContent.push(section.heading.toUpperCase());
-    textContent.push('');
-    textContent.push(section.content.replace(/\n+/g, ' ').trim());
-    textContent.push('');
+    textContent.push("");
+    textContent.push(section.content.replace(/\n+/g, " ").trim());
+    textContent.push("");
   }
-  
-  textContent.push('─'.repeat(60));
-  textContent.push('');
-  textContent.push('REFERENCES');
-  textContent.push('');
+
+  textContent.push("─".repeat(60));
+  textContent.push("");
+  textContent.push("REFERENCES");
+  textContent.push("");
   for (const cite of report.citations) {
     textContent.push(`${cite.text}`);
     textContent.push(`  URL: ${cite.context}`);
-    textContent.push('');
+    textContent.push("");
   }
-  
-  const fullText = textContent.join('\n');
+
+  const fullText = textContent.join("\n");
   const escapedText = fullText
-    .replace(/\\/g, '\\\\')
-    .replace(/\(/g, '\\(')
-    .replace(/\)/g, '\\)')
-    .replace(/[^\x00-\x7F]/g, ' '); // Remove non-ASCII for basic PDF
-  
+    .replace(/\\/g, "\\\\")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)")
+    .replace(/[^\x00-\x7F]/g, " "); // Remove non-ASCII for basic PDF
+
   // Page content
   const pageContent = `BT /F1 10 Tf 50 750 Td (${escapedText.substring(0, 4000)}) Tj ET`;
   const contentStream = pageContent;
   const streamLength = contentStream.length;
-  
-  lines.push(`3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj`);
+
+  lines.push(
+    `3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj`,
+  );
   lines.push(`4 0 obj << /Length ${streamLength} >> stream`);
   lines.push(contentStream);
-  lines.push('endstream endobj');
-  lines.push('5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj');
-  
+  lines.push("endstream endobj");
+  lines.push("5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj");
+
   // Cross-reference table
-  lines.push('xref');
-  lines.push('0 6');
-  lines.push('0000000000 65535 f ');
-  lines.push('0000000009 00000 n ');
-  lines.push('0000000058 00000 n ');
-  lines.push('0000000115 00000 n ');
-  lines.push('0000000270 00000 n ');
-  lines.push('0000000380 00000 n ');
-  
-  lines.push('trailer << /Size 6 /Root 1 0 R >>');
-  lines.push('startxref');
-  lines.push('459');
-  lines.push('%%EOF');
-  
-  return lines.join('\n');
+  lines.push("xref");
+  lines.push("0 6");
+  lines.push("0000000000 65535 f ");
+  lines.push("0000000009 00000 n ");
+  lines.push("0000000058 00000 n ");
+  lines.push("0000000115 00000 n ");
+  lines.push("0000000270 00000 n ");
+  lines.push("0000000380 00000 n ");
+
+  lines.push("trailer << /Size 6 /Root 1 0 R >>");
+  lines.push("startxref");
+  lines.push("459");
+  lines.push("%%EOF");
+
+  return lines.join("\n");
 }
 
 // Generate HTML report for better formatting
 function generateHTMLReport(report: ReportData): string {
-  const sections = report.sections.map(s => `
+  const sections = report.sections
+    .map(
+      (s) => `
     <section class="section">
       <h2>${escapeHtml(s.heading)}</h2>
       <div class="content">${markdownToHtml(s.content)}</div>
     </section>
-  `).join('\n');
+  `,
+    )
+    .join("\n");
 
-  const citations = report.citations.map((c, i) => `
+  const citations = report.citations
+    .map(
+      (c, i) => `
     <li>
       <strong>${escapeHtml(c.text)}</strong><br>
       <a href="${escapeHtml(c.context)}" target="_blank">${escapeHtml(c.context)}</a>
       <span class="confidence">(${(c.confidence * 100).toFixed(0)}% confidence)</span>
     </li>
-  `).join('\n');
+  `,
+    )
+    .join("\n");
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -243,26 +253,26 @@ function generateHTMLReport(report: ReportData): string {
 
 function escapeHtml(text: string): string {
   return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
 function markdownToHtml(markdown: string): string {
   return markdown
-    .replace(/^### (.*$)/gm, '<h3>$1</h3>')
-    .replace(/^## (.*$)/gm, '<h4>$1</h4>')
-    .replace(/^# (.*$)/gm, '<h5>$1</h5>')
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-    .replace(/^\- (.*$)/gm, '<li>$1</li>')
-    .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
-    .replace(/^\d+\. (.*$)/gm, '<li>$1</li>')
-    .replace(/\n\n/g, '</p><p>')
+    .replace(/^### (.*$)/gm, "<h3>$1</h3>")
+    .replace(/^## (.*$)/gm, "<h4>$1</h4>")
+    .replace(/^# (.*$)/gm, "<h5>$1</h5>")
+    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.*?)\*/g, "<em>$1</em>")
+    .replace(/^\- (.*$)/gm, "<li>$1</li>")
+    .replace(/(<li>.*<\/li>\n?)+/g, "<ul>$&</ul>")
+    .replace(/^\d+\. (.*$)/gm, "<li>$1</li>")
+    .replace(/\n\n/g, "</p><p>")
     .replace(/^(.+)$/gm, (match) => {
-      if (match.startsWith('<')) return match;
+      if (match.startsWith("<")) return match;
       return `<p>${match}</p>`;
     });
 }
@@ -270,64 +280,70 @@ function markdownToHtml(markdown: string): string {
 // Generate Markdown report
 function generateMarkdownReport(report: ReportData): string {
   const lines: string[] = [];
-  
+
   lines.push(`# ${report.title}`);
-  lines.push('');
-  lines.push(`> Generated: ${new Date(report.metadata.generatedAt).toLocaleDateString()} | Sources: ${report.metadata.totalSources} | Verified Claims: ${report.metadata.verifiedClaims} | Confidence: ${(report.metadata.confidenceScore * 100).toFixed(1)}%`);
-  lines.push('');
-  lines.push('---');
-  lines.push('');
-  lines.push('## Executive Summary');
-  lines.push('');
+  lines.push("");
+  lines.push(
+    `> Generated: ${new Date(report.metadata.generatedAt).toLocaleDateString()} | Sources: ${report.metadata.totalSources} | Verified Claims: ${report.metadata.verifiedClaims} | Confidence: ${(report.metadata.confidenceScore * 100).toFixed(1)}%`,
+  );
+  lines.push("");
+  lines.push("---");
+  lines.push("");
+  lines.push("## Executive Summary");
+  lines.push("");
   lines.push(report.summary);
-  lines.push('');
-  
+  lines.push("");
+
   for (const section of report.sections) {
     lines.push(`## ${section.heading}`);
-    lines.push('');
+    lines.push("");
     lines.push(section.content);
-    lines.push('');
+    lines.push("");
   }
-  
-  lines.push('---');
-  lines.push('');
-  lines.push('## References');
-  lines.push('');
-  
+
+  lines.push("---");
+  lines.push("");
+  lines.push("## References");
+  lines.push("");
+
   for (const cite of report.citations) {
     lines.push(`- ${cite.text}: [${cite.context}](${cite.context})`);
   }
-  
-  lines.push('');
-  lines.push('---');
-  lines.push('*Generated by NexusAI Research Engine • Manus 1.6 MAX*');
-  
-  return lines.join('\n');
+
+  lines.push("");
+  lines.push("---");
+  lines.push("*Generated by NexusAI Research Engine • Manus 1.6 MAX*");
+
+  return lines.join("\n");
 }
 
 // Generate JSON export
 function generateJSONReport(report: ReportData): string {
-  return JSON.stringify({
-    ...report,
-    exportedAt: new Date().toISOString(),
-    format: 'structured',
-    version: '1.0',
-  }, null, 2);
+  return JSON.stringify(
+    {
+      ...report,
+      exportedAt: new Date().toISOString(),
+      format: "structured",
+      version: "1.0",
+    },
+    null,
+    2,
+  );
 }
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
+  if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { report, format = 'html' } = await req.json();
+    const { report, format = "html" } = await req.json();
 
     if (!report) {
-      return new Response(
-        JSON.stringify({ error: 'Report data is required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: "Report data is required" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     let content: string;
@@ -335,47 +351,46 @@ serve(async (req) => {
     let filename: string;
 
     switch (format) {
-      case 'pdf':
+      case "pdf":
         content = generatePDFContent(report);
-        contentType = 'application/pdf';
-        filename = 'research-report.pdf';
+        contentType = "application/pdf";
+        filename = "research-report.pdf";
         break;
-      case 'html':
+      case "html":
         content = generateHTMLReport(report);
-        contentType = 'text/html; charset=utf-8';
-        filename = 'research-report.html';
+        contentType = "text/html; charset=utf-8";
+        filename = "research-report.html";
         break;
-      case 'markdown':
-      case 'md':
+      case "markdown":
+      case "md":
         content = generateMarkdownReport(report);
-        contentType = 'text/markdown; charset=utf-8';
-        filename = 'research-report.md';
+        contentType = "text/markdown; charset=utf-8";
+        filename = "research-report.md";
         break;
-      case 'json':
+      case "json":
         content = generateJSONReport(report);
-        contentType = 'application/json';
-        filename = 'research-report.json';
+        contentType = "application/json";
+        filename = "research-report.json";
         break;
       default:
         return new Response(
           JSON.stringify({ error: `Unsupported format: ${format}. Supported: pdf, html, markdown, json` }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
     }
 
     return new Response(content, {
       headers: {
         ...corsHeaders,
-        'Content-Type': contentType,
-        'Content-Disposition': `attachment; filename="${filename}"`,
+        "Content-Type": contentType,
+        "Content-Disposition": `attachment; filename="${filename}"`,
       },
     });
-
   } catch (error) {
-    console.error('[Export] Error:', error);
-    return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : 'Export failed' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    console.error("[Export] Error:", error);
+    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Export failed" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });
