@@ -1,46 +1,48 @@
 import { Globe2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 export interface CountryOption {
   value: string;
   label: string;
+  labelAr: string;
   flag: string;
 }
 
 export const COUNTRY_OPTIONS: CountryOption[] = [
-  { value: 'global', label: 'Global', flag: '🌍' },
-  { value: 'saudi-arabia', label: 'Saudi Arabia', flag: '🇸🇦' },
-  { value: 'uae', label: 'UAE', flag: '🇦🇪' },
-  { value: 'usa', label: 'United States', flag: '🇺🇸' },
-  { value: 'uk', label: 'United Kingdom', flag: '🇬🇧' },
-  { value: 'china', label: 'China', flag: '🇨🇳' },
-  { value: 'japan', label: 'Japan', flag: '🇯🇵' },
-  { value: 'germany', label: 'Germany', flag: '🇩🇪' },
-  { value: 'france', label: 'France', flag: '🇫🇷' },
-  { value: 'india', label: 'India', flag: '🇮🇳' },
-  { value: 'brazil', label: 'Brazil', flag: '🇧🇷' },
-  { value: 'canada', label: 'Canada', flag: '🇨🇦' },
-  { value: 'australia', label: 'Australia', flag: '🇦🇺' },
-  { value: 'south-korea', label: 'South Korea', flag: '🇰🇷' },
-  { value: 'singapore', label: 'Singapore', flag: '🇸🇬' },
-  { value: 'hong-kong', label: 'Hong Kong', flag: '🇭🇰' },
-  { value: 'switzerland', label: 'Switzerland', flag: '🇨🇭' },
-  { value: 'netherlands', label: 'Netherlands', flag: '🇳🇱' },
-  { value: 'sweden', label: 'Sweden', flag: '🇸🇪' },
-  { value: 'spain', label: 'Spain', flag: '🇪🇸' },
-  { value: 'italy', label: 'Italy', flag: '🇮🇹' },
-  { value: 'russia', label: 'Russia', flag: '🇷🇺' },
-  { value: 'mexico', label: 'Mexico', flag: '🇲🇽' },
-  { value: 'indonesia', label: 'Indonesia', flag: '🇮🇩' },
-  { value: 'turkey', label: 'Turkey', flag: '🇹🇷' },
-  { value: 'egypt', label: 'Egypt', flag: '🇪🇬' },
-  { value: 'south-africa', label: 'South Africa', flag: '🇿🇦' },
-  { value: 'nigeria', label: 'Nigeria', flag: '🇳🇬' },
-  { value: 'qatar', label: 'Qatar', flag: '🇶🇦' },
-  { value: 'kuwait', label: 'Kuwait', flag: '🇰🇼' },
-  { value: 'bahrain', label: 'Bahrain', flag: '🇧🇭' },
-  { value: 'oman', label: 'Oman', flag: '🇴🇲' },
+  { value: 'global', label: 'Global', labelAr: 'عالمي', flag: '🌍' },
+  { value: 'saudi-arabia', label: 'Saudi Arabia', labelAr: 'المملكة العربية السعودية', flag: '🇸🇦' },
+  { value: 'uae', label: 'UAE', labelAr: 'الإمارات', flag: '🇦🇪' },
+  { value: 'usa', label: 'United States', labelAr: 'الولايات المتحدة', flag: '🇺🇸' },
+  { value: 'uk', label: 'United Kingdom', labelAr: 'المملكة المتحدة', flag: '🇬🇧' },
+  { value: 'china', label: 'China', labelAr: 'الصين', flag: '🇨🇳' },
+  { value: 'japan', label: 'Japan', labelAr: 'اليابان', flag: '🇯🇵' },
+  { value: 'germany', label: 'Germany', labelAr: 'ألمانيا', flag: '🇩🇪' },
+  { value: 'france', label: 'France', labelAr: 'فرنسا', flag: '🇫🇷' },
+  { value: 'india', label: 'India', labelAr: 'الهند', flag: '🇮🇳' },
+  { value: 'brazil', label: 'Brazil', labelAr: 'البرازيل', flag: '🇧🇷' },
+  { value: 'canada', label: 'Canada', labelAr: 'كندا', flag: '🇨🇦' },
+  { value: 'australia', label: 'Australia', labelAr: 'أستراليا', flag: '🇦🇺' },
+  { value: 'south-korea', label: 'South Korea', labelAr: 'كوريا الجنوبية', flag: '🇰🇷' },
+  { value: 'singapore', label: 'Singapore', labelAr: 'سنغافورة', flag: '🇸🇬' },
+  { value: 'hong-kong', label: 'Hong Kong', labelAr: 'هونغ كونغ', flag: '🇭🇰' },
+  { value: 'switzerland', label: 'Switzerland', labelAr: 'سويسرا', flag: '🇨🇭' },
+  { value: 'netherlands', label: 'Netherlands', labelAr: 'هولندا', flag: '🇳🇱' },
+  { value: 'sweden', label: 'Sweden', labelAr: 'السويد', flag: '🇸🇪' },
+  { value: 'spain', label: 'Spain', labelAr: 'إسبانيا', flag: '🇪🇸' },
+  { value: 'italy', label: 'Italy', labelAr: 'إيطاليا', flag: '🇮🇹' },
+  { value: 'russia', label: 'Russia', labelAr: 'روسيا', flag: '🇷🇺' },
+  { value: 'mexico', label: 'Mexico', labelAr: 'المكسيك', flag: '🇲🇽' },
+  { value: 'indonesia', label: 'Indonesia', labelAr: 'إندونيسيا', flag: '🇮🇩' },
+  { value: 'turkey', label: 'Turkey', labelAr: 'تركيا', flag: '🇹🇷' },
+  { value: 'egypt', label: 'Egypt', labelAr: 'مصر', flag: '🇪🇬' },
+  { value: 'south-africa', label: 'South Africa', labelAr: 'جنوب أفريقيا', flag: '🇿🇦' },
+  { value: 'nigeria', label: 'Nigeria', labelAr: 'نيجيريا', flag: '🇳🇬' },
+  { value: 'qatar', label: 'Qatar', labelAr: 'قطر', flag: '🇶🇦' },
+  { value: 'kuwait', label: 'Kuwait', labelAr: 'الكويت', flag: '🇰🇼' },
+  { value: 'bahrain', label: 'Bahrain', labelAr: 'البحرين', flag: '🇧🇭' },
+  { value: 'oman', label: 'Oman', labelAr: 'عُمان', flag: '🇴🇲' },
 ];
 
 interface CountryFilterProps {
@@ -58,7 +60,10 @@ export const formatCountryForQuery = (countryValue: string): string => {
 };
 
 export const CountryFilter = ({ value, onChange }: CountryFilterProps) => {
+  const { isRTL } = useLanguage();
   const selectedCountry = COUNTRY_OPTIONS.find(c => c.value === value);
+  
+  const getLabel = (option: CountryOption) => isRTL ? option.labelAr : option.label;
   
   return (
     <TooltipProvider>
@@ -72,7 +77,7 @@ export const CountryFilter = ({ value, onChange }: CountryFilterProps) => {
                   {selectedCountry && (
                     <span className="flex items-center gap-1.5">
                       <span>{selectedCountry.flag}</span>
-                      <span className="truncate">{selectedCountry.label}</span>
+                      <span className="truncate">{getLabel(selectedCountry)}</span>
                     </span>
                   )}
                 </SelectValue>
@@ -82,7 +87,7 @@ export const CountryFilter = ({ value, onChange }: CountryFilterProps) => {
                   <SelectItem key={option.value} value={option.value} className="text-xs">
                     <div className="flex items-center gap-2">
                       <span>{option.flag}</span>
-                      <span>{option.label}</span>
+                      <span>{getLabel(option)}</span>
                     </div>
                   </SelectItem>
                 ))}
@@ -91,9 +96,9 @@ export const CountryFilter = ({ value, onChange }: CountryFilterProps) => {
           </div>
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-xs">
-          <p className="font-medium">Country/Region Filter</p>
+          <p className="font-medium">{isRTL ? 'فلتر الدولة/المنطقة' : 'Country/Region Filter'}</p>
           <p className="text-xs text-muted-foreground mt-1">
-            Focus research on a specific country or market
+            {isRTL ? 'ركز البحث على دولة أو سوق معين' : 'Focus research on a specific country or market'}
           </p>
         </TooltipContent>
       </Tooltip>

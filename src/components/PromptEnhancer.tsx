@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 interface PromptEnhancerProps {
   query: string;
@@ -14,6 +15,7 @@ interface PromptEnhancerProps {
 }
 
 export const PromptEnhancer = ({ query, onEnhanced, disabled, timeContext }: PromptEnhancerProps) => {
+  const { t, isRTL } = useLanguage();
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [isEnhanced, setIsEnhanced] = useState(false);
 
@@ -27,7 +29,6 @@ export const PromptEnhancer = ({ query, onEnhanced, disabled, timeContext }: Pro
       const { data, error } = await supabase.functions.invoke('enhance-prompt', {
         body: { 
           description: query,
-          // Include time context in the enhancement request
           geographic_focus: timeContext || undefined,
         },
       });
@@ -39,16 +40,15 @@ export const PromptEnhancer = ({ query, onEnhanced, disabled, timeContext }: Pro
       if (data?.enhanced_description) {
         onEnhanced(data.enhanced_description);
         setIsEnhanced(true);
-        toast.success('Query enhanced with AI');
+        toast.success(isRTL ? 'تم تحسين الاستعلام بالذكاء الاصطناعي' : 'Query enhanced with AI');
         
-        // Reset enhanced state after a delay
         setTimeout(() => setIsEnhanced(false), 3000);
       } else {
         throw new Error('No enhanced query returned');
       }
     } catch (error) {
       console.error('Enhancement failed:', error);
-      toast.error('Failed to enhance query. Please try again.');
+      toast.error(isRTL ? 'فشل تحسين الاستعلام. يرجى المحاولة مرة أخرى.' : 'Failed to enhance query. Please try again.');
     } finally {
       setIsEnhancing(false);
     }
@@ -100,7 +100,11 @@ export const PromptEnhancer = ({ query, onEnhanced, disabled, timeContext }: Pro
               )}
             </AnimatePresence>
             <span className="hidden sm:inline">
-              {isEnhancing ? 'Enhancing...' : isEnhanced ? 'Enhanced!' : 'AI Enhance'}
+              {isEnhancing 
+                ? (isRTL ? 'جاري التحسين...' : 'Enhancing...') 
+                : isEnhanced 
+                  ? (isRTL ? 'تم التحسين!' : 'Enhanced!') 
+                  : t.search.enhancePrompt}
             </span>
           </Button>
         </TooltipTrigger>
@@ -108,11 +112,10 @@ export const PromptEnhancer = ({ query, onEnhanced, disabled, timeContext }: Pro
           <div className="space-y-1">
             <p className="font-medium flex items-center gap-1.5">
               <Sparkles className="w-3 h-3" />
-              AI Prompt Enhancement
+              {isRTL ? 'تحسين الاستعلام بالذكاء الاصطناعي' : 'AI Prompt Enhancement'}
             </p>
             <p className="text-xs text-muted-foreground">
-              Use AI to improve your query for better, more accurate research results. 
-              The AI will make your query more specific and comprehensive.
+              {t.search.enhancePromptDesc}
             </p>
           </div>
         </TooltipContent>

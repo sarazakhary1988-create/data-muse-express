@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 export type TimeFrameType = 'all' | 'year' | 'quarter' | 'month' | 'dateRange' | 'singleDate';
 
@@ -31,42 +32,49 @@ const months = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'
 ];
+const monthsAr = [
+  'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+  'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'
+];
 const quarters = [
-  { value: 1, label: 'Q1 (Jan-Mar)' },
-  { value: 2, label: 'Q2 (Apr-Jun)' },
-  { value: 3, label: 'Q3 (Jul-Sep)' },
-  { value: 4, label: 'Q4 (Oct-Dec)' },
+  { value: 1, label: 'Q1 (Jan-Mar)', labelAr: 'ر1 (يناير-مارس)' },
+  { value: 2, label: 'Q2 (Apr-Jun)', labelAr: 'ر2 (أبريل-يونيو)' },
+  { value: 3, label: 'Q3 (Jul-Sep)', labelAr: 'ر3 (يوليو-سبتمبر)' },
+  { value: 4, label: 'Q4 (Oct-Dec)', labelAr: 'ر4 (أكتوبر-ديسمبر)' },
 ];
 
 export const TimeFrameFilter = ({ value, onChange }: TimeFrameFilterProps) => {
+  const { isRTL } = useLanguage();
   const [open, setOpen] = useState(false);
   const [datePickerMode, setDatePickerMode] = useState<'start' | 'end' | 'single'>('start');
+
+  const monthList = isRTL ? monthsAr : months;
 
   const getDisplayLabel = (): string => {
     switch (value.type) {
       case 'all':
-        return 'All Time';
+        return isRTL ? 'كل الوقت' : 'All Time';
       case 'year':
-        return value.year ? `Year ${value.year}` : 'Select Year';
+        return value.year ? `${isRTL ? 'سنة' : 'Year'} ${value.year}` : (isRTL ? 'اختر السنة' : 'Select Year');
       case 'quarter':
         return value.year && value.quarter 
-          ? `Q${value.quarter} ${value.year}` 
-          : 'Select Quarter';
+          ? `${isRTL ? 'ر' : 'Q'}${value.quarter} ${value.year}` 
+          : (isRTL ? 'اختر الربع' : 'Select Quarter');
       case 'month':
         return value.year && value.month !== undefined 
-          ? `${months[value.month]} ${value.year}` 
-          : 'Select Month';
+          ? `${monthList[value.month]} ${value.year}` 
+          : (isRTL ? 'اختر الشهر' : 'Select Month');
       case 'dateRange':
         if (value.startDate && value.endDate) {
           return `${format(value.startDate, 'MMM d, yyyy')} - ${format(value.endDate, 'MMM d, yyyy')}`;
         }
-        return 'Select Date Range';
+        return isRTL ? 'اختر نطاق التاريخ' : 'Select Date Range';
       case 'singleDate':
         return value.singleDate 
           ? format(value.singleDate, 'MMM d, yyyy') 
-          : 'Select Date';
+          : (isRTL ? 'اختر التاريخ' : 'Select Date');
       default:
-        return 'Time Frame';
+        return isRTL ? 'الإطار الزمني' : 'Time Frame';
     }
   };
 
@@ -108,8 +116,8 @@ export const TimeFrameFilter = ({ value, onChange }: TimeFrameFilterProps) => {
           <CalendarDays className="w-3 h-3" />
           <span className="max-w-[120px] truncate">{getDisplayLabel()}</span>
           {isActive && (
-            <Badge variant="secondary" className="h-4 px-1 text-[10px]">
-              Active
+          <Badge variant="secondary" className="h-4 px-1 text-[10px]">
+              {isRTL ? 'نشط' : 'Active'}
             </Badge>
           )}
           <ChevronDown className="w-3 h-3 opacity-50" />
@@ -117,27 +125,27 @@ export const TimeFrameFilter = ({ value, onChange }: TimeFrameFilterProps) => {
       </PopoverTrigger>
       <PopoverContent className="w-80 p-0" align="start">
         <div className="p-3 border-b border-border">
-          <p className="text-sm font-medium">Time Frame Filter</p>
+          <p className="text-sm font-medium">{isRTL ? 'فلتر الإطار الزمني' : 'Time Frame Filter'}</p>
           <p className="text-xs text-muted-foreground mt-1">
-            Filter research results by time period
+            {isRTL ? 'فلتر نتائج البحث حسب الفترة الزمنية' : 'Filter research results by time period'}
           </p>
         </div>
 
         <div className="p-3 space-y-3">
           {/* Type Selector */}
           <div className="space-y-2">
-            <label className="text-xs font-medium text-muted-foreground">Filter Type</label>
+            <label className="text-xs font-medium text-muted-foreground">{isRTL ? 'نوع الفلتر' : 'Filter Type'}</label>
             <Select value={value.type} onValueChange={(v) => handleTypeChange(v as TimeFrameType)}>
               <SelectTrigger className="h-8 text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Time</SelectItem>
-                <SelectItem value="year">Specific Year</SelectItem>
-                <SelectItem value="quarter">Quarter</SelectItem>
-                <SelectItem value="month">Month</SelectItem>
-                <SelectItem value="dateRange">Date Range</SelectItem>
-                <SelectItem value="singleDate">Single Date</SelectItem>
+                <SelectItem value="all">{isRTL ? 'كل الوقت' : 'All Time'}</SelectItem>
+                <SelectItem value="year">{isRTL ? 'سنة محددة' : 'Specific Year'}</SelectItem>
+                <SelectItem value="quarter">{isRTL ? 'ربع سنوي' : 'Quarter'}</SelectItem>
+                <SelectItem value="month">{isRTL ? 'شهر' : 'Month'}</SelectItem>
+                <SelectItem value="dateRange">{isRTL ? 'نطاق تاريخ' : 'Date Range'}</SelectItem>
+                <SelectItem value="singleDate">{isRTL ? 'تاريخ محدد' : 'Single Date'}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -151,13 +159,13 @@ export const TimeFrameFilter = ({ value, onChange }: TimeFrameFilterProps) => {
                 exit={{ opacity: 0, height: 0 }}
                 className="space-y-2"
               >
-                <label className="text-xs font-medium text-muted-foreground">Year</label>
+                <label className="text-xs font-medium text-muted-foreground">{isRTL ? 'السنة' : 'Year'}</label>
                 <Select 
                   value={value.year?.toString()} 
                   onValueChange={(v) => onChange({ ...value, year: parseInt(v) })}
                 >
                   <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder="Select year" />
+                    <SelectValue placeholder={isRTL ? 'اختر السنة' : 'Select year'} />
                   </SelectTrigger>
                   <SelectContent>
                     {years.map((year) => (
@@ -180,18 +188,18 @@ export const TimeFrameFilter = ({ value, onChange }: TimeFrameFilterProps) => {
                 exit={{ opacity: 0, height: 0 }}
                 className="space-y-2"
               >
-                <label className="text-xs font-medium text-muted-foreground">Quarter</label>
+                <label className="text-xs font-medium text-muted-foreground">{isRTL ? 'الربع' : 'Quarter'}</label>
                 <Select 
                   value={value.quarter?.toString()} 
                   onValueChange={(v) => onChange({ ...value, quarter: parseInt(v) })}
                 >
                   <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder="Select quarter" />
+                    <SelectValue placeholder={isRTL ? 'اختر الربع' : 'Select quarter'} />
                   </SelectTrigger>
                   <SelectContent>
                     {quarters.map((q) => (
                       <SelectItem key={q.value} value={q.value.toString()}>
-                        {q.label}
+                        {isRTL ? q.labelAr : q.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -209,16 +217,16 @@ export const TimeFrameFilter = ({ value, onChange }: TimeFrameFilterProps) => {
                 exit={{ opacity: 0, height: 0 }}
                 className="space-y-2"
               >
-                <label className="text-xs font-medium text-muted-foreground">Month</label>
+                <label className="text-xs font-medium text-muted-foreground">{isRTL ? 'الشهر' : 'Month'}</label>
                 <Select 
                   value={value.month?.toString()} 
                   onValueChange={(v) => onChange({ ...value, month: parseInt(v) })}
                 >
                   <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder="Select month" />
+                    <SelectValue placeholder={isRTL ? 'اختر الشهر' : 'Select month'} />
                   </SelectTrigger>
                   <SelectContent>
-                    {months.map((month, idx) => (
+                    {monthList.map((month, idx) => (
                       <SelectItem key={idx} value={idx.toString()}>
                         {month}
                       </SelectItem>
@@ -246,7 +254,7 @@ export const TimeFrameFilter = ({ value, onChange }: TimeFrameFilterProps) => {
                       className="flex-1 h-7 text-xs"
                       onClick={() => setDatePickerMode('start')}
                     >
-                      Start: {value.startDate ? format(value.startDate, 'MMM d') : 'Select'}
+                      {isRTL ? 'البداية:' : 'Start:'} {value.startDate ? format(value.startDate, 'MMM d') : (isRTL ? 'اختر' : 'Select')}
                     </Button>
                     <Button
                       variant={datePickerMode === 'end' ? 'default' : 'outline'}
@@ -254,7 +262,7 @@ export const TimeFrameFilter = ({ value, onChange }: TimeFrameFilterProps) => {
                       className="flex-1 h-7 text-xs"
                       onClick={() => setDatePickerMode('end')}
                     >
-                      End: {value.endDate ? format(value.endDate, 'MMM d') : 'Select'}
+                      {isRTL ? 'النهاية:' : 'End:'} {value.endDate ? format(value.endDate, 'MMM d') : (isRTL ? 'اختر' : 'Select')}
                     </Button>
                   </div>
                 )}
@@ -287,7 +295,7 @@ export const TimeFrameFilter = ({ value, onChange }: TimeFrameFilterProps) => {
                 setOpen(false);
               }}
             >
-              Clear Filter
+              {isRTL ? 'مسح الفلتر' : 'Clear Filter'}
             </Button>
           </div>
         )}
