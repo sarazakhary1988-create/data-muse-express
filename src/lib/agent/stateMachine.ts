@@ -187,25 +187,41 @@ export class AgentStateMachine {
       t => t.from === this.currentState && t.to === to
     );
 
+    console.log(`[StateMachine] Attempting transition: ${this.currentState} → ${to}`);
+    console.log(`[StateMachine] Current context:`, {
+      progress: this.context.progress,
+      resultsCount: this.context.results.length,
+      quality: this.context.quality,
+      errorsCount: this.context.errors.length,
+      hasPlan: !!this.context.plan
+    });
+
     if (!validTransition) {
-      console.warn(`Invalid transition from ${this.currentState} to ${to}`);
+      console.error(`[StateMachine] ❌ Invalid transition: no path from ${this.currentState} to ${to}`);
+      console.log(`[StateMachine] Valid transitions from ${this.currentState}:`, this.getValidTransitions());
       return false;
     }
 
     // Check condition if exists
-    if (validTransition.condition && !validTransition.condition(this.context)) {
-      console.warn(`Transition condition not met for ${this.currentState} to ${to}`);
-      return false;
+    if (validTransition.condition) {
+      const conditionMet = validTransition.condition(this.context);
+      console.log(`[StateMachine] Condition check for ${this.currentState} → ${to}: ${conditionMet ? '✅ PASSED' : '❌ FAILED'}`);
+      if (!conditionMet) {
+        console.warn(`[StateMachine] Transition blocked - condition not met`);
+        return false;
+      }
     }
 
     // Exit current state
     const currentHandler = this.stateHandlers.get(this.currentState);
     if (currentHandler?.onExit) {
+      console.log(`[StateMachine] Running onExit for ${this.currentState}`);
       await currentHandler.onExit(this.context);
     }
 
     // Execute transition action
     if (validTransition.action) {
+      console.log(`[StateMachine] Running transition action`);
       await validTransition.action(this.context);
     }
 
@@ -217,13 +233,14 @@ export class AgentStateMachine {
     // Enter new state
     const newHandler = this.stateHandlers.get(to);
     if (newHandler?.onEnter) {
+      console.log(`[StateMachine] Running onEnter for ${to}`);
       await newHandler.onEnter(this.context);
     }
 
     // Notify listeners
     this.notifyListeners();
 
-    console.log(`State transition: ${previousState} -> ${to}`);
+    console.log(`[StateMachine] ✅ Transition complete: ${previousState} → ${to} | Progress: ${this.context.progress}%`);
     return true;
   }
 
@@ -245,12 +262,15 @@ export class AgentStateMachine {
   }
 
   public updateContext(updates: Partial<DecisionContext>): void {
+    console.log(`[StateMachine] Context update:`, updates);
     this.context = { ...this.context, ...updates };
     this.notifyListeners();
   }
 
   public updateQuality(quality: Partial<QualityScore>): void {
+    console.log(`[StateMachine] Quality update:`, quality);
     this.context.quality = { ...this.context.quality, ...quality };
+    console.log(`[StateMachine] New overall quality: ${(this.context.quality.overall * 100).toFixed(1)}%`);
     this.notifyListeners();
   }
 
