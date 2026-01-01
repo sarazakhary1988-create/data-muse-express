@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { AgentState, QualityScore, ExecutionMetrics, ClaimVerification, ResearchPlan } from '@/lib/agent/types';
 
 export interface ResearchTask {
   id: string;
@@ -58,6 +59,16 @@ export interface DeepVerifySourceConfig {
   category: 'official' | 'regulator' | 'news' | 'international';
   searchTerms: string[];
   enabled: boolean;
+}
+
+// Agent state tracking
+export interface AgentStateInfo {
+  state: AgentState;
+  quality: QualityScore;
+  metrics: ExecutionMetrics;
+  verifications: ClaimVerification[];
+  plan: ResearchPlan | null;
+  lastDecision: { message: string; confidence: number } | null;
 }
 
 // Default Deep Verify sources configuration
@@ -120,6 +131,24 @@ export const DEFAULT_DEEP_VERIFY_SOURCES: DeepVerifySourceConfig[] = [
   },
 ];
 
+const defaultQualityScore: QualityScore = {
+  overall: 0,
+  accuracy: 0,
+  completeness: 0,
+  freshness: 0,
+  sourceQuality: 0,
+  claimVerification: 0,
+};
+
+const defaultMetrics: ExecutionMetrics = {
+  totalTasks: 0,
+  completedTasks: 0,
+  failedTasks: 0,
+  averageTaskTime: 0,
+  parallelEfficiency: 0,
+  retryCount: 0,
+};
+
 interface ResearchStore {
   tasks: ResearchTask[];
   currentTask: ResearchTask | null;
@@ -129,6 +158,9 @@ interface ResearchStore {
   deepVerifyMode: boolean;
   deepVerifySources: DeepVerifySource[];
   deepVerifySourceConfigs: DeepVerifySourceConfig[];
+  
+  // Agent state
+  agentState: AgentStateInfo;
   
   // Actions
   setSearchQuery: (query: string) => void;
@@ -145,6 +177,15 @@ interface ResearchStore {
   setAllSourcesEnabled: (enabled: boolean) => void;
   resetSourceConfigs: () => void;
   clearTasks: () => void;
+  
+  // Agent state actions
+  setAgentState: (state: AgentState) => void;
+  setAgentQuality: (quality: QualityScore) => void;
+  setAgentMetrics: (metrics: ExecutionMetrics) => void;
+  setAgentVerifications: (verifications: ClaimVerification[]) => void;
+  setAgentPlan: (plan: ResearchPlan | null) => void;
+  setAgentDecision: (message: string, confidence: number) => void;
+  resetAgentState: () => void;
 }
 
 export const useResearchStore = create<ResearchStore>()(
@@ -158,6 +199,16 @@ export const useResearchStore = create<ResearchStore>()(
       deepVerifyMode: false,
       deepVerifySources: [],
       deepVerifySourceConfigs: DEFAULT_DEEP_VERIFY_SOURCES,
+      
+      // Agent state
+      agentState: {
+        state: 'idle' as AgentState,
+        quality: defaultQualityScore,
+        metrics: defaultMetrics,
+        verifications: [],
+        plan: null,
+        lastDecision: null,
+      },
       
       setSearchQuery: (query) => set({ searchQuery: query }),
       
@@ -208,6 +259,42 @@ export const useResearchStore = create<ResearchStore>()(
       resetSourceConfigs: () => set({ deepVerifySourceConfigs: DEFAULT_DEEP_VERIFY_SOURCES }),
       
       clearTasks: () => set({ tasks: [], currentTask: null, reports: [] }),
+      
+      // Agent state actions
+      setAgentState: (state) => set((s) => ({
+        agentState: { ...s.agentState, state }
+      })),
+      
+      setAgentQuality: (quality) => set((s) => ({
+        agentState: { ...s.agentState, quality }
+      })),
+      
+      setAgentMetrics: (metrics) => set((s) => ({
+        agentState: { ...s.agentState, metrics }
+      })),
+      
+      setAgentVerifications: (verifications) => set((s) => ({
+        agentState: { ...s.agentState, verifications }
+      })),
+      
+      setAgentPlan: (plan) => set((s) => ({
+        agentState: { ...s.agentState, plan }
+      })),
+      
+      setAgentDecision: (message, confidence) => set((s) => ({
+        agentState: { ...s.agentState, lastDecision: { message, confidence } }
+      })),
+      
+      resetAgentState: () => set({
+        agentState: {
+          state: 'idle' as AgentState,
+          quality: defaultQualityScore,
+          metrics: defaultMetrics,
+          verifications: [],
+          plan: null,
+          lastDecision: null,
+        }
+      }),
     }),
     {
       name: 'research-store',

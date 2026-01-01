@@ -7,3 +7,5 @@ export { CriticAgent, criticAgent } from './criticAgent';
 export { MemorySystem, memorySystem } from './memorySystem';
 export { DecisionEngine, decisionEngine } from './decisionEngine';
 export { ParallelExecutor, parallelExecutor } from './parallelExecutor';
+export { ResearchAgent, researchAgent } from './researchAgent';
+export type { AgentResearchResult, ResearchAgentCallbacks } from './researchAgent';
