@@ -8,7 +8,11 @@ import {
   ChevronRight,
   Sparkles,
   History as HistoryIcon,
-  Link
+  Link,
+  LayoutTemplate,
+  Lightbulb,
+  Users,
+  Puzzle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Logo } from '@/components/Logo';
@@ -17,7 +21,7 @@ import { SettingsDialog } from '@/components/SettingsDialog';
 import { HelpDialog } from '@/components/HelpDialog';
 import { cn } from '@/lib/utils';
 
-export type ViewType = 'search' | 'results' | 'report' | 'history' | 'scraper' | 'scheduled';
+export type ViewType = 'search' | 'results' | 'report' | 'history' | 'scraper' | 'scheduled' | 'templates' | 'hypothesis' | 'leads' | 'integrations';
 
 interface SidebarProps {
   activeView: ViewType;
@@ -26,8 +30,12 @@ interface SidebarProps {
 
 const menuItems = [
   { id: 'search', label: 'Research', icon: Globe, description: 'Start new research' },
+  { id: 'templates', label: 'Templates', icon: LayoutTemplate, description: 'Pre-built workflows' },
+  { id: 'hypothesis', label: 'Hypothesis Lab', icon: Lightbulb, description: 'Test theories' },
+  { id: 'leads', label: 'Lead Enrichment', icon: Users, description: 'Prospect research' },
   { id: 'scheduled', label: 'Scheduled Tasks', icon: Sparkles, description: 'Automated research' },
-  { id: 'scraper', label: 'URL Scraper', icon: Link, description: 'Scrape any website' },
+  { id: 'scraper', label: 'URL Scraper', icon: Link, description: 'Advanced scraping' },
+  { id: 'integrations', label: 'Integrations', icon: Puzzle, description: 'Connect tools' },
   { id: 'results', label: 'Results', icon: Layers, description: 'View findings' },
   { id: 'report', label: 'Reports', icon: FileText, description: 'Generated reports' },
   { id: 'history', label: 'History', icon: HistoryIcon, description: 'Past research' },
