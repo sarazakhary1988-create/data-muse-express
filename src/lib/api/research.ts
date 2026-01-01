@@ -171,17 +171,53 @@ export const researchApi = {
     }
   },
 
-  // External-search fallback: do NOT fabricate sources/URLs.
-  // Returning synthetic results causes incorrect citations and "wrong data".
+  // AI web search fallback: uses Lovable AI to provide web-grounded results
   async fallbackSearch(query: string, limit: number): Promise<SearchResult> {
-    console.log('[ResearchAPI] External search unavailable - returning empty fallback results');
+    console.log('[ResearchAPI] Using AI web search fallback for:', query);
 
-    return {
-      success: true,
-      fallback: true,
-      data: [],
-      error: 'External search not configured',
-    };
+    try {
+      const { data, error } = await supabase.functions.invoke('ai-web-search', {
+        body: { query, limit },
+      });
+
+      if (error) {
+        console.warn('AI web search error:', error);
+        return {
+          success: true,
+          fallback: true,
+          data: [],
+          error: 'Search not available',
+        };
+      }
+
+      if (data?.success && data?.data?.length > 0) {
+        console.log('[ResearchAPI] AI web search returned', data.data.length, 'results');
+        return {
+          success: true,
+          fallback: true,
+          data: data.data.map((item: { url: string; title: string; description?: string; markdown?: string }) => ({
+            url: item.url,
+            title: item.title,
+            description: item.description || '',
+            markdown: item.markdown || item.description || '',
+          })),
+        };
+      }
+
+      return {
+        success: true,
+        fallback: true,
+        data: [],
+      };
+    } catch (err) {
+      console.warn('AI web search fallback error:', err);
+      return {
+        success: true,
+        fallback: true,
+        data: [],
+        error: 'Search fallback failed',
+      };
+    }
   },
 
   // Parse AI-generated search results
