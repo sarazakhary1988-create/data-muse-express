@@ -133,80 +133,82 @@ export const UrlScraper = ({ onBack }: UrlScraperProps) => {
     setIsAiProcessing(true);
 
     try {
-      // Parse the user's command to extract URL and instructions
-      const urlMatch = aiInput.match(/https?:\/\/[^\s]+/);
-      const extractedUrl = urlMatch ? urlMatch[0] : url;
-      
-      if (extractedUrl) {
-        setUrl(extractedUrl);
-      }
-
-      // Determine what formats to use based on the command
-      const command = aiInput.toLowerCase();
-      const newFormats: ScrapeFormat[] = ['markdown'];
-      
-      if (command.includes('screenshot') || command.includes('image')) {
-        newFormats.push('screenshot');
-      }
-      if (command.includes('link') || command.includes('url')) {
-        newFormats.push('links');
-      }
-      if (command.includes('summar') || command.includes('key point')) {
-        newFormats.push('summary');
-      }
-      if (command.includes('brand') || command.includes('color') || command.includes('logo')) {
-        newFormats.push('branding');
-      }
-
-      setOptions(prev => ({ ...prev, formats: [...new Set(newFormats)] }));
-
-      // If we have a URL, perform the scrape
-      if (extractedUrl) {
-        const scrapeResult = await deepScrape(extractedUrl);
-        
-        if (scrapeResult) {
-          setResult(scrapeResult);
-          
-          // Generate AI response based on the command
-          let responseContent = `I've scraped **${extractedUrl}** for you.\n\n`;
-          
-          if (command.includes('price') || command.includes('cost')) {
-            responseContent += "**Extracted Prices:** I've looked for pricing information. Check the Content tab for extracted text containing prices.\n\n";
-          }
-          if (command.includes('email') || command.includes('contact')) {
-            responseContent += "**Contact Information:** Scanned for emails and phone numbers. Review the extracted content.\n\n";
-          }
-          if (command.includes('bullet') || command.includes('point') || command.includes('list')) {
-            responseContent += "**Formatted Content:** The content has been extracted. You can copy it from the Markdown tab.\n\n";
-          }
-          
-          responseContent += `**Results:**\n- Content extracted successfully\n- Format: ${options.formats.join(', ')}\n\nYou can view the results in the tabs below.`;
-
-          const assistantMessage: AIChatMessage = {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant',
-            content: responseContent,
-            timestamp: new Date(),
-          };
-          setAiChatMessages(prev => [...prev, assistantMessage]);
+      // Call the AI scrape command edge function
+      const { data, error } = await supabase.functions.invoke('ai-scrape-command', {
+        body: {
+          command: aiInput,
+          url: url || undefined,
+          conversationHistory: aiChatMessages.slice(-10).map(msg => ({
+            role: msg.role,
+            content: msg.content
+          }))
         }
-      } else {
-        const assistantMessage: AIChatMessage = {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: "I need a URL to scrape. Please provide a URL in your message (e.g., 'Scrape https://example.com and get all prices') or enter it in the URL field above.",
-          timestamp: new Date(),
-        };
-        setAiChatMessages(prev => [...prev, assistantMessage]);
+      });
+
+      if (error) throw error;
+
+      // Update URL if one was extracted
+      if (data?.intent?.url && !url) {
+        setUrl(data.intent.url);
       }
+
+      // Update scrape formats based on AI recommendation
+      if (data?.scrapeConfig?.formats) {
+        setOptions(prev => ({ 
+          ...prev, 
+          formats: data.scrapeConfig.formats as ScrapeFormat[]
+        }));
+      }
+
+      // If we have scrape results, display them
+      if (data?.scrapeResult?.hasContent) {
+        setResult(data.scrapeResult);
+      }
+
+      // Create assistant response
+      let responseContent = data?.response || "I've processed your request.";
+      
+      // Add extracted data summary if available
+      if (data?.extractedData) {
+        const extracted = data.extractedData;
+        if (extracted.emails?.length || extracted.prices?.length || 
+            extracted.phones?.length || extracted.links?.length) {
+          // Data is already included in the response from the backend
+        }
+      }
+
+      // Add scrape status
+      if (data?.scrapeResult?.success) {
+        responseContent += `\n\n✅ **Scrape Complete**\n- URL: ${data.scrapeResult.url}\n- Word count: ${data.scrapeResult.wordCount}`;
+        if (data.scrapeResult.metadata?.title) {
+          responseContent += `\n- Title: ${data.scrapeResult.metadata.title}`;
+        }
+      } else if (data?.needsUrl) {
+        responseContent += "\n\n⚠️ Please provide a URL to scrape, either in the input field above or in your message.";
+      }
+
+      const assistantMessage: AIChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: responseContent,
+        timestamp: new Date(),
+      };
+      setAiChatMessages(prev => [...prev, assistantMessage]);
+
     } catch (error: any) {
+      console.error('AI chat error:', error);
       const errorMessage: AIChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `Sorry, I encountered an error: ${error.message}. Please try again or check if the URL is accessible.`,
+        content: `Sorry, I encountered an error: ${error.message}. Please try again.`,
         timestamp: new Date(),
       };
       setAiChatMessages(prev => [...prev, errorMessage]);
+      toast({
+        title: "AI Command Failed",
+        description: error.message,
+        variant: "destructive"
+      });
     } finally {
       setIsAiProcessing(false);
       setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
