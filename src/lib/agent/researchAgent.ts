@@ -325,17 +325,30 @@ export class ResearchAgent {
   private async executeSearch(query: string, deepVerifyEnabled: boolean): Promise<any[]> {
     const maxRetries = 3;
     let lastError: string = '';
+    let usedFallback = false;
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         console.log(`[ResearchAgent] Search attempt ${attempt}/${maxRetries}`);
         
-        // Increased search limits: 15 for deep verify, 20 for regular
         const searchResult = await researchApi.search(query, deepVerifyEnabled ? 15 : 20, false);
         
+        // Check if fallback was used
+        if (searchResult.fallback) {
+          usedFallback = true;
+          console.log('[ResearchAgent] Using fallback search (external tools unavailable)');
+          this.callbacks.onDecision?.('External search unavailable - using AI-powered research', 0.7);
+        }
+        
         if (searchResult.success && searchResult.data && searchResult.data.length > 0) {
-          console.log(`[ResearchAgent] Search successful: ${searchResult.data.length} results`);
+          console.log(`[ResearchAgent] Search successful: ${searchResult.data.length} results${usedFallback ? ' (fallback)' : ''}`);
           return searchResult.data;
+        }
+        
+        // If fallback returned empty, that's ok - we'll work with what we have
+        if (searchResult.fallback) {
+          console.log('[ResearchAgent] Fallback search returned no results, continuing with agent reasoning');
+          return [];
         }
         
         lastError = searchResult.error || 'No results found';
@@ -350,21 +363,22 @@ export class ResearchAgent {
         lastError = error instanceof Error ? error.message : 'Search failed';
         console.error(`[ResearchAgent] Search attempt ${attempt} failed:`, lastError);
         
-        // Wait before retry
         if (attempt < maxRetries) {
           await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
         }
       }
     }
     
-    // All retries failed
+    // All retries failed - continue with existing results or empty
     if (this.results.length > 0) {
-      // Have deep verify results, continue with what we have
       console.log('[ResearchAgent] Search failed but have existing results, continuing...');
       return [];
     }
     
-    throw new Error(lastError || 'Search failed after multiple retries');
+    // No external tools and no results - enter AI-only mode
+    console.log('[ResearchAgent] No external search available, entering AI-only research mode');
+    this.callbacks.onDecision?.('Running in AI-only mode - synthesizing from knowledge', 0.6);
+    return [];
   }
 
   private async executeScraping(searchResults: any[]): Promise<void> {
@@ -496,16 +510,27 @@ export class ResearchAgent {
   }
 
   private async compileReport(query: string): Promise<string> {
-    // First, extract structured data from all results
+    // Check if we have any real content
+    const hasContent = this.results.length > 0 && 
+      this.results.some(r => r.content && r.content.length > 100 && !r.content.includes('*Content extraction unavailable'));
+    
+    // If no external content, use AI-only synthesis
+    if (!hasContent) {
+      console.log('[ResearchAgent] No external sources - using AI-only synthesis');
+      return this.generateAIOnlyReport(query);
+    }
+    
+    // Standard flow with sources
     const combinedContent = this.results
       .slice(0, 15)
+      .filter(r => r.content && r.content.length > 50)
       .map((r, i) => `SOURCE ${i + 1}: ${r.url}\nTITLE: ${r.title}\nDOMAIN: ${r.metadata.domain || 'unknown'}\n\nCONTENT:\n${r.content}`)
       .join('\n\n---\n\n');
 
-    // Guard: If no content, use fallback report
-    if (!combinedContent || combinedContent.trim().length < 50) {
-      console.warn('[ResearchAgent] No content available for AI report, using fallback');
-      return this.generateFallbackReport(query);
+    // Guard: If no content after filtering, use AI synthesis
+    if (!combinedContent || combinedContent.trim().length < 100) {
+      console.warn('[ResearchAgent] Filtered content too short, using AI synthesis');
+      return this.generateAIOnlyReport(query);
     }
 
     // Try structured extraction first for better data quality
@@ -548,6 +573,67 @@ export class ResearchAgent {
     }
 
     return this.generateFallbackReport(query, extractedData);
+  }
+
+  // AI-only research synthesis when no external tools are available
+  private async generateAIOnlyReport(query: string): Promise<string> {
+    console.log('[ResearchAgent] Generating AI-only synthesis for:', query);
+    this.callbacks.onDecision?.('Synthesizing research from AI knowledge base', 0.75);
+
+    try {
+      const result = await researchApi.analyze(
+        query,
+        `This is an AI-only research request. No external sources were available.
+        
+Research Query: "${query}"
+
+Please provide a comprehensive research report based on your knowledge. Be clear about:
+1. What you know with high confidence
+2. What might have changed since your training cutoff
+3. Recommendations for verifying the information
+
+Format as a proper research report with sections.`,
+        'report'
+      );
+
+      if (result.success && result.result) {
+        return `# Research Report: ${query}
+
+> ⚠️ **Note**: This report was generated using AI knowledge synthesis. External search and scraping services were not available. Please verify critical information with authoritative sources.
+
+${result.result}
+
+---
+
+## Methodology
+
+This research was conducted using AI-powered analysis without access to real-time web search or scraping capabilities. The findings are based on the AI model's training data and should be independently verified for time-sensitive or critical applications.
+
+*Generated by NexusAI Research Agent on ${new Date().toLocaleDateString()}*`;
+      }
+    } catch (error) {
+      console.error('AI-only synthesis failed:', error);
+    }
+
+    // Ultimate fallback
+    return `# Research Report: ${query}
+
+## Status
+
+The research agent was unable to complete this research request. This may be because:
+
+1. **External tools unavailable**: Web search and scraping services are not configured
+2. **AI services temporarily unavailable**: The AI analysis service may be experiencing issues
+
+## Recommendations
+
+- Configure external search capabilities (e.g., Firecrawl) for real-time web research
+- Retry the research query later
+- Consider breaking down the query into smaller, more specific questions
+
+---
+
+*Generated by NexusAI Research Agent on ${new Date().toLocaleDateString()}*`;
   }
 
   private formatExtractedData(data: ExtractedData): string {
