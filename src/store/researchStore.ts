@@ -68,6 +68,12 @@ export interface DeepVerifySourceConfig {
 // Report format options
 export type ReportFormat = 'detailed' | 'executive' | 'table';
 
+// Strict mode settings
+export interface StrictModeSettings {
+  enabled: boolean;
+  minSources: number;
+}
+
 export const REPORT_FORMAT_OPTIONS: { value: ReportFormat; label: string; description: string }[] = [
   { value: 'detailed', label: 'Detailed Report', description: 'Comprehensive analysis with full context' },
   { value: 'executive', label: 'Executive Summary', description: 'Concise overview for quick decisions' },
@@ -181,6 +187,7 @@ interface ResearchStore {
   reportFormat: ReportFormat;
   timeFrameFilter: TimeFrameValue;
   countryFilter: string;
+  strictMode: StrictModeSettings;
   
   // Agent state
   agentState: AgentStateInfo;
@@ -206,6 +213,7 @@ interface ResearchStore {
       setReportFormat: (format: ReportFormat) => void;
       setTimeFrameFilter: (filter: TimeFrameValue) => void;
       setCountryFilter: (country: string) => void;
+      setStrictMode: (settings: StrictModeSettings) => void;
   
   // Agent state actions
   setAgentState: (state: AgentState) => void;
@@ -232,6 +240,7 @@ export const useResearchStore = create<ResearchStore>()(
       reportFormat: 'detailed' as ReportFormat,
       timeFrameFilter: { type: 'all' } as TimeFrameValue,
       countryFilter: 'global',
+      strictMode: { enabled: true, minSources: 2 } as StrictModeSettings,
       
       // Agent state
       agentState: {
@@ -320,6 +329,8 @@ export const useResearchStore = create<ResearchStore>()(
       setTimeFrameFilter: (filter) => set({ timeFrameFilter: filter }),
       
       setCountryFilter: (country) => set({ countryFilter: country }),
+      
+      setStrictMode: (settings) => set({ strictMode: settings }),
       
       // Agent state actions
       setAgentState: (state) => set((s) => ({
