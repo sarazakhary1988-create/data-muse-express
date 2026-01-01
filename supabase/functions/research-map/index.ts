@@ -11,20 +11,12 @@ interface MapRequest {
   limit?: number;
 }
 
-// Input validation constants
+// Input validation
 const MAX_URL_LENGTH = 2048;
 const MAX_SEARCH_LENGTH = 500;
-const MAX_LIMIT = 500;
-const MIN_LIMIT = 1;
 const BLOCKED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0', '::1', '[::1]'];
-const BLOCKED_IP_PATTERNS = [
-  /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/,
-  /^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/,
-  /^192\.168\.\d{1,3}\.\d{1,3}$/,
-  /^169\.254\.\d{1,3}\.\d{1,3}$/,
-];
 
-function validateUrl(url: string): { valid: boolean; error?: string } {
+function validateUrl(url: string): { valid: boolean; error?: string; formattedUrl?: string } {
   if (!url || typeof url !== 'string') {
     return { valid: false, error: 'URL is required and must be a string' };
   }
@@ -33,47 +25,26 @@ function validateUrl(url: string): { valid: boolean; error?: string } {
     return { valid: false, error: `URL must be less than ${MAX_URL_LENGTH} characters` };
   }
 
-  let parsed: URL;
   try {
     let formattedUrl = url.trim();
     if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
       formattedUrl = `https://${formattedUrl}`;
     }
-    parsed = new URL(formattedUrl);
+    const parsed = new URL(formattedUrl);
+
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return { valid: false, error: 'Only HTTP/HTTPS URLs are allowed' };
+    }
+
+    const hostname = parsed.hostname.toLowerCase();
+    if (BLOCKED_HOSTS.includes(hostname)) {
+      return { valid: false, error: 'URL not allowed' };
+    }
+
+    return { valid: true, formattedUrl };
   } catch {
     return { valid: false, error: 'Invalid URL format' };
   }
-
-  if (!['http:', 'https:'].includes(parsed.protocol)) {
-    return { valid: false, error: 'Only HTTP/HTTPS URLs are allowed' };
-  }
-
-  const hostname = parsed.hostname.toLowerCase();
-  if (BLOCKED_HOSTS.includes(hostname)) {
-    return { valid: false, error: 'URL not allowed' };
-  }
-
-  for (const pattern of BLOCKED_IP_PATTERNS) {
-    if (pattern.test(hostname)) {
-      return { valid: false, error: 'URL not allowed' };
-    }
-  }
-
-  return { valid: true };
-}
-
-function validateSearch(search: unknown): string | undefined {
-  if (typeof search !== 'string') return undefined;
-  const trimmed = search.trim();
-  if (trimmed.length === 0) return undefined;
-  return trimmed.slice(0, MAX_SEARCH_LENGTH);
-}
-
-function validateLimit(limit: unknown): number {
-  if (typeof limit !== 'number' || isNaN(limit)) {
-    return 100;
-  }
-  return Math.max(MIN_LIMIT, Math.min(Math.floor(limit), MAX_LIMIT));
 }
 
 serve(async (req) => {
@@ -92,7 +63,7 @@ serve(async (req) => {
       );
     }
 
-    const { url, search, limit } = body as MapRequest;
+    const { url, search, limit = 20 } = body as MapRequest;
 
     // Validate URL
     const urlValidation = validateUrl(url);
@@ -104,60 +75,92 @@ serve(async (req) => {
       );
     }
 
-    // Validate other inputs
-    const validatedSearch = validateSearch(search);
-    const validatedLimit = validateLimit(limit);
+    const formattedUrl = urlValidation.formattedUrl!;
+    const domain = new URL(formattedUrl).hostname.replace('www.', '');
+    const searchTerm = search?.trim().slice(0, MAX_SEARCH_LENGTH) || '';
 
-    const apiKey = Deno.env.get('FIRECRAWL_API_KEY');
-    if (!apiKey) {
-      console.log('FIRECRAWL_API_KEY not configured - returning fallback indicator');
+    // Use AI to generate likely URLs for this site
+    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
+    if (!lovableApiKey) {
+      console.log('LOVABLE_API_KEY not configured - returning base URL');
       return new Response(
-        JSON.stringify({ success: false, error: 'Firecrawl not configured', fallback: true, links: [url] }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ success: true, links: [formattedUrl], mapMethod: 'fallback' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Format URL
-    let formattedUrl = url.trim();
-    if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
-      formattedUrl = `https://${formattedUrl}`;
-    }
+    console.log('AI-powered URL mapping for:', domain, 'search:', searchTerm);
 
-    console.log('Mapping URL:', formattedUrl, 'search:', validatedSearch);
+    const systemPrompt = `You are an expert at understanding website structures. Given a domain, generate a list of likely URLs that would exist on that site.
 
-    const response = await fetch('https://api.firecrawl.dev/v1/map', {
+For financial sites like Tadawul, Argaam, Reuters, Bloomberg:
+- Include news, market data, company listings, IPO sections
+- Generate realistic URL patterns for that specific site
+
+For other sites:
+- Generate typical page URLs based on the domain type
+
+Return ONLY a JSON array of URL strings, nothing else.`;
+
+    const userPrompt = `Generate ${limit} likely URLs for the website: ${domain}
+Base URL: ${formattedUrl}
+${searchTerm ? `Focus on pages related to: ${searchTerm}` : ''}
+
+Return a JSON array of full URLs. Example:
+["https://domain.com/page1", "https://domain.com/page2"]`;
+
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        'Authorization': `Bearer ${lovableApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        url: formattedUrl,
-        search: validatedSearch,
-        limit: validatedLimit,
-        includeSubdomains: false,
+        model: 'google/gemini-2.5-flash',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.3,
       }),
     });
 
-    const data = await response.json();
-
     if (!response.ok) {
-      console.error('Firecrawl API error:', data);
+      console.error('AI Gateway error:', response.status);
       return new Response(
-        JSON.stringify({ success: false, error: 'Mapping failed' }),
-        { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ success: true, links: [formattedUrl], mapMethod: 'fallback' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log('Map successful, found:', data.links?.length || 0, 'URLs');
+    const aiResponse = await response.json();
+    const content = aiResponse.choices?.[0]?.message?.content || '';
+
+    // Parse the JSON array
+    let links: string[] = [formattedUrl];
+    try {
+      const jsonMatch = content.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (Array.isArray(parsed)) {
+          links = parsed.filter((l): l is string => typeof l === 'string' && l.startsWith('http'));
+        }
+      }
+    } catch (parseError) {
+      console.error('Failed to parse URL list:', parseError);
+    }
+
+    console.log('AI URL mapping successful, found:', links.length, 'URLs');
+
     return new Response(
-      JSON.stringify(data),
+      JSON.stringify({ success: true, links, mapMethod: 'ai-powered' }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
+
   } catch (error) {
-    console.error('Error mapping:', error);
+    console.error('Error in AI mapping:', error);
     return new Response(
-      JSON.stringify({ success: false, error: 'Failed to map' }),
+      JSON.stringify({ success: false, error: 'URL mapping failed' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }

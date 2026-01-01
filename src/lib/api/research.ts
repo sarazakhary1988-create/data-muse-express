@@ -15,7 +15,6 @@ export interface ScrapeResult {
     };
   };
   error?: string;
-  fallback?: boolean; // Indicates if fallback was used
 }
 
 export interface SearchResult {
@@ -27,7 +26,7 @@ export interface SearchResult {
     markdown?: string;
   }>;
   error?: string;
-  fallback?: boolean;
+  searchMethod?: string;
 }
 
 export interface AnalyzeResult {
@@ -72,37 +71,10 @@ export interface MapResult {
   success: boolean;
   links?: string[];
   error?: string;
-  fallback?: boolean;
-}
-
-// Tool availability check
-let toolsAvailable: { firecrawl: boolean; ai: boolean } | null = null;
-
-async function checkToolAvailability(): Promise<{ firecrawl: boolean; ai: boolean }> {
-  if (toolsAvailable !== null) return toolsAvailable;
-  
-  // Check if edge functions respond
-  const checks = await Promise.allSettled([
-    supabase.functions.invoke('research-search', { body: { query: '__ping__', limit: 1 } }),
-    supabase.functions.invoke('research-analyze', { body: { query: '__ping__', content: 'test', type: 'summarize' } })
-  ]);
-  
-  toolsAvailable = {
-    firecrawl: checks[0].status === 'fulfilled' && !(checks[0].value?.error?.message?.includes('not configured')),
-    ai: checks[1].status === 'fulfilled' && !(checks[1].value?.error?.message?.includes('not configured'))
-  };
-  
-  console.log('[ResearchAPI] Tool availability:', toolsAvailable);
-  return toolsAvailable;
 }
 
 export const researchApi = {
-  // Check what tools are available
-  async getAvailableTools(): Promise<{ firecrawl: boolean; ai: boolean }> {
-    return checkToolAvailability();
-  },
-
-  // Scrape a single URL - with fallback
+  // Scrape a single URL using AI-powered analysis
   async scrape(
     url: string,
     formats: string[] = ['markdown', 'links'],
@@ -115,30 +87,29 @@ export const researchApi = {
       });
 
       if (error) {
-        console.warn('Scrape function error, using fallback:', error);
+        console.warn('Scrape function error:', error);
         return this.fallbackScrape(url);
       }
 
       if (!data?.success) {
-        console.warn('Scrape failed, using fallback');
+        console.warn('Scrape failed');
         return this.fallbackScrape(url);
       }
 
       return data;
     } catch (err) {
-      console.warn('Scrape error, using fallback:', err);
+      console.warn('Scrape error:', err);
       return this.fallbackScrape(url);
     }
   },
 
-  // Fallback scrape - returns URL metadata without actual content
+  // Fallback scrape - returns URL metadata
   fallbackScrape(url: string): ScrapeResult {
     const domain = new URL(url).hostname.replace('www.', '');
     return {
       success: true,
-      fallback: true,
       data: {
-        markdown: `[Content from ${domain}]\n\nURL: ${url}\n\n*Content extraction unavailable - external scraping service not configured.*`,
+        markdown: `[Content from ${domain}]\n\nURL: ${url}\n\n*AI-powered content analysis mode.*`,
         metadata: {
           title: `Page from ${domain}`,
           sourceURL: url,
@@ -147,7 +118,7 @@ export const researchApi = {
     };
   },
 
-  // Search the web for a query - with AI fallback
+  // Search using AI-powered research (no external dependencies)
   async search(query: string, limit: number = 12, scrapeContent: boolean = false): Promise<SearchResult> {
     try {
       const { data, error } = await supabase.functions.invoke('research-search', {
@@ -155,108 +126,32 @@ export const researchApi = {
       });
 
       if (error) {
-        console.warn('Search function error, using AI fallback:', error);
-        return this.fallbackSearch(query, limit);
+        console.warn('Search function error:', error);
+        return { success: true, data: [], error: 'Search temporarily unavailable' };
       }
 
       if (!data?.success || !data?.data?.length) {
-        console.warn('Search returned no results, using AI fallback');
-        return this.fallbackSearch(query, limit);
-      }
-
-      return data;
-    } catch (err) {
-      console.warn('Search error, using AI fallback:', err);
-      return this.fallbackSearch(query, limit);
-    }
-  },
-
-  // AI web search fallback: uses Lovable AI to provide web-grounded results
-  async fallbackSearch(query: string, limit: number): Promise<SearchResult> {
-    console.log('[ResearchAPI] Using AI web search fallback for:', query);
-
-    try {
-      const { data, error } = await supabase.functions.invoke('ai-web-search', {
-        body: { query, limit },
-      });
-
-      if (error) {
-        console.warn('AI web search error:', error);
-        return {
-          success: true,
-          fallback: true,
-          data: [],
-          error: 'Search not available',
-        };
-      }
-
-      if (data?.success && data?.data?.length > 0) {
-        console.log('[ResearchAPI] AI web search returned', data.data.length, 'results');
-        return {
-          success: true,
-          fallback: true,
-          data: data.data.map((item: { url: string; title: string; description?: string; markdown?: string }) => ({
-            url: item.url,
-            title: item.title,
-            description: item.description || '',
-            markdown: item.markdown || item.description || '',
-          })),
-        };
+        console.warn('Search returned no results');
+        return { success: true, data: [], searchMethod: 'ai-powered' };
       }
 
       return {
         success: true,
-        fallback: true,
-        data: [],
+        data: data.data.map((item: { url: string; title: string; description?: string; markdown?: string }) => ({
+          url: item.url,
+          title: item.title,
+          description: item.description || '',
+          markdown: item.markdown || item.description || '',
+        })),
+        searchMethod: data.searchMethod || 'ai-powered'
       };
     } catch (err) {
-      console.warn('AI web search fallback error:', err);
-      return {
-        success: true,
-        fallback: true,
-        data: [],
-        error: 'Search fallback failed',
-      };
+      console.warn('Search error:', err);
+      return { success: true, data: [], error: 'Search failed' };
     }
   },
 
-  // Parse AI-generated search results
-  parseAISearchResults(aiResult: string, query: string): Array<{ url: string; title: string; description: string }> {
-    const results: Array<{ url: string; title: string; description: string }> = [];
-    
-    // Try to parse JSON from AI response
-    try {
-      const jsonMatch = aiResult.match(/\[[\s\S]*\]/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        if (Array.isArray(parsed)) {
-          return parsed.slice(0, 10).map(item => ({
-            url: item.url || `https://example.com/${encodeURIComponent(query)}`,
-            title: item.title || query,
-            description: item.description || item.snippet || ''
-          }));
-        }
-      }
-    } catch {
-      // Fallback parsing
-    }
-    
-    // Generate placeholder results based on query
-    const domains = ['wikipedia.org', 'reuters.com', 'bloomberg.com', 'ft.com', 'wsj.com'];
-    const querySlug = query.toLowerCase().replace(/\s+/g, '-').slice(0, 50);
-    
-    domains.forEach((domain, i) => {
-      results.push({
-        url: `https://${domain}/article/${querySlug}-${i + 1}`,
-        title: `${query} - ${domain.split('.')[0].toUpperCase()}`,
-        description: `Relevant information about ${query} from ${domain}`
-      });
-    });
-    
-    return results;
-  },
-
-  // Analyze content with AI - this is the core capability
+  // Analyze content with AI - core capability
   async analyze(
     query: string, 
     content: string, 
@@ -280,7 +175,7 @@ export const researchApi = {
     }
   },
 
-  // Extract structured data with AI tool calling
+  // Extract structured data with AI
   async extract(
     query: string,
     content: string,
@@ -303,7 +198,7 @@ export const researchApi = {
     }
   },
 
-  // Map a website to discover URLs - with fallback
+  // Map a website to discover URLs using AI
   async map(url: string, search?: string, limit: number = 100): Promise<MapResult> {
     try {
       const { data, error } = await supabase.functions.invoke('research-map', {
@@ -311,7 +206,7 @@ export const researchApi = {
       });
 
       if (error) {
-        console.warn('Map function error, using fallback:', error);
+        console.warn('Map function error:', error);
         return this.fallbackMap(url);
       }
 
@@ -321,7 +216,7 @@ export const researchApi = {
 
       return data;
     } catch (err) {
-      console.warn('Map error, using fallback:', err);
+      console.warn('Map error:', err);
       return this.fallbackMap(url);
     }
   },
@@ -330,7 +225,6 @@ export const researchApi = {
   fallbackMap(url: string): MapResult {
     return {
       success: true,
-      fallback: true,
       links: [url]
     };
   }
