@@ -11,21 +11,68 @@ interface AnalyzeRequest {
   type: 'summarize' | 'analyze' | 'extract' | 'report' | 'verify';
 }
 
+// Input validation constants
+const MAX_QUERY_LENGTH = 2000;
+const MAX_CONTENT_LENGTH = 100000; // 100KB max
+const ALLOWED_TYPES = ['summarize', 'analyze', 'extract', 'report', 'verify'];
+
+function validateQuery(query: unknown): string {
+  if (typeof query !== 'string') return '';
+  return query.trim().slice(0, MAX_QUERY_LENGTH);
+}
+
+function validateContent(content: unknown): { valid: boolean; error?: string; value?: string } {
+  if (!content || typeof content !== 'string') {
+    return { valid: false, error: 'Content is required and must be a string' };
+  }
+  
+  const trimmed = content.trim();
+  if (trimmed.length === 0) {
+    return { valid: false, error: 'Content cannot be empty' };
+  }
+  
+  // Truncate if too long (don't reject, just limit)
+  return { valid: true, value: trimmed.slice(0, MAX_CONTENT_LENGTH) };
+}
+
+function validateType(type: unknown): 'summarize' | 'analyze' | 'extract' | 'report' | 'verify' {
+  if (typeof type !== 'string' || !ALLOWED_TYPES.includes(type)) {
+    return 'analyze';
+  }
+  return type as 'summarize' | 'analyze' | 'extract' | 'report' | 'verify';
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { query, content, type = 'analyze' } = await req.json() as AnalyzeRequest;
-
-    if (!content) {
-      console.error('No content provided');
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
       return new Response(
-        JSON.stringify({ success: false, error: 'Content is required' }),
+        JSON.stringify({ success: false, error: 'Invalid JSON body' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    const { query, content, type } = body as AnalyzeRequest;
+
+    // Validate content
+    const contentValidation = validateContent(content);
+    if (!contentValidation.valid) {
+      console.error('Content validation failed:', contentValidation.error);
+      return new Response(
+        JSON.stringify({ success: false, error: contentValidation.error }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Validate other inputs
+    const validatedQuery = validateQuery(query);
+    const validatedType = validateType(type);
 
     const apiKey = Deno.env.get('LOVABLE_API_KEY');
     if (!apiKey) {
@@ -36,7 +83,7 @@ serve(async (req) => {
       );
     }
 
-    console.log('Analyzing content for query:', query?.substring(0, 100), '... type:', type);
+    console.log('Analyzing content for query:', validatedQuery.substring(0, 100), '... type:', validatedType);
 
     const systemPrompts: Record<string, string> = {
       summarize: `You are a factual research assistant. Only use information explicitly stated in the provided sources. If something is not present in the sources, say "Not found in sources". Provide a concise summary and end with a short Sources list (URLs).`,
@@ -79,19 +126,23 @@ Present the key information found in sources. Use tables when listing multiple i
 `,
     };
 
+    // Limit content size passed to AI
+    const maxContentForAI = validatedType === 'verify' ? 8000 : 50000;
+    const truncatedContent = contentValidation.value!.substring(0, maxContentForAI);
+
     const userContent =
-      type === 'verify'
-        ? `Claim: "${query}"
+      validatedType === 'verify'
+        ? `Claim: "${validatedQuery}"
 
 Content excerpt:
-${content.substring(0, 8000)}
+${truncatedContent}
 
 Return ONLY a JSON object (no markdown): { "support": "strong|moderate|weak|contradicts|none", "reason": "brief explanation" }`
-        : `Research Query: "${query}"
+        : `Research Query: "${validatedQuery}"
 
 Content to analyze:
 
-${content.substring(0, 50000)}`;
+${truncatedContent}`;
 
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
@@ -102,7 +153,7 @@ ${content.substring(0, 50000)}`;
       body: JSON.stringify({
         model: 'google/gemini-2.5-flash',
         messages: [
-          { role: 'system', content: systemPrompts[type] || systemPrompts.analyze },
+          { role: 'system', content: systemPrompts[validatedType] || systemPrompts.analyze },
           { role: 'user', content: userContent },
         ],
       }),
@@ -142,9 +193,8 @@ ${content.substring(0, 50000)}`;
     );
   } catch (error) {
     console.error('Error analyzing:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Failed to analyze';
     return new Response(
-      JSON.stringify({ success: false, error: errorMessage }),
+      JSON.stringify({ success: false, error: 'Failed to analyze' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }

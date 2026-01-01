@@ -11,21 +11,78 @@ interface ExtractRequest {
   extractType: 'entities' | 'companies' | 'dates' | 'facts' | 'all';
 }
 
+// Input validation constants
+const MAX_QUERY_LENGTH = 2000;
+const MAX_CONTENT_LENGTH = 50000; // 50KB max
+const MIN_CONTENT_LENGTH = 50;
+const ALLOWED_EXTRACT_TYPES = ['entities', 'companies', 'dates', 'facts', 'all'];
+
+function validateQuery(query: unknown): string {
+  if (typeof query !== 'string') return '';
+  return query.trim().slice(0, MAX_QUERY_LENGTH);
+}
+
+function validateContent(content: unknown): { valid: boolean; error?: string; value?: string } {
+  if (!content || typeof content !== 'string') {
+    return { valid: false, error: 'Content is required and must be a string' };
+  }
+  
+  const trimmed = content.trim();
+  if (trimmed.length < MIN_CONTENT_LENGTH) {
+    // Return empty data for short content instead of error
+    return { valid: true, value: '' };
+  }
+  
+  return { valid: true, value: trimmed.slice(0, MAX_CONTENT_LENGTH) };
+}
+
+function validateExtractType(extractType: unknown): 'entities' | 'companies' | 'dates' | 'facts' | 'all' {
+  if (typeof extractType !== 'string' || !ALLOWED_EXTRACT_TYPES.includes(extractType)) {
+    return 'all';
+  }
+  return extractType as 'entities' | 'companies' | 'dates' | 'facts' | 'all';
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { query, content, extractType = 'all' } = await req.json() as ExtractRequest;
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Invalid JSON body' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
-    if (!content || content.trim().length < 50) {
-      console.log('No content provided for extraction');
+    const { query, content, extractType } = body as ExtractRequest;
+
+    // Validate content
+    const contentValidation = validateContent(content);
+    if (!contentValidation.valid) {
+      console.error('Content validation failed:', contentValidation.error);
+      return new Response(
+        JSON.stringify({ success: false, error: contentValidation.error }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Return empty data for too-short content
+    if (!contentValidation.value) {
+      console.log('Content too short for extraction');
       return new Response(
         JSON.stringify({ success: true, data: { entities: [], companies: [], dates: [], facts: [] } }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    // Validate other inputs
+    const validatedQuery = validateQuery(query);
+    const validatedExtractType = validateExtractType(extractType);
 
     const apiKey = Deno.env.get('LOVABLE_API_KEY');
     if (!apiKey) {
@@ -36,7 +93,10 @@ serve(async (req) => {
       );
     }
 
-    console.log('Extracting structured data for query:', query?.substring(0, 100), 'type:', extractType);
+    console.log('Extracting structured data for query:', validatedQuery.substring(0, 100), 'type:', validatedExtractType);
+
+    // Limit content for AI processing
+    const truncatedContent = contentValidation.value.substring(0, 30000);
 
     // Use tool calling for structured extraction
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
@@ -54,10 +114,10 @@ serve(async (req) => {
           },
           { 
             role: 'user', 
-            content: `Research Query: "${query}"
+            content: `Research Query: "${validatedQuery}"
 
 Content to analyze:
-${content.substring(0, 30000)}
+${truncatedContent}
 
 Extract all relevant structured data from this content related to the query.` 
           }
@@ -191,9 +251,8 @@ Extract all relevant structured data from this content related to the query.`
     );
   } catch (error) {
     console.error('Error extracting:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Failed to extract';
     return new Response(
-      JSON.stringify({ success: false, error: errorMessage }),
+      JSON.stringify({ success: false, error: 'Failed to extract' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }

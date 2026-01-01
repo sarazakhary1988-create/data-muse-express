@@ -14,28 +14,90 @@ interface SearchRequest {
   tbs?: string;
 }
 
+// Input validation constants
+const MAX_QUERY_LENGTH = 1000;
+const MAX_LIMIT = 50;
+const MIN_LIMIT = 1;
+const ALLOWED_LANGS = ['en', 'ar', 'es', 'fr', 'de', 'zh', 'ja', 'ko', 'pt', 'ru', 'it', 'nl', 'pl', 'tr'];
+const ALLOWED_COUNTRIES = ['us', 'uk', 'ae', 'sa', 'eg', 'de', 'fr', 'es', 'it', 'jp', 'cn', 'kr', 'br', 'in', 'au', 'ca'];
+const ALLOWED_TBS_PATTERNS = /^(qdr:[hdwmy]|cdr:1,cd_min:\d{1,2}\/\d{1,2}\/\d{4},cd_max:\d{1,2}\/\d{1,2}\/\d{4})$/;
+
+function validateQuery(query: unknown): { valid: boolean; error?: string; value?: string } {
+  if (!query || typeof query !== 'string') {
+    return { valid: false, error: 'Query is required and must be a string' };
+  }
+  
+  const trimmed = query.trim();
+  if (trimmed.length === 0) {
+    return { valid: false, error: 'Query cannot be empty' };
+  }
+  
+  if (trimmed.length > MAX_QUERY_LENGTH) {
+    return { valid: false, error: `Query must be less than ${MAX_QUERY_LENGTH} characters` };
+  }
+  
+  return { valid: true, value: trimmed };
+}
+
+function validateLimit(limit: unknown): number {
+  if (typeof limit !== 'number' || isNaN(limit)) {
+    return 12;
+  }
+  return Math.max(MIN_LIMIT, Math.min(Math.floor(limit), MAX_LIMIT));
+}
+
+function validateLang(lang: unknown): string | undefined {
+  if (typeof lang !== 'string') return undefined;
+  const normalized = lang.toLowerCase().trim();
+  return ALLOWED_LANGS.includes(normalized) ? normalized : undefined;
+}
+
+function validateCountry(country: unknown): string | undefined {
+  if (typeof country !== 'string') return undefined;
+  const normalized = country.toLowerCase().trim();
+  return ALLOWED_COUNTRIES.includes(normalized) ? normalized : undefined;
+}
+
+function validateTbs(tbs: unknown): string | undefined {
+  if (typeof tbs !== 'string') return undefined;
+  const trimmed = tbs.trim();
+  return ALLOWED_TBS_PATTERNS.test(trimmed) ? trimmed : undefined;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const {
-      query,
-      limit = 12,
-      scrapeContent = false,
-      lang,
-      country,
-      tbs,
-    } = await req.json() as SearchRequest;
-
-    if (!query) {
-      console.error('No query provided');
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
       return new Response(
-        JSON.stringify({ success: false, error: 'Query is required' }),
+        JSON.stringify({ success: false, error: 'Invalid JSON body' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    const { query, limit, scrapeContent, lang, country, tbs } = body as SearchRequest;
+
+    // Validate query
+    const queryValidation = validateQuery(query);
+    if (!queryValidation.valid) {
+      console.error('Query validation failed:', queryValidation.error);
+      return new Response(
+        JSON.stringify({ success: false, error: queryValidation.error }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Validate and sanitize other inputs
+    const validatedLimit = validateLimit(limit);
+    const validatedLang = validateLang(lang);
+    const validatedCountry = validateCountry(country);
+    const validatedTbs = validateTbs(tbs);
+    const validatedScrapeContent = typeof scrapeContent === 'boolean' ? scrapeContent : false;
 
     const apiKey = Deno.env.get('FIRECRAWL_API_KEY');
     if (!apiKey) {
@@ -46,20 +108,18 @@ serve(async (req) => {
       );
     }
 
-    console.log('Searching for:', query, 'with limit:', limit);
+    console.log('Searching for:', queryValidation.value, 'with limit:', validatedLimit);
 
-    const requestBody: any = {
-      query,
-      limit,
+    const requestBody: Record<string, unknown> = {
+      query: queryValidation.value,
+      limit: validatedLimit,
     };
 
-    if (lang) requestBody.lang = lang;
-    if (country) requestBody.country = country;
-    if (tbs) requestBody.tbs = tbs;
+    if (validatedLang) requestBody.lang = validatedLang;
+    if (validatedCountry) requestBody.country = validatedCountry;
+    if (validatedTbs) requestBody.tbs = validatedTbs;
 
-    // NOTE: Search endpoint "scrapeOptions" often returns low-signal content on some sites.
-    // We default scrapeContent=false and instead scrape top results explicitly via /scrape.
-    if (scrapeContent) {
+    if (validatedScrapeContent) {
       requestBody.scrapeOptions = {
         formats: ['markdown'],
         onlyMainContent: true,
@@ -80,7 +140,7 @@ serve(async (req) => {
     if (!response.ok) {
       console.error('Firecrawl API error:', data);
       return new Response(
-        JSON.stringify({ success: false, error: data.error || `Request failed with status ${response.status}` }),
+        JSON.stringify({ success: false, error: 'Search failed' }),
         { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -92,9 +152,8 @@ serve(async (req) => {
     );
   } catch (error) {
     console.error('Error searching:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Failed to search';
     return new Response(
-      JSON.stringify({ success: false, error: errorMessage }),
+      JSON.stringify({ success: false, error: 'Failed to search' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
