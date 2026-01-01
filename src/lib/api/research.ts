@@ -37,12 +37,15 @@ export interface UnreachableSource {
 export interface SearchResult {
   success: boolean;
   data?: Array<{
+    id?: string;
     url: string;
     title: string;
     description?: string;
     markdown?: string;
+    content?: string;
     fetchedAt?: string;
     sourceStatus?: string;
+    reliability?: number;
   }>;
   error?: string;
   searchMethod?: string;
@@ -50,6 +53,7 @@ export interface SearchResult {
   sourceStatuses?: SourceStatus[];
   unreachableSources?: UnreachableSource[];
   recommendations?: string[];
+  timing?: { total: number };
   summary?: {
     sourcesChecked: number;
     sourcesReachable: number;
@@ -121,7 +125,7 @@ export interface TavilySearchResult {
 }
 
 export const researchApi = {
-  // Scrape a single URL using direct fetch + extraction
+  // PRIMARY: Scrape a single URL using Firecrawl
   async scrape(
     url: string,
     formats: string[] = ['markdown', 'links'],
@@ -129,29 +133,45 @@ export const researchApi = {
     waitFor: number = 3000
   ): Promise<ScrapeResult> {
     try {
-      const { data, error } = await supabase.functions.invoke('research-scrape', {
-        body: { url, formats, onlyMainContent, waitFor },
+      console.log('[researchApi] Scraping with Firecrawl:', url);
+      
+      // Use Firecrawl as primary scraper
+      const { data, error } = await supabase.functions.invoke('firecrawl-scrape', {
+        body: { url, options: { formats, onlyMainContent, waitFor } },
       });
 
       if (error) {
-        console.warn('Scrape function error:', error);
+        console.warn('[researchApi] Firecrawl scrape error, falling back:', error);
         return this.fallbackScrape(url);
       }
 
       if (!data?.success) {
-        console.warn('Scrape failed:', data?.error);
+        console.warn('[researchApi] Firecrawl scrape failed:', data?.error);
         return this.fallbackScrape(url);
       }
 
+      console.log('[researchApi] Firecrawl scrape success:', data.data?.markdown?.length || 0, 'chars');
       return data;
     } catch (err) {
-      console.warn('Scrape error:', err);
+      console.warn('[researchApi] Scrape error:', err);
       return this.fallbackScrape(url);
     }
   },
 
-  // Fallback scrape - returns URL metadata
-  fallbackScrape(url: string): ScrapeResult {
+  // Fallback scrape using research-scrape edge function
+  async fallbackScrape(url: string): Promise<ScrapeResult> {
+    try {
+      const { data, error } = await supabase.functions.invoke('research-scrape', {
+        body: { url, formats: ['markdown', 'links'], onlyMainContent: true, waitFor: 3000 },
+      });
+
+      if (!error && data?.success) {
+        return data;
+      }
+    } catch (e) {
+      console.warn('[researchApi] Fallback scrape failed:', e);
+    }
+    
     const domain = new URL(url).hostname.replace('www.', '');
     return {
       success: false,
@@ -166,11 +186,62 @@ export const researchApi = {
     };
   },
 
-  // Search with strict mode support
+  // PRIMARY: Search using Firecrawl
   async search(
     query: string, 
     limit: number = 12, 
     scrapeContent: boolean = false,
+    options?: {
+      strictMode?: boolean;
+      minSources?: number;
+      country?: string;
+      tbs?: string; // Time filter
+    }
+  ): Promise<SearchResult> {
+    try {
+      console.log('[researchApi] Searching with Firecrawl:', query);
+      
+      // Use Firecrawl as primary search engine
+      const { data, error } = await supabase.functions.invoke('firecrawl-search', {
+        body: { 
+          query, 
+          options: {
+            limit, 
+            lang: 'en',
+            country: options?.country,
+            tbs: options?.tbs,
+            scrapeOptions: scrapeContent ? { formats: ['markdown'] } : undefined,
+          }
+        },
+      });
+
+      if (error) {
+        console.warn('[researchApi] Firecrawl search error, falling back:', error);
+        return this.fallbackSearch(query, limit, options);
+      }
+
+      if (!data?.success) {
+        console.warn('[researchApi] Firecrawl search failed:', data?.error);
+        return this.fallbackSearch(query, limit, options);
+      }
+
+      console.log('[researchApi] Firecrawl search success:', data.data?.length || 0, 'results');
+      return {
+        success: true,
+        data: data.data,
+        searchMethod: 'firecrawl',
+        timing: data.timing,
+      };
+    } catch (err) {
+      console.error('[researchApi] Search error:', err);
+      return this.fallbackSearch(query, limit, options);
+    }
+  },
+
+  // Fallback search using research-search edge function
+  async fallbackSearch(
+    query: string, 
+    limit: number = 12, 
     options?: {
       strictMode?: boolean;
       minSources?: number;
@@ -182,7 +253,7 @@ export const researchApi = {
         body: { 
           query, 
           limit, 
-          scrapeContent, 
+          scrapeContent: false, 
           lang: 'en',
           strictMode: options?.strictMode ?? false,
           minSources: options?.minSources ?? 2,
@@ -191,58 +262,42 @@ export const researchApi = {
       });
 
       if (error) {
-        console.error('Search function error:', error);
-        return { 
-          success: false, 
-          data: [], 
-          error: error.message || 'Search temporarily unavailable' 
-        };
+        return { success: false, data: [], error: error.message || 'Search temporarily unavailable' };
       }
 
-      // Handle strict mode failure
       if (data?.strictModeFailure) {
-        console.warn('Strict mode failure:', data.error);
         return {
           success: false,
           error: data.error,
           strictModeFailure: true,
           sourceStatuses: data.sourceStatuses,
           unreachableSources: data.unreachableSources,
-          recommendations: data.recommendations,
           data: [],
         };
       }
 
       if (!data?.success) {
-        console.warn('Search returned no results:', data?.error);
-        return { 
-          success: false, 
-          data: [], 
-          error: data?.error || 'No results found',
-          sourceStatuses: data?.sourceStatuses,
-        };
+        return { success: false, data: [], error: data?.error || 'No results found' };
       }
 
       return {
         success: true,
-        data: data.data.map((item: { url: string; title: string; description?: string; markdown?: string; fetchedAt?: string }) => ({
+        data: data.data.map((item: any) => ({
+          id: item.id || `search-${Date.now()}-${Math.random().toString(36).slice(2)}`,
           url: item.url,
           title: item.title,
           description: item.description || '',
           markdown: item.markdown || item.description || '',
+          content: item.markdown || item.content || item.description || '',
           fetchedAt: item.fetchedAt,
+          reliability: item.reliability || 0.7,
         })),
         searchMethod: data.searchMethod || 'internal_fetch',
         sourceStatuses: data.sourceStatuses,
         summary: data.summary,
       };
     } catch (err) {
-      console.error('Search error:', err);
-      return { 
-        success: false, 
-        data: [], 
-        error: err instanceof Error ? err.message : 'Search failed' 
-      };
+      return { success: false, data: [], error: err instanceof Error ? err.message : 'Search failed' };
     }
   },
 
@@ -293,31 +348,48 @@ export const researchApi = {
     }
   },
 
-  // Map a website to discover URLs
+  // PRIMARY: Map a website using Firecrawl to discover URLs
   async map(url: string, search?: string, limit: number = 100): Promise<MapResult> {
     try {
-      const { data, error } = await supabase.functions.invoke('research-map', {
-        body: { url, search, limit },
+      console.log('[researchApi] Mapping with Firecrawl:', url);
+      
+      // Use Firecrawl as primary mapper
+      const { data, error } = await supabase.functions.invoke('firecrawl-map', {
+        body: { url, options: { search, limit } },
       });
 
       if (error) {
-        console.warn('Map function error:', error);
+        console.warn('[researchApi] Firecrawl map error, falling back:', error);
         return this.fallbackMap(url);
       }
 
       if (!data?.success) {
+        console.warn('[researchApi] Firecrawl map failed:', data?.error);
         return this.fallbackMap(url);
       }
 
+      console.log('[researchApi] Firecrawl map success:', data.links?.length || 0, 'links');
       return data;
     } catch (err) {
-      console.warn('Map error:', err);
+      console.warn('[researchApi] Map error:', err);
       return this.fallbackMap(url);
     }
   },
 
-  // Fallback map - returns the base URL
-  fallbackMap(url: string): MapResult {
+  // Fallback map using research-map edge function
+  async fallbackMap(url: string): Promise<MapResult> {
+    try {
+      const { data, error } = await supabase.functions.invoke('research-map', {
+        body: { url, limit: 100 },
+      });
+
+      if (!error && data?.success) {
+        return data;
+      }
+    } catch (e) {
+      console.warn('[researchApi] Fallback map failed:', e);
+    }
+    
     return {
       success: true,
       links: [url]
