@@ -26,6 +26,7 @@ const Index = () => {
     reports,
     deepVerifyMode,
     deepVerifySources,
+    agentState,
     setCurrentTask,
     setSearchQuery
   } = useResearchStore();
@@ -211,7 +212,15 @@ const Index = () => {
               >
                 ← Back to Results
               </button>
-              <ReportViewer report={currentReport} />
+              <ReportViewer 
+                report={currentReport} 
+                validationData={agentState.consolidation ? {
+                  discrepancies: agentState.consolidation.discrepancies,
+                  qualityMetrics: agentState.consolidation.qualityMetrics,
+                  sourceCoverage: agentState.consolidation.sourceCoverage,
+                  consolidatedData: agentState.consolidation.consolidatedData,
+                } : undefined}
+              />
             </motion.div>
           </div>
         );
