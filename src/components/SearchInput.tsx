@@ -10,6 +10,7 @@ import { SourceManager } from '@/components/SourceManager';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TimeFrameFilter, formatTimeFrameForQuery } from '@/components/TimeFrameFilter';
 import { PromptEnhancer } from '@/components/PromptEnhancer';
+import { CountryFilter, formatCountryForQuery } from '@/components/CountryFilter';
 
 interface SearchInputProps {
   onSearch: (query: string) => void;
@@ -38,7 +39,9 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
     reportFormat, 
     setReportFormat,
     timeFrameFilter,
-    setTimeFrameFilter
+    setTimeFrameFilter,
+    countryFilter,
+    setCountryFilter
   } = useResearchStore();
   const [isFocused, setIsFocused] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -55,11 +58,11 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
 
   const handleSubmit = () => {
     if (searchQuery.trim() && !isSearching) {
-      // Append time frame context to the query
+      // Append time frame and country context to the query
       const timeContext = formatTimeFrameForQuery(timeFrameFilter);
-      const fullQuery = timeContext 
-        ? `${searchQuery.trim()} ${timeContext}`
-        : searchQuery.trim();
+      const countryContext = formatCountryForQuery(countryFilter);
+      const contextParts = [searchQuery.trim(), timeContext, countryContext].filter(Boolean);
+      const fullQuery = contextParts.join(' ');
       
       onSearch(fullQuery);
       setShowSuggestions(false);
@@ -163,6 +166,12 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
               <TimeFrameFilter 
                 value={timeFrameFilter} 
                 onChange={setTimeFrameFilter} 
+              />
+              
+              {/* Country Filter */}
+              <CountryFilter
+                value={countryFilter}
+                onChange={setCountryFilter}
               />
               
               {/* Report Format Selector */}
