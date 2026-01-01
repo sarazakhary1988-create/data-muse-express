@@ -55,3 +55,6 @@ verify_jwt = false
 
 [functions.ai-web-search]
 verify_jwt = false
+
+[functions.tavily-search]
+verify_jwt = false

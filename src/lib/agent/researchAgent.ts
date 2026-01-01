@@ -247,7 +247,7 @@ export class ResearchAgent {
     }
   }
 
-  // Perform web search using the internal web retrieval
+  // Perform web search using hybrid approach (Tavily + sitemap discovery)
   private async performWebSearch(
     query: string,
     options?: {
@@ -256,18 +256,31 @@ export class ResearchAgent {
     }
   ): Promise<AgentResearchResult[]> {
     try {
-      console.log('[ResearchAgent] Performing REAL web search for:', query);
+      console.log('[ResearchAgent] Performing HYBRID web search for:', query);
 
       const strictEnabled = options?.strictMode?.enabled === true;
       const minSources = Math.max(1, options?.strictMode?.minSources ?? 2);
       const countryCode = this.normalizeCountryToCode(options?.country);
       const isSaudi = this.isSaudiQuery(query, countryCode);
 
-      // Only enforce strict/no-fabrication guardrails for Saudi market research
-      const searchResult = await researchApi.search(query, 10, false, {
-        strictMode: isSaudi ? strictEnabled : false,
-        minSources,
-        country: isSaudi ? 'sa' : undefined,
+      // Determine topic for Tavily based on query
+      const topic = this.detectTavilyTopic(query);
+      
+      // Use hybrid search: Tavily for broad discovery + sitemap for authoritative sources
+      const searchResult = await researchApi.hybridSearch(query, {
+        useTavily: true,
+        useSitemap: true,
+        tavilyOptions: {
+          searchDepth: 'advanced',
+          topic,
+          days: 30,
+          maxResults: 10,
+        },
+        sitemapOptions: {
+          limit: 10,
+          strictMode: isSaudi ? strictEnabled : false,
+          country: isSaudi ? 'sa' : undefined,
+        }
       });
       
       // Handle strict mode failure
@@ -278,17 +291,45 @@ export class ResearchAgent {
       }
       
       if (!searchResult.success || !searchResult.data || searchResult.data.length === 0) {
-        console.log('[ResearchAgent] No web search results found');
+        console.log('[ResearchAgent] No web search results found, trying Tavily-only fallback');
+        
+        // Fallback to Tavily-only if hybrid fails
+        const tavilyResult = await researchApi.tavilySearch(query, {
+          searchDepth: 'advanced',
+          topic,
+          maxResults: 15,
+          includeAnswer: true,
+        });
+        
+        if (tavilyResult.success && tavilyResult.data && tavilyResult.data.length > 0) {
+          console.log('[ResearchAgent] Tavily fallback returned', tavilyResult.data.length, 'results');
+          
+          return tavilyResult.data.map((item, index) => ({
+            id: `tavily-${Date.now()}-${index}`,
+            title: item.title || `Search Result ${index + 1}`,
+            url: item.url,
+            content: item.markdown || item.description || '',
+            summary: item.description || '',
+            relevanceScore: item.score || (0.9 - (index * 0.05)),
+            extractedAt: new Date(),
+            metadata: {
+              domain: new URL(item.url).hostname.replace('www.', ''),
+              wordCount: (item.markdown || item.description || '').split(/\s+/).length,
+              publishDate: item.publishedDate,
+            }
+          }));
+        }
+        
         return [];
       }
 
-      console.log('[ResearchAgent] Web search returned', searchResult.data.length, 'REAL results from sources');
+      console.log('[ResearchAgent] Hybrid search returned', searchResult.data.length, 'results via', searchResult.searchMethod);
       if (searchResult.summary) {
         console.log('[ResearchAgent] Sources:', searchResult.summary.sourcesReachable, 'reachable,', searchResult.summary.sourcesUnreachable, 'unreachable');
       }
 
       return searchResult.data.map((item, index) => ({
-        id: `web-search-${Date.now()}-${index}`,
+        id: `hybrid-search-${Date.now()}-${index}`,
         title: item.title || `Search Result ${index + 1}`,
         url: item.url,
         content: item.markdown || item.description || '',
@@ -305,6 +346,23 @@ export class ResearchAgent {
       console.error('[ResearchAgent] Web search error:', error);
       throw error; // Re-throw to show the user what went wrong
     }
+  }
+
+  // Detect appropriate Tavily topic based on query content
+  private detectTavilyTopic(query: string): 'general' | 'news' | 'finance' {
+    const q = query.toLowerCase();
+    
+    // Finance indicators
+    if (/\b(stock|ipo|market|trading|invest|fund|equity|bond|dividend|earnings|portfolio|nasdaq|nyse|tasi|tadawul|nomu)\b/.test(q)) {
+      return 'finance';
+    }
+    
+    // News indicators
+    if (/\b(latest|recent|breaking|today|yesterday|announcement|update|launch|release)\b/.test(q)) {
+      return 'news';
+    }
+    
+    return 'general';
   }
 
   // Create virtual results representing AI knowledge synthesis
