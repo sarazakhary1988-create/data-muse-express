@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { AgentState, QualityScore, ExecutionMetrics, ClaimVerification, ResearchPlan } from '@/lib/agent/types';
+import { Discrepancy, QualityMetrics, SourceCoverage } from '@/lib/agent/dataConsolidator';
 
 export interface ResearchTask {
   id: string;
@@ -79,6 +80,13 @@ export interface AgentStateInfo {
   verifications: ClaimVerification[];
   plan: ResearchPlan | null;
   lastDecision: { message: string; confidence: number } | null;
+  // Manus-inspired consolidation data
+  consolidation: {
+    discrepancies: Discrepancy[];
+    qualityMetrics: QualityMetrics;
+    sourceCoverage: SourceCoverage;
+    consolidatedData: Record<string, any>;
+  } | null;
 }
 
 // Default Deep Verify sources configuration
@@ -200,6 +208,7 @@ interface ResearchStore {
   setAgentVerifications: (verifications: ClaimVerification[]) => void;
   setAgentPlan: (plan: ResearchPlan | null) => void;
   setAgentDecision: (message: string, confidence: number) => void;
+  setAgentConsolidation: (consolidation: AgentStateInfo['consolidation']) => void;
   resetAgentState: () => void;
 }
 
@@ -224,6 +233,7 @@ export const useResearchStore = create<ResearchStore>()(
         verifications: [],
         plan: null,
         lastDecision: null,
+        consolidation: null,
       },
       
       setSearchQuery: (query) => set({ searchQuery: query }),
@@ -324,6 +334,10 @@ export const useResearchStore = create<ResearchStore>()(
         agentState: { ...s.agentState, lastDecision: { message, confidence } }
       })),
       
+      setAgentConsolidation: (consolidation) => set((s) => ({
+        agentState: { ...s.agentState, consolidation }
+      })),
+      
       resetAgentState: () => set({
         agentState: {
           state: 'idle' as AgentState,
@@ -332,6 +346,7 @@ export const useResearchStore = create<ResearchStore>()(
           verifications: [],
           plan: null,
           lastDecision: null,
+          consolidation: null,
         }
       }),
     }),

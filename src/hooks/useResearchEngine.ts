@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { ResearchTask, Report, useResearchStore, ReportFormat } from '@/store/researchStore';
-import { researchAgent } from '@/lib/agent';
+import { researchAgent, dataConsolidator } from '@/lib/agent';
 import { toast } from '@/hooks/use-toast';
 
 export const useResearchEngine = () => {
@@ -22,6 +22,7 @@ export const useResearchEngine = () => {
     setAgentVerifications,
     setAgentPlan,
     setAgentDecision,
+    setAgentConsolidation,
     resetAgentState
   } = useResearchStore();
 
@@ -134,6 +135,23 @@ export const useResearchEngine = () => {
         reportFormat
       );
 
+      // Calculate consolidation data (Manus-inspired)
+      const consolidatedResult = dataConsolidator.consolidate(results);
+      
+      // Store consolidation data for the discrepancy report
+      setAgentConsolidation({
+        discrepancies: consolidatedResult.discrepancies,
+        qualityMetrics: consolidatedResult.qualityMetrics,
+        sourceCoverage: consolidatedResult.sourceCoverage,
+        consolidatedData: consolidatedResult.data,
+      });
+
+      console.log('[useResearchEngine] Consolidation complete:', {
+        discrepancies: consolidatedResult.discrepancies.length,
+        qualityScore: (consolidatedResult.qualityMetrics.overallScore * 100).toFixed(1) + '%',
+        sourceCoverage: consolidatedResult.sourceCoverage,
+      });
+
       // Create report object
       const reportObj: Report = {
         id: `report-${Date.now()}`,
@@ -208,6 +226,7 @@ export const useResearchEngine = () => {
     setAgentVerifications,
     setAgentPlan,
     setAgentDecision,
+    setAgentConsolidation,
     resetAgentState
   ]);
 
