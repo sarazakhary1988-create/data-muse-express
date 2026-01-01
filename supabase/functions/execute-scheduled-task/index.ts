@@ -112,14 +112,32 @@ serve(async (req) => {
     const researchQuery = buildResearchQuery(task);
     console.log("Research query:", researchQuery);
 
-    // Step 1: Search for content
+    // Step 1: Search for content (strict no-fabrication for Saudi market)
+    const taskCountry = (task.country || "").toLowerCase();
+    const countryCode = taskCountry.includes("saudi") || taskCountry === "saudi-arabia" || taskCountry === "sa" ? "sa" : undefined;
+    const isSaudi = countryCode === "sa" || /\b(saudi|tadawul|tasi|nomu|cma|riyadh)\b/i.test(researchQuery);
+
     const searchResponse = await supabase.functions.invoke("research-search", {
       body: {
         query: researchQuery,
         limit: task.research_depth === "deep" ? 15 : task.research_depth === "quick" ? 5 : 10,
         scrapeContent: true,
+        strictMode: isSaudi ? true : false,
+        minSources: 2,
+        country: countryCode,
       },
     });
+
+    if (searchResponse.error) {
+      throw new Error(`Search failed: ${searchResponse.error.message || "unknown error"}`);
+    }
+
+    if (!searchResponse.data?.success) {
+      const unreachable = (searchResponse.data?.unreachableSources || [])
+        .map((s: any) => `${s.name} (${s.reason})`)
+        .join(", ");
+      throw new Error(`${searchResponse.data?.error || "Search returned no results"}${unreachable ? ` | Unreachable: ${unreachable}` : ""}`);
+    }
 
     let searchResults = searchResponse.data?.data || [];
     console.log(`Found ${searchResults.length} search results`);

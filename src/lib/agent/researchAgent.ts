@@ -96,7 +96,11 @@ export class ResearchAgent {
     query: string,
     deepVerifyEnabled: boolean = false,
     enabledSources: DeepVerifySourceConfig[] = [],
-    reportFormat: ReportFormat = 'detailed'
+    reportFormat: ReportFormat = 'detailed',
+    options?: {
+      country?: string; // UI country filter value (e.g. "saudi-arabia")
+      strictMode?: { enabled: boolean; minSources: number };
+    }
   ): Promise<{
     results: AgentResearchResult[];
     report: string;
@@ -137,12 +141,19 @@ export class ResearchAgent {
       this.callbacks.onDecision?.('Searching web for real-time data', 0.85);
 
       // Try to get real-time web search results
-      const webSearchResults = await this.performWebSearch(query);
-      
+      const webSearchResults = await this.performWebSearch(query, options);
+
+      const strictEnabled = options?.strictMode?.enabled === true;
+      const countryCode = this.normalizeCountryToCode(options?.country);
+      const isSaudi = this.isSaudiQuery(query, countryCode);
+
       if (webSearchResults.length > 0) {
         console.log(`[ResearchAgent] Found ${webSearchResults.length} web search results`);
         this.results = webSearchResults;
       } else {
+        if (strictEnabled && isSaudi) {
+          throw new Error('Strict No-Fabrication Mode: no sufficient Saudi sources could be fetched/extracted for this query.');
+        }
         console.log(`[ResearchAgent] No web results, using AI knowledge synthesis`);
         this.results = this.createAIKnowledgeResults(query);
       }
@@ -236,16 +247,27 @@ export class ResearchAgent {
     }
   }
 
-  // Perform web search using the AI-powered search
-  private async performWebSearch(query: string): Promise<AgentResearchResult[]> {
+  // Perform web search using the internal web retrieval
+  private async performWebSearch(
+    query: string,
+    options?: {
+      country?: string;
+      strictMode?: { enabled: boolean; minSources: number };
+    }
+  ): Promise<AgentResearchResult[]> {
     try {
       console.log('[ResearchAgent] Performing REAL web search for:', query);
-      
-      // Use strict mode to ensure real data only
+
+      const strictEnabled = options?.strictMode?.enabled === true;
+      const minSources = Math.max(1, options?.strictMode?.minSources ?? 2);
+      const countryCode = this.normalizeCountryToCode(options?.country);
+      const isSaudi = this.isSaudiQuery(query, countryCode);
+
+      // Only enforce strict/no-fabrication guardrails for Saudi market research
       const searchResult = await researchApi.search(query, 10, false, {
-        strictMode: true,
-        minSources: 2,
-        country: 'sa' // Saudi Arabia
+        strictMode: isSaudi ? strictEnabled : false,
+        minSources,
+        country: isSaudi ? 'sa' : undefined,
       });
       
       // Handle strict mode failure
@@ -416,6 +438,17 @@ Only output the JSON array, nothing else.`;
     } catch {
       return 'unknown';
     }
+  }
+
+  private normalizeCountryToCode(country?: string): 'sa' | undefined {
+    if (!country) return undefined;
+    const c = country.toLowerCase().trim();
+    if (c === 'sa' || c === 'saudi-arabia' || c.includes('saudi')) return 'sa';
+    return undefined;
+  }
+
+  private isSaudiQuery(query: string, countryCode?: string): boolean {
+    return countryCode === 'sa' || /\b(saudi|tadawul|tasi|nomu|cma|riyadh)\b/i.test(query);
   }
 
   private calculateVerificationQuality(): Partial<QualityScore> {
