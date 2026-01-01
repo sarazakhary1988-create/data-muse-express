@@ -1,11 +1,12 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { FileText, ArrowLeft, Filter, SortDesc, Activity, LayoutList } from 'lucide-react';
+import { FileText, ArrowLeft, Filter, SortDesc, Activity, LayoutList, Scale } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ResultCard } from '@/components/ResultCard';
 import { ResearchTrace } from '@/components/ResearchTrace';
+import { DiscrepancyReport } from '@/components/DiscrepancyReport';
 import { ResearchTask, useResearchStore } from '@/store/researchStore';
 
 interface ResultsViewProps {
@@ -15,8 +16,9 @@ interface ResultsViewProps {
 }
 
 export const ResultsView = ({ task, onBack, onViewReport }: ResultsViewProps) => {
-  const { reports } = useResearchStore();
+  const { reports, agentState } = useResearchStore();
   const taskReport = reports.find(r => r.taskId === task.id);
+  const consolidation = agentState.consolidation;
 
   if (task.status === 'processing') {
     return (
@@ -79,16 +81,25 @@ export const ResultsView = ({ task, onBack, onViewReport }: ResultsViewProps) =>
         </div>
       </div>
 
-      {/* Tabs: Sources vs Trace */}
+      {/* Tabs: Sources vs Trace vs Validation */}
       <Tabs defaultValue="sources" className="w-full">
         <TabsList className="mb-4">
           <TabsTrigger value="sources" className="gap-2">
             <LayoutList className="w-4 h-4" />
             Sources
           </TabsTrigger>
+          <TabsTrigger value="validation" className="gap-2">
+            <Scale className="w-4 h-4" />
+            Validation
+            {consolidation?.discrepancies && consolidation.discrepancies.length > 0 && (
+              <Badge variant="secondary" className="ml-1 h-5 px-1.5">
+                {consolidation.discrepancies.length}
+              </Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="trace" className="gap-2">
             <Activity className="w-4 h-4" />
-            Research Trace
+            Trace
           </TabsTrigger>
         </TabsList>
 
@@ -132,6 +143,27 @@ export const ResultsView = ({ task, onBack, onViewReport }: ResultsViewProps) =>
                 ))}
             </AnimatePresence>
           </div>
+        </TabsContent>
+
+        <TabsContent value="validation">
+          {consolidation ? (
+            <DiscrepancyReport 
+              discrepancies={consolidation.discrepancies}
+              qualityMetrics={consolidation.qualityMetrics}
+              sourceCoverage={consolidation.sourceCoverage}
+              consolidatedData={consolidation.consolidatedData}
+            />
+          ) : (
+            <Card variant="glass" className="p-8">
+              <div className="flex flex-col items-center justify-center text-center">
+                <Scale className="w-12 h-12 text-muted-foreground/30 mb-4" />
+                <h3 className="text-lg font-medium text-muted-foreground">No Validation Data</h3>
+                <p className="text-sm text-muted-foreground/60 mt-1">
+                  Validation data will appear here after research is completed
+                </p>
+              </div>
+            </Card>
+          )}
         </TabsContent>
 
         <TabsContent value="trace">
