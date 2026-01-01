@@ -3,13 +3,26 @@ import { ResearchTask, ResearchResult, Report, useResearchStore } from '@/store/
 import { researchApi } from '@/lib/api/research';
 import { toast } from '@/hooks/use-toast';
 
+// Official sources for Deep Verify mode - prioritizes authoritative data
+const DEEP_VERIFY_SOURCES: { baseUrl: string; searchTerms: string[] }[] = [
+  { 
+    baseUrl: 'https://www.saudiexchange.sa', 
+    searchTerms: ['IPO', 'listing', 'new listing', 'TASI', 'NOMU', '2025'] 
+  },
+  { 
+    baseUrl: 'https://www.tadawul.com.sa', 
+    searchTerms: ['IPO', 'listing', 'companies', 'market'] 
+  },
+];
+
 export const useResearchEngine = () => {
   const { 
     addTask, 
     updateTask, 
     addReport, 
     setIsSearching,
-    setSearchQuery 
+    setSearchQuery,
+    deepVerifyMode
   } = useResearchStore();
 
   const extractDomain = (url: string): string => {
@@ -127,6 +140,95 @@ ${results.map((r, i) => `${i + 1}. [${r.title}](${r.url})`).join('\n')}
 `;
   };
 
+  // Deep verify - crawl official sources first
+  const crawlOfficialSources = useCallback(async (query: string, taskId: string): Promise<ResearchResult[]> => {
+    const officialResults: ResearchResult[] = [];
+    
+    for (const source of DEEP_VERIFY_SOURCES) {
+      try {
+        // Map the website to find relevant pages
+        toast({
+          title: `Deep Verify: Mapping ${source.baseUrl}`,
+          description: "Discovering official pages...",
+        });
+
+        const mapResult = await researchApi.map(source.baseUrl, query, 50);
+        
+        if (!mapResult.success || !mapResult.links || mapResult.links.length === 0) {
+          console.log(`No pages found for ${source.baseUrl}`);
+          continue;
+        }
+
+        // Filter URLs that might be relevant to the query
+        const queryLower = query.toLowerCase();
+        const relevantUrls = mapResult.links.filter((url: string) => {
+          const urlLower = url.toLowerCase();
+          // Check if URL contains relevant keywords
+          return source.searchTerms.some(term => urlLower.includes(term.toLowerCase())) ||
+                 urlLower.includes('ipo') ||
+                 urlLower.includes('listing') ||
+                 urlLower.includes('announce') ||
+                 urlLower.includes('new') ||
+                 urlLower.includes('2025') ||
+                 urlLower.includes('2024');
+        }).slice(0, 5); // Limit to 5 most relevant pages per source
+
+        if (relevantUrls.length === 0) {
+          // If no filtered results, take first few pages
+          relevantUrls.push(...mapResult.links.slice(0, 3));
+        }
+
+        toast({
+          title: `Deep Verify: Scraping ${source.baseUrl}`,
+          description: `Found ${relevantUrls.length} relevant pages`,
+        });
+
+        // Scrape the relevant pages
+        const scrapePromises = relevantUrls.map(async (url: string) => {
+          try {
+            const scrapeResult = await researchApi.scrape(url, ['markdown'], true, 3000);
+            if (scrapeResult.success && scrapeResult.data?.markdown) {
+              return {
+                url,
+                markdown: scrapeResult.data.markdown,
+                title: scrapeResult.data.metadata?.title || url,
+              };
+            }
+          } catch (e) {
+            console.error(`Failed to scrape ${url}:`, e);
+          }
+          return null;
+        });
+
+        const scraped = await Promise.allSettled(scrapePromises);
+        
+        scraped.forEach((result, idx) => {
+          if (result.status === 'fulfilled' && result.value) {
+            const { url, markdown, title } = result.value;
+            officialResults.push({
+              id: `official-${Date.now()}-${idx}`,
+              title: title,
+              url: url,
+              content: markdown,
+              summary: markdown.substring(0, 300) + '...',
+              relevanceScore: 0.95, // High relevance for official sources
+              extractedAt: new Date(),
+              metadata: {
+                domain: extractDomain(url),
+                wordCount: markdown.split(/\s+/).length,
+              },
+            });
+          }
+        });
+
+      } catch (error) {
+        console.error(`Error crawling ${source.baseUrl}:`, error);
+      }
+    }
+
+    return officialResults;
+  }, []);
+
   const startResearch = useCallback(async (query: string) => {
     const taskId = `task-${Date.now()}`;
     
@@ -143,20 +245,49 @@ ${results.map((r, i) => `${i + 1}. [${r.title}](${r.url})`).join('\n')}
     setIsSearching(true);
 
     try {
+      let officialResults: ResearchResult[] = [];
+
+      // Step 0: If Deep Verify mode is enabled, crawl official sources first
+      if (deepVerifyMode) {
+        updateTask(taskId, { progress: 5 });
+        
+        toast({
+          title: "Deep Verify Mode Active",
+          description: "Crawling official Saudi Exchange sources first...",
+        });
+
+        officialResults = await crawlOfficialSources(query, taskId);
+        
+        updateTask(taskId, { progress: 25 });
+        
+        toast({
+          title: "Official Sources Crawled",
+          description: `Found ${officialResults.length} pages from official sources`,
+        });
+      }
+
       // Step 1: Search the web (return URLs + snippets; we will scrape top results for accuracy)
-      updateTask(taskId, { progress: 10 });
+      updateTask(taskId, { progress: deepVerifyMode ? 30 : 10 });
 
       toast({
         title: "Searching the web...",
-        description: `Finding sources for: ${query}`,
+        description: `Finding additional sources for: ${query}`,
       });
 
-      const searchResult = await researchApi.search(query, 12, false);
+      const searchResult = await researchApi.search(query, deepVerifyMode ? 8 : 12, false);
 
-      updateTask(taskId, { progress: 30 });
+      updateTask(taskId, { progress: deepVerifyMode ? 45 : 30 });
 
       if (!searchResult.success || !searchResult.data) {
-        throw new Error(searchResult.error || 'Search failed');
+        // If Deep Verify got results, continue with those
+        if (officialResults.length > 0) {
+          toast({
+            title: "Web search failed",
+            description: "Continuing with official sources only",
+          });
+        } else {
+          throw new Error(searchResult.error || 'Search failed');
+        }
       }
 
       // Step 2: Scrape top results for high-signal, page-level content
@@ -165,7 +296,8 @@ ${results.map((r, i) => `${i + 1}. [${r.title}](${r.url})`).join('\n')}
         description: "Scraping top results for accuracy",
       });
 
-      const baseResults: ResearchResult[] = searchResult.data.map((item, index) => ({
+      const searchData = searchResult.data || [];
+      const baseResults: ResearchResult[] = searchData.map((item, index) => ({
         id: `result-${Date.now()}-${index}`,
         title: item.title || 'Untitled',
         url: item.url,
@@ -215,7 +347,7 @@ ${results.map((r, i) => `${i + 1}. [${r.title}](${r.url})`).join('\n')}
         }
       });
 
-      const results: ResearchResult[] = baseResults.map((r) => {
+      const webResults: ResearchResult[] = baseResults.map((r) => {
         const md = scrapedByUrl.get(r.url);
         const content = md && md.trim().length > 200 ? md : r.content;
         return {
@@ -228,6 +360,9 @@ ${results.map((r, i) => `${i + 1}. [${r.title}](${r.url})`).join('\n')}
           },
         };
       });
+
+      // Combine official sources (prioritized) with web results
+      const results: ResearchResult[] = [...officialResults, ...webResults];
 
       updateTask(taskId, { progress: 70, results });
 
@@ -288,7 +423,7 @@ ${results.map((r, i) => `${i + 1}. [${r.title}](${r.url})`).join('\n')}
     } finally {
       setIsSearching(false);
     }
-  }, [addTask, updateTask, addReport, setIsSearching, setSearchQuery]);
+  }, [addTask, updateTask, addReport, setIsSearching, setSearchQuery, deepVerifyMode, crawlOfficialSources]);
 
   // Deep research - scrapes specific URLs
   const deepScrape = useCallback(async (url: string) => {
@@ -345,6 +480,7 @@ ${results.map((r, i) => `${i + 1}. [${r.title}](${r.url})`).join('\n')}
   return { 
     startResearch, 
     deepScrape, 
-    mapWebsite 
+    mapWebsite,
+    crawlOfficialSources
   };
 };

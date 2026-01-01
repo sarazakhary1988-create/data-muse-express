@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Sparkles, Globe, ArrowRight, Loader2, Link, FileSearch } from 'lucide-react';
+import { Search, Sparkles, Globe, ArrowRight, Loader2, Link, FileSearch, Shield, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useResearchStore } from '@/store/researchStore';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface SearchInputProps {
   onSearch: (query: string) => void;
@@ -23,7 +25,7 @@ const isUrl = (text: string): boolean => {
 };
 
 export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
-  const { searchQuery, setSearchQuery, isSearching } = useResearchStore();
+  const { searchQuery, setSearchQuery, isSearching, deepVerifyMode, setDeepVerifyMode } = useResearchStore();
   const [isFocused, setIsFocused] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -121,10 +123,48 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
 
           {/* Bottom bar */}
           <div className="flex items-center justify-between px-5 pb-4 pt-2 border-t border-border/50">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Sparkles className="w-3 h-3" />
-              <span>AI-powered deep research with real web scraping</span>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Sparkles className="w-3 h-3" />
+                <span>AI-powered deep research</span>
+              </div>
+              
+              {/* Deep Verify Toggle */}
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        id="deep-verify"
+                        checked={deepVerifyMode}
+                        onCheckedChange={setDeepVerifyMode}
+                        className="data-[state=checked]:bg-emerald-500"
+                      />
+                      <label 
+                        htmlFor="deep-verify" 
+                        className={`text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors ${
+                          deepVerifyMode ? 'text-emerald-500' : 'text-muted-foreground'
+                        }`}
+                      >
+                        {deepVerifyMode ? (
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                        ) : (
+                          <Shield className="w-3.5 h-3.5" />
+                        )}
+                        Deep Verify
+                      </label>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-xs">
+                    <p className="font-medium">Deep Verify Mode</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Crawls official sources (Saudi Exchange, Tadawul) first before web search for maximum accuracy on financial/market data.
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </div>
+            
             <div className="flex items-center gap-2">
               {detectedUrl && onScrapeUrl && (
                 <Button
@@ -148,12 +188,12 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
                 {isSearching ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Researching...
+                    {deepVerifyMode ? 'Deep Verifying...' : 'Researching...'}
                   </>
                 ) : (
                   <>
-                    <Search className="w-4 h-4" />
-                    {detectedUrl ? 'Search About' : 'Research'}
+                    {deepVerifyMode ? <ShieldCheck className="w-4 h-4" /> : <Search className="w-4 h-4" />}
+                    {detectedUrl ? 'Search About' : deepVerifyMode ? 'Deep Verify' : 'Research'}
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}

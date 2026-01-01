@@ -49,6 +49,7 @@ interface ResearchStore {
   reports: Report[];
   isSearching: boolean;
   searchQuery: string;
+  deepVerifyMode: boolean;
   
   // Actions
   setSearchQuery: (query: string) => void;
@@ -57,6 +58,7 @@ interface ResearchStore {
   setCurrentTask: (task: ResearchTask | null) => void;
   addReport: (report: Report) => void;
   setIsSearching: (isSearching: boolean) => void;
+  setDeepVerifyMode: (enabled: boolean) => void;
   clearTasks: () => void;
 }
 
@@ -66,6 +68,7 @@ export const useResearchStore = create<ResearchStore>((set) => ({
   reports: [],
   isSearching: false,
   searchQuery: '',
+  deepVerifyMode: false,
   
   setSearchQuery: (query) => set({ searchQuery: query }),
   
@@ -90,6 +93,8 @@ export const useResearchStore = create<ResearchStore>((set) => ({
   })),
   
   setIsSearching: (isSearching) => set({ isSearching }),
+  
+  setDeepVerifyMode: (enabled) => set({ deepVerifyMode: enabled }),
   
   clearTasks: () => set({ tasks: [], currentTask: null, reports: [] }),
 }));
