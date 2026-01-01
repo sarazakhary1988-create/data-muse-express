@@ -104,84 +104,111 @@ export class ResearchAgent {
     this.stateMachine.reset();
     this.executor.reset();
 
+    console.log(`[ResearchAgent] ========== STARTING RESEARCH ==========`);
+    console.log(`[ResearchAgent] Query: "${query}"`);
+    console.log(`[ResearchAgent] Deep Verify: ${deepVerifyEnabled}, Sources: ${enabledSources.length}`);
+
     try {
       // Phase 1: Planning
+      console.log(`[ResearchAgent] 📋 Phase 1: PLANNING`);
       await this.stateMachine.transition('planning');
       this.callbacks.onProgress?.(5);
       this.callbacks.onDecision?.('Creating adaptive research plan', 0.9);
 
       this.currentPlan = await this.planner.createPlan(query, deepVerifyEnabled);
+      console.log(`[ResearchAgent] Plan created:`, this.currentPlan);
       this.callbacks.onPlanUpdate?.(this.currentPlan);
       this.stateMachine.updateContext({ plan: this.currentPlan });
 
       // Phase 2: Deep Verify (if enabled)
       if (deepVerifyEnabled && enabledSources.length > 0) {
+        console.log(`[ResearchAgent] 🔍 Phase 2: DEEP VERIFY`);
         await this.executeDeepVerify(query, enabledSources);
+        console.log(`[ResearchAgent] Deep verify complete. Results so far: ${this.results.length}`);
       }
 
       // Phase 3: Web Search
+      console.log(`[ResearchAgent] 🌐 Phase 3: WEB SEARCH`);
       await this.stateMachine.transition('searching');
       this.callbacks.onProgress?.(deepVerifyEnabled ? 30 : 15);
       this.callbacks.onDecision?.('Executing parallel web search', 0.85);
 
       const searchResults = await this.executeSearch(query, deepVerifyEnabled);
+      console.log(`[ResearchAgent] Search complete. Found ${searchResults.length} results`);
       this.stateMachine.updateContext({ results: this.results });
 
       // Phase 4: Content Scraping
+      console.log(`[ResearchAgent] 📄 Phase 4: CONTENT SCRAPING`);
       await this.stateMachine.transition('scraping');
       this.callbacks.onProgress?.(deepVerifyEnabled ? 45 : 30);
       this.callbacks.onDecision?.('Scraping content with parallel execution', 0.88);
 
       await this.executeScraping(searchResults);
+      console.log(`[ResearchAgent] Scraping complete. Total results: ${this.results.length}`);
       this.callbacks.onResultsUpdate?.(this.results);
 
       // Phase 5: Analysis
+      console.log(`[ResearchAgent] 🧠 Phase 5: ANALYSIS`);
       await this.stateMachine.transition('analyzing');
       this.callbacks.onProgress?.(60);
       this.callbacks.onDecision?.('Analyzing content with AI', 0.82);
 
       // Update quality based on analysis
       const analysisQuality = await this.analyzeResults();
+      console.log(`[ResearchAgent] Analysis quality:`, analysisQuality);
       this.stateMachine.updateQuality(analysisQuality);
       this.callbacks.onQualityUpdate?.(this.stateMachine.getContext().quality);
 
       // Phase 6: Verification
+      console.log(`[ResearchAgent] ✅ Phase 6: VERIFICATION`);
       await this.stateMachine.transition('verifying');
       this.callbacks.onProgress?.(75);
       this.callbacks.onDecision?.('Verifying claims with cross-references', 0.78);
 
       this.verifications = await this.executeVerification();
+      console.log(`[ResearchAgent] Verification complete. Claims verified: ${this.verifications.length}`);
       this.callbacks.onVerificationUpdate?.(this.verifications);
 
       // Update quality with verification scores
       const verificationQuality = this.calculateVerificationQuality();
+      console.log(`[ResearchAgent] Verification quality:`, verificationQuality);
       this.stateMachine.updateQuality(verificationQuality);
       this.callbacks.onQualityUpdate?.(this.stateMachine.getContext().quality);
 
       // Phase 7: Compile Report
+      console.log(`[ResearchAgent] 📝 Phase 7: COMPILING REPORT`);
       await this.stateMachine.transition('compiling');
       this.callbacks.onProgress?.(90);
       this.callbacks.onDecision?.('Compiling comprehensive report', 0.92);
 
       const report = await this.compileReport(query);
+      console.log(`[ResearchAgent] Report compiled. Length: ${report.length} characters`);
 
       // Decision: Check if quality is sufficient
       const context = this.stateMachine.getContext();
       const decision = this.decisionEngine.decide(context);
+      console.log(`[ResearchAgent] Decision engine:`, decision);
       this.callbacks.onDecision?.(decision.reason, decision.confidence);
 
       if (decision.action.type === 'adapt' && context.quality.overall < 0.6) {
         // Low quality - try to improve
+        console.log(`[ResearchAgent] ⚠️ Quality below threshold (${(context.quality.overall * 100).toFixed(1)}%), improving...`);
         this.callbacks.onDecision?.('Quality below threshold, searching for more sources', 0.7);
         await this.improveQuality(query);
       }
 
       // Complete
+      console.log(`[ResearchAgent] 🎉 Phase 8: COMPLETING`);
       await this.stateMachine.transition('completed');
       this.callbacks.onProgress?.(100);
 
-      // Record outcome in memory
       const finalQuality = this.stateMachine.getContext().quality;
+      console.log(`[ResearchAgent] ========== RESEARCH COMPLETE ==========`);
+      console.log(`[ResearchAgent] Final quality: ${(finalQuality.overall * 100).toFixed(1)}%`);
+      console.log(`[ResearchAgent] Total results: ${this.results.length}`);
+      console.log(`[ResearchAgent] Verified claims: ${this.verifications.length}`);
+      console.log(`[ResearchAgent] Time elapsed: ${((Date.now() - this.startTime) / 1000).toFixed(1)}s`);
+      
       this.memory.recordOutcome(
         query,
         this.currentPlan,
@@ -202,6 +229,7 @@ export class ResearchAgent {
         plan: this.currentPlan
       };
     } catch (error) {
+      console.error(`[ResearchAgent] ❌ ERROR:`, error);
       const agentError: AgentError = {
         id: `error-${Date.now()}`,
         type: 'unknown',
