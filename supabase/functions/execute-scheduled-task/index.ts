@@ -113,17 +113,18 @@ serve(async (req) => {
     console.log("Research query:", researchQuery);
 
     // Step 1: Search for content (strict no-fabrication for Saudi market)
-    const taskCountry = (task.country || "").toLowerCase();
-    const countryCode = taskCountry.includes("saudi") || taskCountry === "saudi-arabia" || taskCountry === "sa" ? "sa" : undefined;
-    const isSaudi = countryCode === "sa" || /\b(saudi|tadawul|tasi|nomu|cma|riyadh)\b/i.test(researchQuery);
+    const countryCode = normalizeCountryToCode(task.country);
+    const isSaudi = isSaudiContext(countryCode, researchQuery);
+
+    console.log("Country analysis:", { rawCountry: task.country, countryCode, isSaudi });
 
     const searchResponse = await supabase.functions.invoke("research-search", {
       body: {
         query: researchQuery,
         limit: task.research_depth === "deep" ? 15 : task.research_depth === "quick" ? 5 : 10,
         scrapeContent: true,
-        strictMode: isSaudi ? true : false,
-        minSources: 2,
+        strictMode: isSaudi, // Enforce strict mode for Saudi only
+        minSources: isSaudi ? 3 : 2, // Higher bar for Saudi
         country: countryCode,
       },
     });
@@ -275,6 +276,92 @@ serve(async (req) => {
   }
 });
 
+// ----------------------------
+// Country Mapping Utilities
+// ----------------------------
+type ISOCountryCode = 'sa' | 'ae' | 'us' | 'gb' | 'cn' | 'jp' | 'de' | 'fr' | 'in' | 'br' | 'ca' | 'au' | 'kr' | 'sg' | 'hk' | 'ch' | 'nl' | 'se' | 'es' | 'it' | 'ru' | 'mx' | 'id' | 'tr' | 'eg' | 'za' | 'ng' | 'qa' | 'kw' | 'bh' | 'om' | undefined;
+
+const COUNTRY_MAPPING: Record<string, ISOCountryCode> = {
+  // Saudi Arabia variants
+  'sa': 'sa', 'saudi': 'sa', 'saudi-arabia': 'sa', 'saudi arabia': 'sa', 'ksa': 'sa',
+  'kingdom of saudi arabia': 'sa',
+  // UAE
+  'ae': 'ae', 'uae': 'ae', 'united arab emirates': 'ae', 'emirates': 'ae', 'dubai': 'ae', 'abu dhabi': 'ae',
+  // US
+  'us': 'us', 'usa': 'us', 'united states': 'us', 'united-states': 'us', 'america': 'us',
+  // UK
+  'gb': 'gb', 'uk': 'gb', 'united kingdom': 'gb', 'united-kingdom': 'gb', 'britain': 'gb',
+  // China
+  'cn': 'cn', 'china': 'cn',
+  // Japan
+  'jp': 'jp', 'japan': 'jp',
+  // Germany
+  'de': 'de', 'germany': 'de',
+  // France
+  'fr': 'fr', 'france': 'fr',
+  // India
+  'in': 'in', 'india': 'in',
+  // Brazil
+  'br': 'br', 'brazil': 'br',
+  // Canada
+  'ca': 'ca', 'canada': 'ca',
+  // Australia
+  'au': 'au', 'australia': 'au',
+  // South Korea
+  'kr': 'kr', 'south korea': 'kr', 'south-korea': 'kr', 'korea': 'kr',
+  // Singapore
+  'sg': 'sg', 'singapore': 'sg',
+  // Hong Kong
+  'hk': 'hk', 'hong kong': 'hk', 'hong-kong': 'hk',
+  // Switzerland
+  'ch': 'ch', 'switzerland': 'ch',
+  // Netherlands
+  'nl': 'nl', 'netherlands': 'nl', 'holland': 'nl',
+  // Sweden
+  'se': 'se', 'sweden': 'se',
+  // Spain
+  'es': 'es', 'spain': 'es',
+  // Italy
+  'it': 'it', 'italy': 'it',
+  // Russia
+  'ru': 'ru', 'russia': 'ru',
+  // Mexico
+  'mx': 'mx', 'mexico': 'mx',
+  // Indonesia
+  'id': 'id', 'indonesia': 'id',
+  // Turkey
+  'tr': 'tr', 'turkey': 'tr',
+  // Egypt
+  'eg': 'eg', 'egypt': 'eg',
+  // South Africa
+  'za': 'za', 'south africa': 'za', 'south-africa': 'za',
+  // Nigeria
+  'ng': 'ng', 'nigeria': 'ng',
+  // Qatar
+  'qa': 'qa', 'qatar': 'qa',
+  // Kuwait
+  'kw': 'kw', 'kuwait': 'kw',
+  // Bahrain
+  'bh': 'bh', 'bahrain': 'bh',
+  // Oman
+  'om': 'om', 'oman': 'om',
+};
+
+function normalizeCountryToCode(raw: string | null | undefined): ISOCountryCode {
+  if (!raw) return undefined;
+  const key = raw.toLowerCase().trim().replace(/[_\-]+/g, ' ');
+  return COUNTRY_MAPPING[key] ?? undefined;
+}
+
+function isSaudiContext(countryCode: ISOCountryCode, query: string): boolean {
+  if (countryCode === 'sa') return true;
+  // Fallback keyword detection in query
+  return /\b(saudi|tadawul|tasi|nomu|cma|riyadh|ksa)\b/i.test(query);
+}
+
+// ----------------------------
+// Query Builder
+// ----------------------------
 function buildResearchQuery(task: ScheduledTask): string {
   const description = task.enhanced_description || task.description;
   const parts: string[] = [description];
@@ -283,8 +370,11 @@ function buildResearchQuery(task: ScheduledTask): string {
     parts.push(`in the ${task.industry} industry`);
   }
 
+  const countryCode = normalizeCountryToCode(task.country);
   if (task.geographic_focus && task.geographic_focus !== "global") {
-    if (task.geographic_focus === "country" && task.country) {
+    if (countryCode === 'sa') {
+      parts.push("focused on Saudi Arabia (Tadawul / Nomu / CMA)");
+    } else if (task.geographic_focus === "country" && task.country) {
       parts.push(`focused on ${task.country}`);
     } else {
       parts.push(`in ${task.geographic_focus.replace("-", " ")}`);
