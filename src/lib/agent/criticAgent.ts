@@ -107,28 +107,34 @@ export class CriticAgent {
 
     // Use AI for deeper verification if available
     try {
-      const { data } = await supabase.functions.invoke('research-analyze', {
-        body: {
-          query: claim,
-          content: excerpt,
-          type: 'extract',
-          extractionPrompt: `Does this content support, contradict, or not address the following claim?
-          
+      const verificationPrompt = `Verify this claim against the provided content.
+
 Claim: "${claim}"
 
-Content: "${excerpt}"
+Content excerpt: "${excerpt}"
 
-Respond with JSON: { "support": "strong|moderate|weak|contradicts|none", "reason": "brief explanation" }`
+Analyze whether the content supports, contradicts, or does not address the claim. 
+Respond with ONLY a JSON object (no markdown): { "support": "strong|moderate|weak|contradicts|none", "reason": "brief explanation" }`;
+
+      const { data } = await supabase.functions.invoke('research-analyze', {
+        body: {
+          query: verificationPrompt,
+          content: excerpt,
+          type: 'extract',
         }
       });
 
       if (data?.result) {
         try {
-          const parsed = JSON.parse(data.result);
-          return { 
-            level: parsed.support || (matchRatio > 0.7 ? 'moderate' : 'weak'), 
-            excerpt 
-          };
+          // Try to extract JSON from response
+          const jsonMatch = data.result.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+            return { 
+              level: parsed.support || (matchRatio > 0.7 ? 'moderate' : 'weak'), 
+              excerpt 
+            };
+          }
         } catch {
           // Fall through to heuristic
         }

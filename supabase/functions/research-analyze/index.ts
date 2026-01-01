@@ -36,27 +36,38 @@ serve(async (req) => {
       );
     }
 
-    console.log('Analyzing content for query:', query, 'type:', type);
+    console.log('Analyzing content for query:', query?.substring(0, 100), '... type:', type);
 
     const systemPrompts: Record<string, string> = {
       summarize: `You are a factual research assistant. Only use information explicitly stated in the provided sources. If something is not present in the sources, say "Not found in sources". Provide a concise summary and end with a short Sources list (URLs).`,
       analyze: `You are a factual research analyst. Only use information explicitly stated in the provided sources. Do not guess or fill gaps. If the sources are insufficient, say what is missing. Cite sources by URL for every important claim.`,
       extract: `You are a strict data extraction assistant. Extract ONLY facts that are explicitly present in the provided sources. If a field is missing, output "Not found". Include the source URL for each extracted item.`,
-      report: `You are a strict, source-grounded report writer.
+      report: `You are a strict, source-grounded research report writer.
 
-Rules (critical):
-- Use ONLY the provided sources. Do NOT invent company names, dates, or numbers.
-- Every claim must be backed by an explicit citation to a Source URL.
-- If the user asks for a complete list and the sources don't contain a complete list, clearly state that the sources are incomplete.
+CRITICAL RULES:
+1. Use ONLY information explicitly stated in the provided sources
+2. Every claim MUST be backed by a citation to a Source URL
+3. If the sources don't contain enough information to fully answer the query, clearly state what's missing
+4. Do NOT invent, assume, or hallucinate any data (names, dates, numbers, etc.)
+5. If sources contradict each other, note the contradiction
 
-Output format (Markdown):
-1) # Research Report: <query>
-2) ## Method & Coverage (brief)
-3) ## Answer (as a table)
-   Columns: Company | Market (TASI/Nomu) | Announcement / Listing Date | Evidence (short quote) | Source URL
-   - If unknown, write "Not found".
-4) ## Sources (bulleted list of URLs used)
-5) ## Gaps / What to verify (if sources incomplete)
+OUTPUT FORMAT (Markdown):
+# Research Report: [User's Query]
+
+## Executive Summary
+Brief answer to the user's query based solely on available sources.
+
+## Detailed Findings
+Present the key information found in sources. Use tables when listing multiple items.
+- Include relevant quotes or data points
+- Cite source URLs for every fact
+
+## Sources Used
+- Bulleted list of all URLs that provided information
+
+## Data Gaps & Limitations
+- What information was requested but not found in sources
+- Any caveats about source reliability or coverage
 `,
     };
 
