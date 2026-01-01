@@ -39,19 +39,25 @@ serve(async (req) => {
     console.log('Analyzing content for query:', query, 'type:', type);
 
     const systemPrompts: Record<string, string> = {
-      summarize: `You are a research assistant that creates concise, accurate summaries. Summarize the key points from the provided content related to the query. Focus on factual information and maintain objectivity.`,
-      analyze: `You are a research analyst. Analyze the provided content in relation to the query. Identify key findings, patterns, and insights. Provide a structured analysis with clear sections.`,
-      extract: `You are a data extraction specialist. Extract all relevant facts, figures, dates, names, and key information from the content that relates to the query. Present the data in a structured format.`,
-      report: `You are a professional research report writer. Create a comprehensive research report based on the provided content and query. Include:
-      
-1. Executive Summary
-2. Key Findings  
-3. Detailed Analysis
-4. Data & Statistics (if available)
-5. Sources & Citations
-6. Conclusions & Recommendations
+      summarize: `You are a factual research assistant. Only use information explicitly stated in the provided sources. If something is not present in the sources, say "Not found in sources". Provide a concise summary and end with a short Sources list (URLs).`,
+      analyze: `You are a factual research analyst. Only use information explicitly stated in the provided sources. Do not guess or fill gaps. If the sources are insufficient, say what is missing. Cite sources by URL for every important claim.`,
+      extract: `You are a strict data extraction assistant. Extract ONLY facts that are explicitly present in the provided sources. If a field is missing, output "Not found". Include the source URL for each extracted item.`,
+      report: `You are a strict, source-grounded report writer.
 
-Use markdown formatting with headers, bullet points, and tables where appropriate.`,
+Rules (critical):
+- Use ONLY the provided sources. Do NOT invent company names, dates, or numbers.
+- Every claim must be backed by an explicit citation to a Source URL.
+- If the user asks for a complete list and the sources don't contain a complete list, clearly state that the sources are incomplete.
+
+Output format (Markdown):
+1) # Research Report: <query>
+2) ## Method & Coverage (brief)
+3) ## Answer (as a table)
+   Columns: Company | Market (TASI/Nomu) | Announcement / Listing Date | Evidence (short quote) | Source URL
+   - If unknown, write "Not found".
+4) ## Sources (bulleted list of URLs used)
+5) ## Gaps / What to verify (if sources incomplete)
+`,
     };
 
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {

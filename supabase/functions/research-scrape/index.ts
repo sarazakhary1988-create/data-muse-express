@@ -8,6 +8,8 @@ const corsHeaders = {
 interface ScrapeRequest {
   url: string;
   formats?: string[];
+  onlyMainContent?: boolean;
+  waitFor?: number;
 }
 
 serve(async (req) => {
@@ -16,7 +18,12 @@ serve(async (req) => {
   }
 
   try {
-    const { url, formats = ['markdown', 'links'] } = await req.json() as ScrapeRequest;
+    const {
+      url,
+      formats = ['markdown', 'links'],
+      onlyMainContent = true,
+      waitFor = 3000,
+    } = await req.json() as ScrapeRequest;
 
     if (!url) {
       console.error('No URL provided');
@@ -52,8 +59,8 @@ serve(async (req) => {
       body: JSON.stringify({
         url: formattedUrl,
         formats,
-        onlyMainContent: true,
-        waitFor: 3000,
+        onlyMainContent,
+        waitFor,
       }),
     });
 
