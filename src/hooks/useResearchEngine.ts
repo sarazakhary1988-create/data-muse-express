@@ -23,6 +23,7 @@ export const useResearchEngine = () => {
     setAgentPlan,
     setAgentDecision,
     setAgentConsolidation,
+    setAgentSearchEngines,
     resetAgentState
   } = useResearchStore();
 
@@ -128,13 +129,18 @@ export const useResearchEngine = () => {
       });
 
       // Execute the full agent pipeline
-      const { results, report, quality, verifications, plan } = await researchAgent.execute(
+      const { results, report, quality, verifications, plan, searchEngineInfo } = await researchAgent.execute(
         query,
         deepVerifyMode,
         enabledSources,
         reportFormat,
         { country: countryFilter, strictMode }
       );
+
+      // Store search engine info
+      if (searchEngineInfo) {
+        setAgentSearchEngines(searchEngineInfo);
+      }
 
       // Calculate consolidation data (Manus-inspired)
       const consolidatedResult = dataConsolidator.consolidate(results);
@@ -228,6 +234,7 @@ export const useResearchEngine = () => {
     setAgentPlan,
     setAgentDecision,
     setAgentConsolidation,
+    setAgentSearchEngines,
     resetAgentState
   ]);
 

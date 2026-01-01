@@ -62,6 +62,9 @@ export interface SearchResult {
     totalPagesFound: number;
     totalPagesExtracted: number;
   };
+  // Search engine tracking
+  engines?: string[];
+  engineResults?: Record<string, number>;
 }
 
 export interface AnalyzeResult {
@@ -121,7 +124,9 @@ export interface WebSearchResult {
   error?: string;
   searchMethod?: string;
   engines?: string[];
+  engineResults?: Record<string, number>;
   timing?: { total: number };
+  totalResults?: number;
 }
 
 // ============ RESEARCH API - ZERO EXTERNAL DEPENDENCIES ============
@@ -158,7 +163,15 @@ export const researchApi = {
       });
 
       if (webSearchResult.success && webSearchResult.data && webSearchResult.data.length > 0) {
-        console.log('[researchApi] Embedded search success:', webSearchResult.data.length, 'results');
+        console.log('[researchApi] Embedded search success:', webSearchResult.data.length, 'results from engines:', webSearchResult.engines);
+        
+        // Count results per engine
+        const engineResults: Record<string, number> = {};
+        webSearchResult.data.forEach(item => {
+          const engine = item.source || 'unknown';
+          engineResults[engine] = (engineResults[engine] || 0) + 1;
+        });
+        
         return {
           success: true,
           data: webSearchResult.data.map((item, idx) => ({
@@ -172,7 +185,9 @@ export const researchApi = {
             reliability: 0.8 - (idx * 0.02),
             source: item.source,
           })),
-          searchMethod: 'embedded_web_search',
+          searchMethod: webSearchResult.searchMethod || 'embedded_web_search',
+          engines: webSearchResult.engines,
+          engineResults,
           timing: webSearchResult.timing,
         };
       }
