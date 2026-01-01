@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { 
   FileText, 
@@ -12,7 +12,8 @@ import {
   ChevronDown,
   Sparkles,
   FileType,
-  Loader2
+  Loader2,
+  ShieldCheck
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,6 +30,8 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import jsPDF from 'jspdf';
 import { Discrepancy, QualityMetrics, SourceCoverage } from '@/lib/agent/dataConsolidator';
+import { DataConfidenceIndicator, generateConfidenceCategories } from '@/components/DataConfidenceIndicator';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export interface ValidationData {
   discrepancies: Discrepancy[];
@@ -48,7 +51,15 @@ export const ReportViewer = ({ report, validationData }: ReportViewerProps) => {
   const [copied, setCopied] = useState(false);
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [activeTab, setActiveTab] = useState<'report' | 'confidence'>('report');
   const contentRef = useRef<HTMLDivElement>(null);
+
+  // Generate confidence data based on the report query
+  const confidenceData = useMemo(() => {
+    // Extract query from report title (remove "Research Report: " prefix if present)
+    const query = report.title.replace(/^Research Report:\s*/i, '').replace(/^Report:\s*/i, '');
+    return generateConfidenceCategories(query, 'ai-powered');
+  }, [report.title]);
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(report.content);
@@ -484,88 +495,124 @@ export const ReportViewer = ({ report, validationData }: ReportViewerProps) => {
           </div>
         )}
 
-        <CardContent className="p-6 md:p-10 lg:p-12">
-          <div ref={contentRef} className="prose prose-invert prose-sm max-w-none">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={{
-                h1: ({ children }) => (
-                  <h1 className="text-3xl font-bold text-foreground mt-10 mb-6 first:mt-0 bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-transparent">{children}</h1>
-                ),
-                h2: ({ children }) => (
-                  <h2 className="text-xl font-semibold text-foreground mt-8 mb-4 pb-3 border-b-2 border-primary/20 flex items-center gap-2">
-                    <span className="w-1.5 h-6 bg-gradient-to-b from-primary to-accent rounded-full" />
-                    {children}
-                  </h2>
-                ),
-                h3: ({ children }) => (
-                  <h3 className="text-lg font-medium text-foreground mt-6 mb-3 pl-3 border-l-2 border-accent/30">{children}</h3>
-                ),
-                p: ({ children }) => (
-                  <p className="text-muted-foreground leading-relaxed mb-4 text-[15px]">{children}</p>
-                ),
-                ul: ({ children }) => (
-                  <ul className="space-y-2 mb-5 text-muted-foreground pl-1">{children}</ul>
-                ),
-                ol: ({ children }) => (
-                  <ol className="list-decimal list-inside space-y-2 mb-5 text-muted-foreground">{children}</ol>
-                ),
-                li: ({ children }) => (
-                  <li className="text-muted-foreground flex items-start gap-2">
-                    <span className="text-primary mt-1.5">•</span>
-                    <span className="flex-1">{children}</span>
-                  </li>
-                ),
-                blockquote: ({ children }) => (
-                  <blockquote className="border-l-4 border-primary pl-5 py-3 my-6 bg-gradient-to-r from-primary/10 to-transparent rounded-r-xl text-foreground/90 italic shadow-sm">
-                    {children}
-                  </blockquote>
-                ),
-                code: ({ className, children }) => {
-                  const isInline = !className;
-                  if (isInline) {
-                    return <code className="px-2 py-1 bg-primary/10 text-primary rounded-md text-sm font-mono border border-primary/20">{children}</code>;
-                  }
-                  return <code className="block p-4 bg-muted/50 rounded-xl overflow-x-auto text-sm font-mono border border-border">{children}</code>;
-                },
-                pre: ({ children }) => <pre className="bg-muted/50 rounded-xl overflow-x-auto mb-5 border border-border shadow-sm">{children}</pre>,
-                table: ({ children }) => (
-                  <div className="overflow-x-auto mb-6 rounded-xl border border-border shadow-sm">
-                    <table className="w-full border-collapse">{children}</table>
-                  </div>
-                ),
-                thead: ({ children }) => (
-                  <thead className="bg-gradient-to-r from-primary/10 to-accent/10">{children}</thead>
-                ),
-                th: ({ children }) => (
-                  <th className="border-b border-border px-4 py-3 text-left font-semibold text-foreground text-sm uppercase tracking-wider">{children}</th>
-                ),
-                td: ({ children }) => (
-                  <td className="border-b border-border/50 px-4 py-3 text-muted-foreground">{children}</td>
-                ),
-                tr: ({ children }) => (
-                  <tr className="hover:bg-muted/30 transition-colors">{children}</tr>
-                ),
-                a: ({ href, children }) => (
-                  <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-accent underline underline-offset-4 decoration-primary/30 hover:decoration-accent transition-all font-medium">
-                    {children}
-                  </a>
-                ),
-                hr: () => (
-                  <hr className="my-8 border-0 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
-                ),
-                strong: ({ children }) => (
-                  <strong className="font-semibold text-foreground">{children}</strong>
-                ),
-                em: ({ children }) => (
-                  <em className="italic text-foreground/80">{children}</em>
-                ),
-              }}
-            >
-              {report.content}
-            </ReactMarkdown>
-          </div>
-        </CardContent>
+        {/* Tabs for Report and Confidence */}
+        <div className="border-b border-border/50 bg-muted/20 px-6 pt-4">
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'report' | 'confidence')}>
+            <TabsList className="grid w-full max-w-md grid-cols-2">
+              <TabsTrigger value="report" className="gap-2">
+                <FileText className="w-4 h-4" />
+                Report
+              </TabsTrigger>
+              <TabsTrigger value="confidence" className="gap-2">
+                <ShieldCheck className="w-4 h-4" />
+                Data Confidence
+                <span className={`ml-1 text-xs px-1.5 py-0.5 rounded ${
+                  confidenceData.overallConfidence >= 70 
+                    ? 'bg-green-500/20 text-green-400' 
+                    : confidenceData.overallConfidence >= 50 
+                    ? 'bg-yellow-500/20 text-yellow-400'
+                    : 'bg-orange-500/20 text-orange-400'
+                }`}>
+                  {confidenceData.overallConfidence}%
+                </span>
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+
+        {activeTab === 'report' ? (
+          <CardContent className="p-6 md:p-10 lg:p-12">
+            <div ref={contentRef} className="prose prose-invert prose-sm max-w-none">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  h1: ({ children }) => (
+                    <h1 className="text-3xl font-bold text-foreground mt-10 mb-6 first:mt-0 bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-transparent">{children}</h1>
+                  ),
+                  h2: ({ children }) => (
+                    <h2 className="text-xl font-semibold text-foreground mt-8 mb-4 pb-3 border-b-2 border-primary/20 flex items-center gap-2">
+                      <span className="w-1.5 h-6 bg-gradient-to-b from-primary to-accent rounded-full" />
+                      {children}
+                    </h2>
+                  ),
+                  h3: ({ children }) => (
+                    <h3 className="text-lg font-medium text-foreground mt-6 mb-3 pl-3 border-l-2 border-accent/30">{children}</h3>
+                  ),
+                  p: ({ children }) => (
+                    <p className="text-muted-foreground leading-relaxed mb-4 text-[15px]">{children}</p>
+                  ),
+                  ul: ({ children }) => (
+                    <ul className="space-y-2 mb-5 text-muted-foreground pl-1">{children}</ul>
+                  ),
+                  ol: ({ children }) => (
+                    <ol className="list-decimal list-inside space-y-2 mb-5 text-muted-foreground">{children}</ol>
+                  ),
+                  li: ({ children }) => (
+                    <li className="text-muted-foreground flex items-start gap-2">
+                      <span className="text-primary mt-1.5">•</span>
+                      <span className="flex-1">{children}</span>
+                    </li>
+                  ),
+                  blockquote: ({ children }) => (
+                    <blockquote className="border-l-4 border-primary pl-5 py-3 my-6 bg-gradient-to-r from-primary/10 to-transparent rounded-r-xl text-foreground/90 italic shadow-sm">
+                      {children}
+                    </blockquote>
+                  ),
+                  code: ({ className, children }) => {
+                    const isInline = !className;
+                    if (isInline) {
+                      return <code className="px-2 py-1 bg-primary/10 text-primary rounded-md text-sm font-mono border border-primary/20">{children}</code>;
+                    }
+                    return <code className="block p-4 bg-muted/50 rounded-xl overflow-x-auto text-sm font-mono border border-border">{children}</code>;
+                  },
+                  pre: ({ children }) => <pre className="bg-muted/50 rounded-xl overflow-x-auto mb-5 border border-border shadow-sm">{children}</pre>,
+                  table: ({ children }) => (
+                    <div className="overflow-x-auto mb-6 rounded-xl border border-border shadow-sm">
+                      <table className="w-full border-collapse">{children}</table>
+                    </div>
+                  ),
+                  thead: ({ children }) => (
+                    <thead className="bg-gradient-to-r from-primary/10 to-accent/10">{children}</thead>
+                  ),
+                  th: ({ children }) => (
+                    <th className="border-b border-border px-4 py-3 text-left font-semibold text-foreground text-sm uppercase tracking-wider">{children}</th>
+                  ),
+                  td: ({ children }) => (
+                    <td className="border-b border-border/50 px-4 py-3 text-muted-foreground">{children}</td>
+                  ),
+                  tr: ({ children }) => (
+                    <tr className="hover:bg-muted/30 transition-colors">{children}</tr>
+                  ),
+                  a: ({ href, children }) => (
+                    <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-accent underline underline-offset-4 decoration-primary/30 hover:decoration-accent transition-all font-medium">
+                      {children}
+                    </a>
+                  ),
+                  hr: () => (
+                    <hr className="my-8 border-0 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
+                  ),
+                  strong: ({ children }) => (
+                    <strong className="font-semibold text-foreground">{children}</strong>
+                  ),
+                  em: ({ children }) => (
+                    <em className="italic text-foreground/80">{children}</em>
+                  ),
+                }}
+              >
+                {report.content}
+              </ReactMarkdown>
+            </div>
+          </CardContent>
+        ) : (
+          <CardContent className="p-6 md:p-10 lg:p-12">
+            <DataConfidenceIndicator
+              categories={confidenceData.categories}
+              overallConfidence={confidenceData.overallConfidence}
+              knowledgeCutoff={confidenceData.knowledgeCutoff}
+              searchMethod="ai-powered"
+            />
+          </CardContent>
+        )}
 
         <div className="border-t border-border/50 bg-gradient-to-r from-card via-primary/5 to-card px-6 py-5">
           <div className="flex items-center justify-between text-sm">
@@ -573,6 +620,17 @@ export const ReportViewer = ({ report, validationData }: ReportViewerProps) => {
               <div className="flex items-center gap-2 px-3 py-1.5 bg-primary/10 rounded-full">
                 <Sparkles className="w-4 h-4 text-primary" />
                 <span className="text-foreground font-medium">NexusAI Research Engine</span>
+              </div>
+              {/* Confidence badge in footer */}
+              <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full ${
+                confidenceData.overallConfidence >= 70 
+                  ? 'bg-green-500/10 text-green-400' 
+                  : confidenceData.overallConfidence >= 50 
+                  ? 'bg-yellow-500/10 text-yellow-400'
+                  : 'bg-orange-500/10 text-orange-400'
+              }`}>
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span className="text-xs font-medium">{confidenceData.overallConfidence}% Confidence</span>
               </div>
             </div>
             <div className="flex items-center gap-4 text-muted-foreground">
