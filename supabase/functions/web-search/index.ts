@@ -399,6 +399,51 @@ async function batchScrape(results: SearchResult[], concurrency: number): Promis
 }
 
 // ============ MAIN HANDLER ============
+// Extract clean search query from potentially enhanced prompts
+function extractCleanQuery(rawQuery: string): string {
+  // If the query looks like an enhanced prompt, extract the core topic
+  if (rawQuery.includes('Enhanced Research Prompt') || 
+      rawQuery.includes('Provide a detailed') ||
+      rawQuery.includes('comprehensive report on') ||
+      rawQuery.length > 300) {
+    
+    // Try to extract the main topic from enhanced prompts
+    const patterns = [
+      /comprehensive report on\s+([^,\.\n]+)/i,
+      /detailed.*?report on\s+([^,\.\n]+)/i,
+      /research.*?on\s+([^,\.\n]+)/i,
+      /analyze\s+([^,\.\n]+)/i,
+      /information about\s+([^,\.\n]+)/i,
+    ];
+    
+    for (const pattern of patterns) {
+      const match = rawQuery.match(pattern);
+      if (match && match[1]) {
+        const extracted = match[1].trim().slice(0, 150);
+        console.log('[web-search] Extracted clean query:', extracted);
+        return extracted;
+      }
+    }
+    
+    // Fallback: take the first meaningful line
+    const lines = rawQuery.split('\n').filter(l => l.trim().length > 5);
+    for (const line of lines) {
+      // Skip lines that look like instructions
+      if (line.includes('**') || line.includes('*') || line.startsWith('-') || line.startsWith('#')) {
+        continue;
+      }
+      const cleanLine = line.trim().slice(0, 150);
+      if (cleanLine.length > 10) {
+        console.log('[web-search] Using first clean line:', cleanLine);
+        return cleanLine;
+      }
+    }
+  }
+  
+  // Return trimmed query for normal queries
+  return rawQuery.trim().slice(0, 200);
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -416,12 +461,14 @@ serve(async (req) => {
       );
     }
 
-    const query = body.query.trim().slice(0, 500);
+    // Clean up the query to extract the core search term
+    const rawQuery = body.query.trim();
+    const query = extractCleanQuery(rawQuery);
     const maxResults = Math.min(Math.max(body.maxResults || 10, 1), MAX_RESULTS);
     const searchEngine = body.searchEngine || 'all';
     const scrapeContent = body.scrapeContent !== false;
 
-    console.log('[web-search] Starting search:', { query: query.slice(0, 80), searchEngine, maxResults, scrapeContent });
+    console.log('[web-search] Starting search:', { rawLength: rawQuery.length, query: query.slice(0, 80), searchEngine, maxResults, scrapeContent });
 
     // Execute searches based on engine preference
     let allResults: SearchResult[] = [];

@@ -142,41 +142,59 @@ serve(async (req) => {
       }
     }
 
-    // Step 3: Search for additional authoritative sources
+    // Step 3: Use embedded web-search for additional sources (ZERO EXTERNAL DEPENDENCIES)
     const targetSources = isSaudi ? 3 : 2;
     const remainingSourcesNeeded = Math.max(1, targetSources - customSuccess);
 
-    const searchResponse = await supabase.functions.invoke("research-search", {
-      body: {
-        query: researchQuery,
-        limit: task.research_depth === "deep" ? 15 : task.research_depth === "quick" ? 5 : 10,
-        scrapeContent: true,
-        strictMode: isSaudi, // strict for Saudi only
-        minSources: remainingSourcesNeeded,
-        country: countryCode,
-        seedUrls: customSeedUrls,
-      },
-    });
+    // Primary: Use embedded web-search (scrapes DuckDuckGo/Google/Bing directly)
+    let webSearchResults: any[] = [];
+    try {
+      console.log("Using embedded web-search for:", researchQuery);
+      const webSearchResponse = await supabase.functions.invoke("web-search", {
+        body: {
+          query: researchQuery,
+          maxResults: task.research_depth === "deep" ? 15 : task.research_depth === "quick" ? 5 : 10,
+          searchEngine: "all",
+          scrapeContent: true,
+        },
+      });
 
-    if (searchResponse.error) {
-      // If we already have enough custom sources, proceed without search
-      if (!(isSaudi && customSuccess >= targetSources)) {
-        throw new Error(`Search failed: ${searchResponse.error.message || "unknown error"}`);
+      if (webSearchResponse.data?.success && webSearchResponse.data?.data) {
+        webSearchResults = webSearchResponse.data.data;
+        console.log(`Web search returned ${webSearchResults.length} results`);
+      }
+    } catch (e) {
+      console.error("Web search failed:", e);
+    }
+
+    // Fallback: Use internal sitemap-based search if web search fails
+    if (webSearchResults.length === 0) {
+      console.log("Web search returned no results, falling back to internal sitemap search");
+      const searchResponse = await supabase.functions.invoke("research-search", {
+        body: {
+          query: researchQuery,
+          limit: task.research_depth === "deep" ? 15 : task.research_depth === "quick" ? 5 : 10,
+          scrapeContent: true,
+          strictMode: isSaudi,
+          minSources: remainingSourcesNeeded,
+          country: countryCode,
+          seedUrls: customSeedUrls,
+        },
+      });
+
+      if (searchResponse.data?.success && searchResponse.data?.data) {
+        webSearchResults = searchResponse.data.data;
+        console.log(`Sitemap search returned ${webSearchResults.length} results`);
+      } else if (searchResponse.error || !searchResponse.data?.success) {
+        // If we already have enough custom sources, proceed without search
+        if (!(isSaudi && customSuccess >= targetSources)) {
+          const errorMsg = searchResponse.error?.message || searchResponse.data?.error || "Search failed";
+          throw new Error(`Search failed: ${errorMsg}`);
+        }
       }
     }
 
-    if (searchResponse.data && !searchResponse.data.success) {
-      // If we already have enough custom sources, proceed without search
-      if (!(isSaudi && customSuccess >= targetSources)) {
-        const unreachable = (searchResponse.data?.unreachableSources || [])
-          .map((s: any) => `${s.name} (${s.reason})`)
-          .join(", ");
-        throw new Error(`${searchResponse.data?.error || "Search returned no results"}${unreachable ? ` | Unreachable: ${unreachable}` : ""}`);
-      }
-    }
-
-    const searchedResults = (searchResponse.data?.data || []) as any[];
-    let searchResults = [...customResults, ...searchedResults];
+    let searchResults = [...customResults, ...webSearchResults];
 
     // De-dupe by URL
     const seen = new Set<string>();
@@ -188,7 +206,7 @@ serve(async (req) => {
       return true;
     });
 
-    console.log(`Using ${searchResults.length} total sources (${customSuccess} custom + ${searchedResults.length} discovered)`);
+    console.log(`Using ${searchResults.length} total sources (${customSuccess} custom + ${webSearchResults.length} discovered)`);
 
     // Step 4: Compile content for analysis
     const contentParts: string[] = [];
