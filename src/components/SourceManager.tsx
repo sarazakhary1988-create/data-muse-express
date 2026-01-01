@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/collapsible';
 import { useResearchStore, DeepVerifySourceConfig } from '@/store/researchStore';
 import { toast } from '@/hooks/use-toast';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 type SourceCategory = DeepVerifySourceConfig['category'];
 
@@ -48,14 +49,15 @@ const getCategoryIcon = (category: SourceCategory) => {
   }
 };
 
-const getCategoryLabel = (category: SourceCategory) => {
-  switch (category) {
-    case 'official': return 'Official';
-    case 'regulator': return 'Regulator';
-    case 'news': return 'News';
-    case 'international': return 'International';
-    case 'custom': return 'Custom';
-  }
+const getCategoryLabel = (category: SourceCategory, isRTL: boolean) => {
+  const labels: Record<SourceCategory, { en: string; ar: string }> = {
+    official: { en: 'Official', ar: 'رسمي' },
+    regulator: { en: 'Regulator', ar: 'تنظيمي' },
+    news: { en: 'News', ar: 'أخبار' },
+    international: { en: 'International', ar: 'دولي' },
+    custom: { en: 'Custom', ar: 'مخصص' },
+  };
+  return isRTL ? labels[category].ar : labels[category].en;
 };
 
 const getCategoryColor = (category: SourceCategory) => {
@@ -209,6 +211,7 @@ const AddSourceForm = ({ onAdd, onClose, editSource, onUpdate }: AddSourceFormPr
 };
 
 export const SourceManager = () => {
+  const { t, isRTL } = useLanguage();
   const { 
     deepVerifySourceConfigs, 
     toggleSourceEnabled, 
@@ -248,7 +251,7 @@ export const SourceManager = () => {
 
   const handleDelete = (source: DeepVerifySourceConfig) => {
     deleteSource(source.id);
-    toast({ title: "Source deleted", description: `${source.name} has been removed` });
+    toast({ title: isRTL ? 'تم حذف المصدر' : 'Source deleted', description: `${source.name} ${isRTL ? 'تمت إزالته' : 'has been removed'}` });
   };
 
   return (
@@ -256,20 +259,20 @@ export const SourceManager = () => {
       <DialogTrigger asChild>
         <Button variant="ghost" size="sm" className="gap-1.5 text-xs h-7 px-2">
           <Settings2 className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Sources</span>
+          <span className="hidden sm:inline">{t.common.sources}</span>
           <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
             {enabledCount}/{totalCount}
           </Badge>
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-hidden flex flex-col">
+      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-hidden flex flex-col" dir={isRTL ? 'rtl' : 'ltr'}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Globe className="w-5 h-5 text-primary" />
-            Research Sources
+            {isRTL ? 'مصادر البحث' : 'Research Sources'}
           </DialogTitle>
           <DialogDescription>
-            Add any website as a research source. The agent will crawl these during Deep Verify mode.
+            {isRTL ? 'أضف أي موقع كمصدر بحث. سيقوم الوكيل بالزحف إلى هذه المصادر أثناء وضع التحقق العميق.' : 'Add any website as a research source. The agent will crawl these during Deep Verify mode.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -277,7 +280,7 @@ export const SourceManager = () => {
           {/* Quick actions */}
           <div className="flex items-center justify-between flex-wrap gap-2">
             <span className="text-sm text-muted-foreground">
-              {enabledCount} enabled • {customCount} custom
+              {enabledCount} {isRTL ? 'مفعل' : 'enabled'} • {customCount} {isRTL ? 'مخصص' : 'custom'}
             </span>
             <div className="flex items-center gap-2">
               <Button 
@@ -286,7 +289,7 @@ export const SourceManager = () => {
                 className="h-7 text-xs gap-1"
                 onClick={() => setAllSourcesEnabled(true)}
               >
-                <Check className="w-3 h-3" /> All
+                <Check className="w-3 h-3" /> {t.common.all}
               </Button>
               <Button 
                 variant="outline" 
@@ -294,7 +297,7 @@ export const SourceManager = () => {
                 className="h-7 text-xs gap-1"
                 onClick={() => setAllSourcesEnabled(false)}
               >
-                <X className="w-3 h-3" /> None
+                <X className="w-3 h-3" /> {t.common.none}
               </Button>
               <Button 
                 variant="ghost" 
@@ -302,7 +305,7 @@ export const SourceManager = () => {
                 className="h-7 text-xs gap-1"
                 onClick={resetSourceConfigs}
               >
-                <RotateCcw className="w-3 h-3" /> Reset
+                <RotateCcw className="w-3 h-3" /> {t.common.reset}
               </Button>
             </div>
           </div>
@@ -312,14 +315,14 @@ export const SourceManager = () => {
             <DialogTrigger asChild>
               <Button className="w-full gap-2" variant="outline">
                 <Plus className="w-4 h-4" />
-                Add Custom Source
+                {isRTL ? 'إضافة مصدر مخصص' : 'Add Custom Source'}
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent dir={isRTL ? 'rtl' : 'ltr'}>
               <DialogHeader>
-                <DialogTitle>Add Research Source</DialogTitle>
+                <DialogTitle>{isRTL ? 'إضافة مصدر بحث' : 'Add Research Source'}</DialogTitle>
                 <DialogDescription>
-                  Add any website to be crawled during Deep Verify research.
+                  {isRTL ? 'أضف أي موقع للزحف إليه أثناء بحث التحقق العميق.' : 'Add any website to be crawled during Deep Verify research.'}
                 </DialogDescription>
               </DialogHeader>
               <AddSourceForm 
@@ -351,10 +354,10 @@ export const SourceManager = () => {
                       className="w-full justify-between h-auto py-2 px-3"
                     >
                       <div className="flex items-center gap-2">
-                        <div className={`p-1.5 rounded ${getCategoryColor(category)}`}>
+                      <div className={`p-1.5 rounded ${getCategoryColor(category)}`}>
                           {getCategoryIcon(category)}
                         </div>
-                        <span className="font-medium">{getCategoryLabel(category)}</span>
+                        <span className="font-medium">{getCategoryLabel(category, isRTL)}</span>
                         <Badge variant="secondary" className="text-[10px]">
                           {enabledInCategory}/{sources.length}
                         </Badge>
