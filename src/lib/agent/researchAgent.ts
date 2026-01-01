@@ -445,25 +445,30 @@ Only output the JSON array, nothing else.`;
 
       const result = await researchApi.analyze(query, verificationPrompt, 'analyze');
       
-      if (result.success && result.result) {
+      if (result.success && result.result && typeof result.result === 'string') {
         try {
           // Try to extract JSON from the response
           const jsonMatch = result.result.match(/\[[\s\S]*\]/);
           if (jsonMatch) {
-            const claims = JSON.parse(jsonMatch[0]);
-            claims.forEach((c: any, idx: number) => {
-              const confidenceMap: Record<string, number> = { high: 0.85, medium: 0.65, low: 0.45 };
-              verifications.push({
-                id: `ai-claim-${Date.now()}-${idx}`,
-                claim: c.claim,
-                status: c.confidence === 'high' ? 'verified' : 'partially_verified',
-                confidence: confidenceMap[c.confidence] || 0.6,
-                sources: [{ ...aiSource, excerpt: c.verificationNeeded || 'Self-verified through AI reasoning' }],
-                explanation: c.verificationNeeded || 'Self-verified through AI reasoning'
+            const parsed = JSON.parse(jsonMatch[0]);
+            if (Array.isArray(parsed)) {
+              parsed.forEach((c: any, idx: number) => {
+                if (c && typeof c.claim === 'string') {
+                  const confidenceMap: Record<string, number> = { high: 0.85, medium: 0.65, low: 0.45 };
+                  verifications.push({
+                    id: `ai-claim-${Date.now()}-${idx}`,
+                    claim: String(c.claim),
+                    status: c.confidence === 'high' ? 'verified' : 'partially_verified',
+                    confidence: confidenceMap[c.confidence] || 0.6,
+                    sources: [{ ...aiSource, excerpt: String(c.verificationNeeded || 'Self-verified through AI reasoning') }],
+                    explanation: String(c.verificationNeeded || 'Self-verified through AI reasoning')
+                  });
+                }
               });
-            });
+            }
           }
-        } catch {
+        } catch (parseError) {
+          console.warn('[ResearchAgent] JSON parse error, using fallback:', parseError);
           // Fallback verification
           verifications.push({
             id: `ai-claim-${Date.now()}-fallback`,
