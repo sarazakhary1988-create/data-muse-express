@@ -332,25 +332,21 @@ export class ResearchAgent {
         console.log(`[ResearchAgent] Search attempt ${attempt}/${maxRetries}`);
         
         const searchResult = await researchApi.search(query, deepVerifyEnabled ? 15 : 20, false);
-        
-        // Check if fallback was used
+
+        // If external search is unavailable, do NOT use synthetic results as sources.
+        // We continue in AI-only mode (or with deep-verify sources if present).
         if (searchResult.fallback) {
           usedFallback = true;
-          console.log('[ResearchAgent] Using fallback search (external tools unavailable)');
-          this.callbacks.onDecision?.('External search unavailable - using AI-powered research', 0.7);
+          console.log('[ResearchAgent] External search unavailable - continuing without web results');
+          this.callbacks.onDecision?.('External search unavailable - continuing with agent reasoning', 0.7);
+          return [];
         }
-        
+
         if (searchResult.success && searchResult.data && searchResult.data.length > 0) {
           console.log(`[ResearchAgent] Search successful: ${searchResult.data.length} results${usedFallback ? ' (fallback)' : ''}`);
           return searchResult.data;
         }
-        
-        // If fallback returned empty, that's ok - we'll work with what we have
-        if (searchResult.fallback) {
-          console.log('[ResearchAgent] Fallback search returned no results, continuing with agent reasoning');
-          return [];
-        }
-        
+
         lastError = searchResult.error || 'No results found';
         
         // If rate limited, wait with exponential backoff

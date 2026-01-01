@@ -171,52 +171,17 @@ export const researchApi = {
     }
   },
 
-  // AI-powered fallback search - uses Lovable AI to generate research directions
+  // External-search fallback: do NOT fabricate sources/URLs.
+  // Returning synthetic results causes incorrect citations and "wrong data".
   async fallbackSearch(query: string, limit: number): Promise<SearchResult> {
-    try {
-      console.log('[ResearchAPI] Using AI fallback search for:', query);
-      
-      const { data, error } = await supabase.functions.invoke('research-analyze', {
-        body: {
-          query,
-          content: `Generate ${limit} hypothetical but realistic search results for this research query. Create URLs that would likely contain relevant information (use real domains like .gov, .edu, major news sites, industry sites). Format as JSON array.`,
-          type: 'extract'
-        }
-      });
+    console.log('[ResearchAPI] External search unavailable - returning empty fallback results');
 
-      if (error || !data?.success) {
-        // Ultimate fallback - return empty but valid response
-        return {
-          success: true,
-          fallback: true,
-          data: [],
-          error: 'Search services unavailable'
-        };
-      }
-
-      // Parse AI-generated search suggestions
-      try {
-        const suggestions = this.parseAISearchResults(data.result, query);
-        return {
-          success: true,
-          fallback: true,
-          data: suggestions
-        };
-      } catch {
-        return {
-          success: true,
-          fallback: true,
-          data: [],
-        };
-      }
-    } catch (err) {
-      return {
-        success: true,
-        fallback: true,
-        data: [],
-        error: err instanceof Error ? err.message : 'Fallback search failed'
-      };
-    }
+    return {
+      success: true,
+      fallback: true,
+      data: [],
+      error: 'External search not configured',
+    };
   },
 
   // Parse AI-generated search results
@@ -259,7 +224,7 @@ export const researchApi = {
   async analyze(
     query: string, 
     content: string, 
-    type: 'summarize' | 'analyze' | 'extract' | 'report' = 'analyze'
+    type: 'summarize' | 'analyze' | 'extract' | 'report' | 'verify' = 'analyze'
   ): Promise<AnalyzeResult> {
     try {
       const { data, error } = await supabase.functions.invoke('research-analyze', {

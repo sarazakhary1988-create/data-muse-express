@@ -8,7 +8,7 @@ const corsHeaders = {
 interface AnalyzeRequest {
   query: string;
   content: string;
-  type: 'summarize' | 'analyze' | 'extract' | 'report';
+  type: 'summarize' | 'analyze' | 'extract' | 'report' | 'verify';
 }
 
 serve(async (req) => {
@@ -42,6 +42,14 @@ serve(async (req) => {
       summarize: `You are a factual research assistant. Only use information explicitly stated in the provided sources. If something is not present in the sources, say "Not found in sources". Provide a concise summary and end with a short Sources list (URLs).`,
       analyze: `You are a factual research analyst. Only use information explicitly stated in the provided sources. Do not guess or fill gaps. If the sources are insufficient, say what is missing. Cite sources by URL for every important claim.`,
       extract: `You are a strict data extraction assistant. Extract ONLY facts that are explicitly present in the provided sources. If a field is missing, output "Not found". Include the source URL for each extracted item.`,
+      verify: `You are a strict verification engine.
+
+CRITICAL RULES:
+1. Use ONLY the provided content excerpt; do NOT use external knowledge.
+2. If the excerpt does not address the claim, return support="none".
+3. If the excerpt clearly contradicts the claim, return support="contradicts".
+4. If the excerpt supports the claim, choose the strongest justified support level.
+5. Return ONLY a JSON object (no markdown, no code fences).`,
       report: `You are a strict, source-grounded research report writer.
 
 CRITICAL RULES:
@@ -71,6 +79,20 @@ Present the key information found in sources. Use tables when listing multiple i
 `,
     };
 
+    const userContent =
+      type === 'verify'
+        ? `Claim: "${query}"
+
+Content excerpt:
+${content.substring(0, 8000)}
+
+Return ONLY a JSON object (no markdown): { "support": "strong|moderate|weak|contradicts|none", "reason": "brief explanation" }`
+        : `Research Query: "${query}"
+
+Content to analyze:
+
+${content.substring(0, 50000)}`;
+
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -81,13 +103,11 @@ Present the key information found in sources. Use tables when listing multiple i
         model: 'google/gemini-2.5-flash',
         messages: [
           { role: 'system', content: systemPrompts[type] || systemPrompts.analyze },
-          { 
-            role: 'user', 
-            content: `Research Query: "${query}"\n\nContent to analyze:\n\n${content.substring(0, 50000)}` 
-          }
+          { role: 'user', content: userContent },
         ],
       }),
     });
+
 
     if (!response.ok) {
       if (response.status === 429) {
