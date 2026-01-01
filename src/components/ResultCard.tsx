@@ -12,25 +12,6 @@ interface ResultCardProps {
 }
 
 export const ResultCard = ({ result, index }: ResultCardProps) => {
-  // DEBUG: Log result to identify React #418 source
-  console.log(`[ResultCard ${index}] Rendering:`, {
-    id: result?.id,
-    title: typeof result?.title === 'string' ? result.title.slice(0, 50) : typeof result?.title,
-    titleIsString: typeof result?.title === 'string',
-    summary: typeof result?.summary === 'string' ? result.summary.slice(0, 50) : typeof result?.summary,
-    summaryIsString: typeof result?.summary === 'string',
-    url: typeof result?.url,
-    metadata: result?.metadata,
-  });
-  
-  // Guard against non-string values
-  if (typeof result?.title !== 'string') {
-    console.error(`[ResultCard ${index}] ERROR: result.title is not a string!`, result);
-  }
-  if (typeof result?.summary !== 'string') {
-    console.error(`[ResultCard ${index}] ERROR: result.summary is not a string!`, result);
-  }
-
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {

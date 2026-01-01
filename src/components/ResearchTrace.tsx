@@ -75,23 +75,8 @@ const TraceStep = ({ icon, title, status, children, defaultOpen = false }: Trace
 };
 
 export const ResearchTrace = ({ task }: ResearchTraceProps) => {
-  // DEBUG: Log to identify React #418 source
-  console.log('[ResearchTrace] Rendering with task:', {
-    id: task?.id,
-    query: typeof task?.query === 'string' ? task.query.slice(0, 50) : typeof task?.query,
-    status: task?.status,
-    resultsCount: task?.results?.length,
-  });
-
   const { agentState } = useResearchStore();
   const { plan, verifications, quality } = agentState;
-  
-  // DEBUG: Log agent state
-  console.log('[ResearchTrace] Agent state:', {
-    planExists: !!plan,
-    verificationsCount: verifications?.length,
-    qualityExists: !!quality,
-  });
   
   const isCompleted = task.status === 'completed';
   const isFailed = task.status === 'failed';
