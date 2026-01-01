@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { DOMParser } from "https://deno.land/x/deno_dom@v0.1.49/deno-dom-wasm.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -9,179 +10,165 @@ interface ScrapeRequest {
   url: string;
   formats?: string[];
   onlyMainContent?: boolean;
+  waitFor?: number;
 }
 
-// Input validation
 const MAX_URL_LENGTH = 2048;
+const REQUEST_TIMEOUT_MS = 12_000;
+const MAX_HTML_BYTES = 1_200_000;
+
 const BLOCKED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0', '::1', '[::1]'];
+const BLOCKED_IP_PATTERNS = [
+  /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/,
+  /^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/,
+  /^192\.168\.\d{1,3}\.\d{1,3}$/,
+  /^169\.254\.\d{1,3}\.\d{1,3}$/,
+];
 
-function validateUrl(url: string): { valid: boolean; error?: string; formattedUrl?: string } {
-  if (!url || typeof url !== 'string') {
-    return { valid: false, error: 'URL is required and must be a string' };
-  }
-  
-  if (url.length > MAX_URL_LENGTH) {
-    return { valid: false, error: `URL must be less than ${MAX_URL_LENGTH} characters` };
-  }
+function validateUrl(url: string): { ok: boolean; error?: string; formatted?: string } {
+  if (!url || typeof url !== 'string') return { ok: false, error: 'URL is required' };
+  if (url.length > MAX_URL_LENGTH) return { ok: false, error: `URL too long (>${MAX_URL_LENGTH})` };
 
-  let parsed: URL;
   try {
-    let formattedUrl = url.trim();
-    if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
-      formattedUrl = `https://${formattedUrl}`;
+    let formatted = url.trim();
+    if (!formatted.startsWith('http://') && !formatted.startsWith('https://')) {
+      formatted = `https://${formatted}`;
     }
-    parsed = new URL(formattedUrl);
-    
-    if (!['http:', 'https:'].includes(parsed.protocol)) {
-      return { valid: false, error: 'Only HTTP/HTTPS URLs are allowed' };
-    }
+    const parsed = new URL(formatted);
+
+    if (!['http:', 'https:'].includes(parsed.protocol)) return { ok: false, error: 'Only HTTP/HTTPS URLs are allowed' };
 
     const hostname = parsed.hostname.toLowerCase();
-    if (BLOCKED_HOSTS.includes(hostname)) {
-      return { valid: false, error: 'URL not allowed' };
-    }
+    if (BLOCKED_HOSTS.includes(hostname)) return { ok: false, error: 'URL not allowed' };
+    for (const p of BLOCKED_IP_PATTERNS) if (p.test(hostname)) return { ok: false, error: 'URL not allowed' };
 
-    return { valid: true, formattedUrl };
+    return { ok: true, formatted: parsed.toString() };
   } catch {
-    return { valid: false, error: 'Invalid URL format' };
+    return { ok: false, error: 'Invalid URL' };
   }
+}
+
+async function fetchHtml(url: string): Promise<{ ok: boolean; status: number; html: string } > {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const resp = await fetch(url, {
+      method: 'GET',
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'LovableResearchBot/1.0',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.5',
+      }
+    });
+
+    if (!resp.ok) return { ok: false, status: resp.status, html: '' };
+
+    const buf = new Uint8Array(await resp.arrayBuffer());
+    const sliced = buf.byteLength > MAX_HTML_BYTES ? buf.slice(0, MAX_HTML_BYTES) : buf;
+    const html = new TextDecoder('utf-8').decode(sliced);
+
+    return { ok: true, status: resp.status, html };
+  } catch {
+    return { ok: false, status: 0, html: '' };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+function normalizeText(s: string): string {
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+function extractContent(html: string, onlyMainContent: boolean): { title: string; description: string; markdown: string; links: string[] } {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  if (!doc) return { title: '', description: '', markdown: '', links: [] };
+
+  const title = normalizeText(doc.querySelector('title')?.textContent ?? '');
+  const description = normalizeText(doc.querySelector('meta[name="description"]')?.getAttribute('content') ?? '');
+
+  const root = (onlyMainContent
+    ? (doc.querySelector('article') || doc.querySelector('main') || doc.querySelector('[role="main"]') || doc.body)
+    : doc.body);
+
+  if (!root) return { title, description, markdown: '', links: [] };
+
+  for (const sel of ['script','style','noscript']) root.querySelectorAll(sel).forEach((n: any) => n.remove());
+
+  // Remove chrome only when onlyMainContent
+  if (onlyMainContent) {
+    for (const sel of ['nav','footer','aside','header']) root.querySelectorAll(sel).forEach((n: any) => n.remove());
+  }
+
+  const text = normalizeText(root.textContent ?? '');
+
+  const links = Array.from(root.querySelectorAll('a'))
+    .map((a: any) => a.getAttribute('href'))
+    .filter((h: any): h is string => typeof h === 'string' && h.length > 0)
+    .slice(0, 80);
+
+  const snippet = text.slice(0, 6000);
+
+  const markdown = [
+    title ? `# ${title}` : '# Extracted Content',
+    description ? `\n*${description}*\n` : '',
+    '\n',
+    snippet,
+  ].join('\n');
+
+  return { title, description, markdown, links };
 }
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   try {
-    let body: unknown;
-    try {
-      body = await req.json();
-    } catch {
+    const body = await req.json() as ScrapeRequest;
+    const url = body.url;
+
+    const v = validateUrl(url);
+    if (!v.ok || !v.formatted) {
       return new Response(
-        JSON.stringify({ success: false, error: 'Invalid JSON body' }),
+        JSON.stringify({ success: false, error: v.error || 'Invalid URL' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const { url } = body as ScrapeRequest;
+    const onlyMainContent = typeof body.onlyMainContent === 'boolean' ? body.onlyMainContent : true;
 
-    // Validate URL
-    const urlValidation = validateUrl(url);
-    if (!urlValidation.valid) {
-      console.error('URL validation failed:', urlValidation.error);
+    console.log('[research-scrape] fetching', v.formatted);
+
+    const res = await fetchHtml(v.formatted);
+    if (!res.ok) {
       return new Response(
-        JSON.stringify({ success: false, error: urlValidation.error }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ success: false, error: `Failed to fetch content (status ${res.status})` }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const formattedUrl = urlValidation.formattedUrl!;
-    const domain = new URL(formattedUrl).hostname.replace('www.', '');
-
-    // Use AI to analyze and describe what content would be at this URL
-    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
-    if (!lovableApiKey) {
-      console.error('LOVABLE_API_KEY not configured');
-      return new Response(
-        JSON.stringify({ 
-          success: true, 
-          data: {
-            markdown: `# Content from ${domain}\n\nURL: ${formattedUrl}\n\n*AI content extraction available. No external scraping dependencies required.*`,
-            metadata: {
-              title: `Page from ${domain}`,
-              sourceURL: formattedUrl,
-            }
-          }
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    console.log('AI-powered content analysis for:', formattedUrl);
-
-    const systemPrompt = `You are an expert at analyzing web pages and extracting their content. Given a URL, use your knowledge to describe what content would typically be found at this type of page.
-
-For financial/stock market sites (Tadawul, Argaam, Reuters, Bloomberg, CMA):
-- Provide typical content structure
-- Include relevant market data you know about
-- Reference actual companies and data
-
-For news sites:
-- Provide typical article structure
-- Include relevant facts you know about the topic
-
-Always return structured markdown content.`;
-
-    const userPrompt = `Analyze this URL and provide the expected content: ${formattedUrl}
-
-Based on the URL structure and domain, provide:
-1. Page title and description
-2. Main content that would typically appear
-3. Any relevant data, statistics, or information
-4. Links that might be present
-
-Format as markdown. Include actual factual information you know about this topic/site.`;
-
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${lovableApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        temperature: 0.3,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('AI Gateway error:', response.status, errorText);
-      
-      return new Response(
-        JSON.stringify({ 
-          success: true, 
-          data: {
-            markdown: `# ${domain}\n\nURL: ${formattedUrl}\n\n*Content analysis unavailable at this time.*`,
-            metadata: {
-              title: `Page from ${domain}`,
-              sourceURL: formattedUrl,
-            }
-          }
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const aiResponse = await response.json();
-    const content = aiResponse.choices?.[0]?.message?.content || '';
-
-    console.log('AI content analysis successful for:', domain);
+    const extracted = extractContent(res.html, onlyMainContent);
 
     return new Response(
       JSON.stringify({
         success: true,
         data: {
-          markdown: content,
+          markdown: extracted.markdown,
+          links: extracted.links,
           metadata: {
-            title: `Content from ${domain}`,
-            sourceURL: formattedUrl,
-            analysisMethod: 'ai-powered'
-          },
-          links: []
+            title: extracted.title,
+            description: extracted.description,
+            sourceURL: v.formatted,
+            statusCode: res.status,
+          }
         }
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
-
-  } catch (error) {
-    console.error('Error in AI scrape:', error);
+  } catch (e) {
+    console.error('[research-scrape] error', e);
     return new Response(
-      JSON.stringify({ success: false, error: 'Content analysis failed' }),
+      JSON.stringify({ success: false, error: e instanceof Error ? e.message : 'Scrape failed' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
