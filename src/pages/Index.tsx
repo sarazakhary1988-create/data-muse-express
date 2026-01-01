@@ -11,6 +11,7 @@ import { ResultsView } from '@/components/ResultsView';
 import { ReportViewer } from '@/components/ReportViewer';
 import { TaskHistory } from '@/components/TaskHistory';
 import { UrlScraper } from '@/components/UrlScraper';
+import { AgentStatusPanel } from '@/components/AgentStatusPanel';
 import { useResearchStore, ResearchTask } from '@/store/researchStore';
 import { useResearchEngine } from '@/hooks/useResearchEngine';
 
