@@ -124,69 +124,14 @@ export interface TavilySearchResult {
   timing?: { total: number };
 }
 
+// ============ RESEARCH API - NO EXTERNAL DEPENDENCIES ============
+// Uses only:
+// 1. Tavily (tavily-search) - for web search with TAVILY_API_KEY
+// 2. Internal research-search - for sitemap discovery and scraping
+// 3. Lovable AI - only for analysis/report generation (via research-analyze)
+
 export const researchApi = {
-  // PRIMARY: Scrape a single URL using Firecrawl
-  async scrape(
-    url: string,
-    formats: string[] = ['markdown', 'links'],
-    onlyMainContent: boolean = true,
-    waitFor: number = 3000
-  ): Promise<ScrapeResult> {
-    try {
-      console.log('[researchApi] Scraping with Firecrawl:', url);
-      
-      // Use Firecrawl as primary scraper
-      const { data, error } = await supabase.functions.invoke('firecrawl-scrape', {
-        body: { url, options: { formats, onlyMainContent, waitFor } },
-      });
-
-      if (error) {
-        console.warn('[researchApi] Firecrawl scrape error, falling back:', error);
-        return this.fallbackScrape(url);
-      }
-
-      if (!data?.success) {
-        console.warn('[researchApi] Firecrawl scrape failed:', data?.error);
-        return this.fallbackScrape(url);
-      }
-
-      console.log('[researchApi] Firecrawl scrape success:', data.data?.markdown?.length || 0, 'chars');
-      return data;
-    } catch (err) {
-      console.warn('[researchApi] Scrape error:', err);
-      return this.fallbackScrape(url);
-    }
-  },
-
-  // Fallback scrape using research-scrape edge function
-  async fallbackScrape(url: string): Promise<ScrapeResult> {
-    try {
-      const { data, error } = await supabase.functions.invoke('research-scrape', {
-        body: { url, formats: ['markdown', 'links'], onlyMainContent: true, waitFor: 3000 },
-      });
-
-      if (!error && data?.success) {
-        return data;
-      }
-    } catch (e) {
-      console.warn('[researchApi] Fallback scrape failed:', e);
-    }
-    
-    const domain = new URL(url).hostname.replace('www.', '');
-    return {
-      success: false,
-      error: `Could not fetch content from ${domain}`,
-      data: {
-        markdown: `[Content unavailable from ${domain}]\n\nURL: ${url}\n\n*Direct fetch failed - source may be blocked or unavailable.*`,
-        metadata: {
-          title: `Page from ${domain}`,
-          sourceURL: url,
-        }
-      }
-    };
-  },
-
-  // PRIMARY: Search using Firecrawl
+  // PRIMARY SEARCH: Uses Tavily (configured with TAVILY_API_KEY)
   async search(
     query: string, 
     limit: number = 12, 
@@ -199,47 +144,46 @@ export const researchApi = {
     }
   ): Promise<SearchResult> {
     try {
-      console.log('[researchApi] Searching with Firecrawl:', query);
+      console.log('[researchApi] Searching with Tavily:', query);
       
-      // Use Firecrawl as primary search engine
-      const { data, error } = await supabase.functions.invoke('firecrawl-search', {
-        body: { 
-          query, 
-          options: {
-            limit, 
-            lang: 'en',
-            country: options?.country,
-            tbs: options?.tbs,
-            scrapeOptions: scrapeContent ? { formats: ['markdown'] } : undefined,
-          }
-        },
+      // Use Tavily as primary search engine
+      const tavilyResult = await this.tavilySearch(query, {
+        maxResults: limit,
+        searchDepth: 'advanced',
+        topic: 'general',
+        days: 30,
       });
 
-      if (error) {
-        console.warn('[researchApi] Firecrawl search error, falling back:', error);
-        return this.fallbackSearch(query, limit, options);
+      if (tavilyResult.success && tavilyResult.data && tavilyResult.data.length > 0) {
+        console.log('[researchApi] Tavily search success:', tavilyResult.data.length, 'results');
+        return {
+          success: true,
+          data: tavilyResult.data.map(item => ({
+            id: `tavily-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            url: item.url,
+            title: item.title,
+            description: item.description || '',
+            markdown: item.markdown || item.description || '',
+            content: item.markdown || item.description || '',
+            fetchedAt: item.fetchedAt,
+            reliability: item.score || 0.8,
+          })),
+          searchMethod: 'tavily',
+          timing: tavilyResult.timing,
+        };
       }
 
-      if (!data?.success) {
-        console.warn('[researchApi] Firecrawl search failed:', data?.error);
-        return this.fallbackSearch(query, limit, options);
-      }
-
-      console.log('[researchApi] Firecrawl search success:', data.data?.length || 0, 'results');
-      return {
-        success: true,
-        data: data.data,
-        searchMethod: 'firecrawl',
-        timing: data.timing,
-      };
+      // Fallback to internal research-search if Tavily fails
+      console.log('[researchApi] Tavily returned no results, falling back to internal search');
+      return this.internalSearch(query, limit, options);
     } catch (err) {
       console.error('[researchApi] Search error:', err);
-      return this.fallbackSearch(query, limit, options);
+      return this.internalSearch(query, limit, options);
     }
   },
 
-  // Fallback search using research-search edge function
-  async fallbackSearch(
+  // INTERNAL SEARCH: Uses research-search edge function (sitemap discovery + scraping)
+  async internalSearch(
     query: string, 
     limit: number = 12, 
     options?: {
@@ -249,6 +193,8 @@ export const researchApi = {
     }
   ): Promise<SearchResult> {
     try {
+      console.log('[researchApi] Internal search:', query);
+      
       const { data, error } = await supabase.functions.invoke('research-search', {
         body: { 
           query, 
@@ -283,7 +229,7 @@ export const researchApi = {
       return {
         success: true,
         data: data.data.map((item: any) => ({
-          id: item.id || `search-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          id: item.id || `internal-${Date.now()}-${Math.random().toString(36).slice(2)}`,
           url: item.url,
           title: item.title,
           description: item.description || '',
@@ -301,7 +247,48 @@ export const researchApi = {
     }
   },
 
-  // Analyze content with AI - core capability
+  // SCRAPE: Uses research-scrape edge function
+  async scrape(
+    url: string,
+    formats: string[] = ['markdown', 'links'],
+    onlyMainContent: boolean = true,
+    waitFor: number = 3000
+  ): Promise<ScrapeResult> {
+    try {
+      console.log('[researchApi] Scraping with research-scrape:', url);
+      
+      const { data, error } = await supabase.functions.invoke('research-scrape', {
+        body: { url, formats, onlyMainContent, waitFor },
+      });
+
+      if (error || !data?.success) {
+        console.warn('[researchApi] Scrape failed:', error || data?.error);
+        const domain = new URL(url).hostname.replace('www.', '');
+        return {
+          success: false,
+          error: `Could not fetch content from ${domain}`,
+          data: {
+            markdown: `[Content unavailable from ${domain}]\n\nURL: ${url}\n\n*Direct fetch failed - source may be blocked or unavailable.*`,
+            metadata: {
+              title: `Page from ${domain}`,
+              sourceURL: url,
+            }
+          }
+        };
+      }
+
+      console.log('[researchApi] Scrape success:', data.data?.markdown?.length || 0, 'chars');
+      return data;
+    } catch (err) {
+      console.warn('[researchApi] Scrape error:', err);
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : 'Scrape failed',
+      };
+    }
+  },
+
+  // ANALYZE: Uses research-analyze (Lovable AI) - only AI usage in the system
   async analyze(
     query: string, 
     content: string, 
@@ -325,7 +312,7 @@ export const researchApi = {
     }
   },
 
-  // Extract structured data with AI
+  // EXTRACT: Uses research-extract (Lovable AI for structured extraction)
   async extract(
     query: string,
     content: string,
@@ -348,55 +335,29 @@ export const researchApi = {
     }
   },
 
-  // PRIMARY: Map a website using Firecrawl to discover URLs
+  // MAP: Uses research-map edge function for URL discovery
   async map(url: string, search?: string, limit: number = 100): Promise<MapResult> {
     try {
-      console.log('[researchApi] Mapping with Firecrawl:', url);
+      console.log('[researchApi] Mapping with research-map:', url);
       
-      // Use Firecrawl as primary mapper
-      const { data, error } = await supabase.functions.invoke('firecrawl-map', {
-        body: { url, options: { search, limit } },
+      const { data, error } = await supabase.functions.invoke('research-map', {
+        body: { url, limit, search },
       });
 
-      if (error) {
-        console.warn('[researchApi] Firecrawl map error, falling back:', error);
-        return this.fallbackMap(url);
+      if (error || !data?.success) {
+        console.warn('[researchApi] Map failed:', error || data?.error);
+        return { success: true, links: [url] };
       }
 
-      if (!data?.success) {
-        console.warn('[researchApi] Firecrawl map failed:', data?.error);
-        return this.fallbackMap(url);
-      }
-
-      console.log('[researchApi] Firecrawl map success:', data.links?.length || 0, 'links');
+      console.log('[researchApi] Map success:', data.links?.length || 0, 'links');
       return data;
     } catch (err) {
       console.warn('[researchApi] Map error:', err);
-      return this.fallbackMap(url);
+      return { success: true, links: [url] };
     }
   },
 
-  // Fallback map using research-map edge function
-  async fallbackMap(url: string): Promise<MapResult> {
-    try {
-      const { data, error } = await supabase.functions.invoke('research-map', {
-        body: { url, limit: 100 },
-      });
-
-      if (!error && data?.success) {
-        return data;
-      }
-    } catch (e) {
-      console.warn('[researchApi] Fallback map failed:', e);
-    }
-    
-    return {
-      success: true,
-      links: [url]
-    };
-  },
-
-  // Tavily-powered web search for broader discovery
+  // TAVILY SEARCH: Direct Tavily API call (uses configured TAVILY_API_KEY)
   async tavilySearch(
     query: string,
     options?: {
@@ -435,19 +396,19 @@ export const researchApi = {
     }
   },
 
-  // Combined search: Tavily + sitemap discovery
+  // HYBRID SEARCH: Combines Tavily + internal sitemap discovery
   async hybridSearch(
     query: string,
     options?: {
       useTavily?: boolean;
-      useSitemap?: boolean;
+      useInternal?: boolean;
       tavilyOptions?: {
         searchDepth?: 'basic' | 'advanced';
         topic?: 'general' | 'news' | 'finance';
         days?: number;
         maxResults?: number;
       };
-      sitemapOptions?: {
+      internalOptions?: {
         limit?: number;
         strictMode?: boolean;
         country?: string;
@@ -455,7 +416,7 @@ export const researchApi = {
     }
   ): Promise<SearchResult> {
     const useTavily = options?.useTavily !== false;
-    const useSitemap = options?.useSitemap !== false;
+    const useInternal = options?.useInternal !== false;
     
     const results: SearchResult['data'] = [];
     let tavilyAnswer: string | undefined;
@@ -476,6 +437,7 @@ export const researchApi = {
                 markdown: r.markdown || r.description || '',
                 fetchedAt: r.fetchedAt,
                 sourceStatus: 'success' as const,
+                reliability: r.score || 0.8,
               })));
               tavilyAnswer = tavilyResult.answer;
             } else if (tavilyResult.error) {
@@ -488,21 +450,21 @@ export const researchApi = {
       );
     }
 
-    if (useSitemap) {
+    if (useInternal) {
       promises.push(
-        this.search(query, options?.sitemapOptions?.limit || 10, false, {
-          strictMode: options?.sitemapOptions?.strictMode,
-          country: options?.sitemapOptions?.country,
+        this.internalSearch(query, options?.internalOptions?.limit || 10, {
+          strictMode: options?.internalOptions?.strictMode,
+          country: options?.internalOptions?.country,
         })
-          .then(sitemapResult => {
-            if (sitemapResult.success && sitemapResult.data) {
-              results.push(...sitemapResult.data);
-            } else if (sitemapResult.error) {
-              errors.push(`Sitemap: ${sitemapResult.error}`);
+          .then(internalResult => {
+            if (internalResult.success && internalResult.data) {
+              results.push(...internalResult.data);
+            } else if (internalResult.error) {
+              errors.push(`Internal: ${internalResult.error}`);
             }
           })
           .catch(err => {
-            errors.push(`Sitemap: ${err.message}`);
+            errors.push(`Internal: ${err.message}`);
           })
       );
     }
@@ -510,15 +472,18 @@ export const researchApi = {
     await Promise.all(promises);
 
     // Deduplicate by URL
-    const uniqueResults = Array.from(
-      new Map(results.map(r => [r.url, r])).values()
-    );
+    const seen = new Set<string>();
+    const deduped = results.filter(r => {
+      if (seen.has(r.url)) return false;
+      seen.add(r.url);
+      return true;
+    });
 
     return {
-      success: uniqueResults.length > 0,
-      data: uniqueResults,
-      searchMethod: 'hybrid',
-      error: errors.length > 0 && uniqueResults.length === 0 ? errors.join('; ') : undefined,
+      success: deduped.length > 0,
+      data: deduped,
+      searchMethod: useTavily && useInternal ? 'hybrid' : useTavily ? 'tavily' : 'internal',
+      error: deduped.length === 0 && errors.length > 0 ? errors.join('; ') : undefined,
     };
-  }
+  },
 };

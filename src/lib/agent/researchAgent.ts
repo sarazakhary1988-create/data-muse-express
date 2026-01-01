@@ -117,7 +117,7 @@ export class ResearchAgent {
 
     console.log(`[ResearchAgent] ========== STARTING MANUS 1.6 MAX RESEARCH ENGINE ==========`);
     console.log(`[ResearchAgent] Query: "${query}"`);
-    console.log(`[ResearchAgent] Mode: REAL-TIME DATA (Firecrawl → Search → Extract → Analyze → Report)`);
+    console.log(`[ResearchAgent] Mode: REAL-TIME DATA (Tavily → Internal Search → Extract → Analyze → Report)`);
     console.log(`[ResearchAgent] Format: ${reportFormat}`);
     
     this.reportFormat = reportFormat;
@@ -134,13 +134,13 @@ export class ResearchAgent {
       this.callbacks.onPlanUpdate?.(this.currentPlan);
       this.stateMachine.updateContext({ plan: this.currentPlan });
 
-      // Phase 2: REAL-TIME WEB SEARCH via Firecrawl
-      console.log(`[ResearchAgent] 🔍 Phase 2: REAL-TIME WEB SEARCH (Firecrawl)`);
+      // Phase 2: REAL-TIME WEB SEARCH via Tavily + Internal
+      console.log(`[ResearchAgent] 🔍 Phase 2: REAL-TIME WEB SEARCH (Tavily + Internal)`);
       await this.stateMachine.transition('searching');
       this.callbacks.onProgress?.(15);
-      this.callbacks.onDecision?.('Searching the web with Firecrawl', 0.9);
+      this.callbacks.onDecision?.('Searching the web with Tavily', 0.9);
 
-      // Execute real-time search using Firecrawl
+      // Execute real-time search using Tavily as primary, internal as fallback
       const searchResult = await researchApi.search(query, 15, true, {
         country: options?.country,
         strictMode: options?.strictMode?.enabled,
@@ -148,14 +148,19 @@ export class ResearchAgent {
       });
 
       if (!searchResult.success || !searchResult.data || searchResult.data.length === 0) {
-        console.warn(`[ResearchAgent] Primary search returned no results, trying fallback`);
-        // Fallback to Tavily if Firecrawl fails
-        const tavilyResult = await researchApi.tavilySearch(query, { maxResults: 10 });
-        if (tavilyResult.success && tavilyResult.data) {
-          this.results = tavilyResult.data.map((item, idx) => this.convertSearchResult(item, idx));
+        console.warn(`[ResearchAgent] Primary Tavily search returned no results, trying hybrid search`);
+        // Fallback to hybrid search
+        const hybridResult = await researchApi.hybridSearch(query, { 
+          useTavily: true, 
+          useInternal: true,
+          tavilyOptions: { maxResults: 10 },
+          internalOptions: { limit: 10 }
+        });
+        if (hybridResult.success && hybridResult.data) {
+          this.results = hybridResult.data.map((item, idx) => this.convertSearchResult(item, idx));
         }
       } else {
-        console.log(`[ResearchAgent] Search returned ${searchResult.data.length} results`);
+        console.log(`[ResearchAgent] Search returned ${searchResult.data.length} results (method: ${searchResult.searchMethod})`);
         this.results = searchResult.data.map((item, idx) => this.convertSearchResult(item, idx));
       }
 
@@ -703,17 +708,17 @@ Generate the research report:`;
       // Determine topic for Tavily based on query
       const topic = this.detectTavilyTopic(query);
       
-      // Use hybrid search: Tavily for broad discovery + sitemap for authoritative sources
+      // Use hybrid search: Tavily for broad discovery + internal for authoritative sources
       const searchResult = await researchApi.hybridSearch(query, {
         useTavily: true,
-        useSitemap: true,
+        useInternal: true,
         tavilyOptions: {
           searchDepth: 'advanced',
           topic,
           days: 30,
           maxResults: 10,
         },
-        sitemapOptions: {
+        internalOptions: {
           limit: 10,
           strictMode: isSaudi ? strictEnabled : false,
           country: isSaudi ? 'sa' : undefined,
