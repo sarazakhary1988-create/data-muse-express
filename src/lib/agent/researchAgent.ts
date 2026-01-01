@@ -115,9 +115,9 @@ export class ResearchAgent {
     this.stateMachine.reset();
     this.executor.reset();
 
-    console.log(`[ResearchAgent] ========== STARTING AI-POWERED RESEARCH ==========`);
+    console.log(`[ResearchAgent] ========== STARTING MANUS RESEARCH ENGINE ==========`);
     console.log(`[ResearchAgent] Query: "${query}"`);
-    console.log(`[ResearchAgent] Mode: AI Knowledge Synthesis (Built-in Engine)`);
+    console.log(`[ResearchAgent] Mode: Orchestrator (Search → Extract → Analyze → Verify)`);
     console.log(`[ResearchAgent] Format: ${reportFormat}`);
     
     this.reportFormat = reportFormat;
@@ -134,54 +134,58 @@ export class ResearchAgent {
       this.callbacks.onPlanUpdate?.(this.currentPlan);
       this.stateMachine.updateContext({ plan: this.currentPlan });
 
-      // Phase 2: AI-Powered Research (Built-in Engine - No External API Dependencies)
-      console.log(`[ResearchAgent] 🧠 Phase 2: AI KNOWLEDGE SYNTHESIS (Built-in Engine)`);
+      // Phase 2: Execute via Research Orchestrator (Real Search + Extraction)
+      console.log(`[ResearchAgent] 🔍 Phase 2: EXECUTING RESEARCH ORCHESTRATOR`);
       await this.stateMachine.transition('searching');
       this.callbacks.onProgress?.(15);
-      this.callbacks.onDecision?.('Running AI-powered knowledge synthesis', 0.9);
+      this.callbacks.onDecision?.('Running research orchestrator (search → extract → analyze)', 0.9);
 
-      // Use built-in AI research engine - no external API dependencies
-      this.results = this.createAIKnowledgeResults(query);
-      console.log(`[ResearchAgent] AI Knowledge base initialized for: "${query}"`);
+      // Call the research-orchestrator edge function for REAL research
+      const orchestratorResult = await this.executeResearchOrchestrator(query);
+      
+      if (!orchestratorResult.success) {
+        throw new Error(orchestratorResult.error || 'Research orchestrator failed');
+      }
+
+      // Convert orchestrator results to agent results
+      this.results = this.convertOrchestratorResults(orchestratorResult.data);
+      console.log(`[ResearchAgent] Orchestrator returned ${this.results.length} sources`);
       
       this.stateMachine.updateContext({ results: this.results });
       this.callbacks.onResultsUpdate?.(this.results);
 
-      // Phase 3: Analysis
-      console.log(`[ResearchAgent] 🔍 Phase 3: AI ANALYSIS`);
+      // Phase 3: Analysis (from orchestrator findings)
+      console.log(`[ResearchAgent] 🔍 Phase 3: ANALYSIS`);
       await this.stateMachine.transition('analyzing');
-      this.callbacks.onProgress?.(40);
-      this.callbacks.onDecision?.('Analyzing query with AI reasoning', 0.82);
+      this.callbacks.onProgress?.(50);
+      this.callbacks.onDecision?.('Analyzing extracted findings', 0.82);
 
-      // Calculate quality metrics for AI-only mode
-      const analysisQuality = this.calculateAIQualityMetrics(query);
+      const analysisQuality = this.calculateOrchestratorQuality(orchestratorResult.data);
       console.log(`[ResearchAgent] Analysis quality:`, analysisQuality);
       this.stateMachine.updateQuality(analysisQuality);
       this.callbacks.onQualityUpdate?.(this.stateMachine.getContext().quality);
 
-      // Phase 4: Verification (AI Self-Verification)
-      console.log(`[ResearchAgent] ✅ Phase 4: AI SELF-VERIFICATION`);
+      // Phase 4: Verification (from orchestrator)
+      console.log(`[ResearchAgent] ✅ Phase 4: VERIFICATION`);
       await this.stateMachine.transition('verifying');
-      this.callbacks.onProgress?.(60);
-      this.callbacks.onDecision?.('Running AI self-verification and critique', 0.78);
+      this.callbacks.onProgress?.(70);
+      this.callbacks.onDecision?.('Cross-referencing findings across sources', 0.78);
 
-      this.verifications = await this.executeAIVerification(query);
+      this.verifications = this.convertOrchestratorVerifications(orchestratorResult.data);
       console.log(`[ResearchAgent] Verification complete. Claims verified: ${this.verifications.length}`);
       this.callbacks.onVerificationUpdate?.(this.verifications);
 
-      // Update quality with verification scores
       const verificationQuality = this.calculateVerificationQuality();
-      console.log(`[ResearchAgent] Verification quality:`, verificationQuality);
       this.stateMachine.updateQuality(verificationQuality);
       this.callbacks.onQualityUpdate?.(this.stateMachine.getContext().quality);
 
-      // Phase 5: Compile Report
+      // Phase 5: Compile Report (use orchestrator's report)
       console.log(`[ResearchAgent] 📝 Phase 5: COMPILING REPORT`);
       await this.stateMachine.transition('compiling');
-      this.callbacks.onProgress?.(80);
-      this.callbacks.onDecision?.('Compiling comprehensive AI-synthesized report', 0.92);
+      this.callbacks.onProgress?.(85);
+      this.callbacks.onDecision?.('Compiling research report from verified findings', 0.92);
 
-      const report = await this.generateAIOnlyReport(query);
+      const report = this.extractOrchestratorReport(orchestratorResult.data, query);
       console.log(`[ResearchAgent] Report compiled. Length: ${report.length} characters`);
 
       // Complete
@@ -192,18 +196,18 @@ export class ResearchAgent {
       const finalQuality = this.stateMachine.getContext().quality;
       console.log(`[ResearchAgent] ========== RESEARCH COMPLETE ==========`);
       console.log(`[ResearchAgent] Final quality: ${(finalQuality.overall * 100).toFixed(1)}%`);
-      console.log(`[ResearchAgent] Mode: AI Knowledge Synthesis`);
+      console.log(`[ResearchAgent] Sources: ${this.results.length}`);
       console.log(`[ResearchAgent] Time elapsed: ${((Date.now() - this.startTime) / 1000).toFixed(1)}s`);
       
       this.memory.recordOutcome(
         query,
         this.currentPlan,
         finalQuality,
-        [{
-          url: 'ai://knowledge-synthesis',
-          domain: 'AI Knowledge Base',
-          useful: true
-        }],
+        this.results.map(r => ({
+          url: r.url,
+          domain: r.metadata.domain || new URL(r.url).hostname,
+          useful: r.relevanceScore > 0.5
+        })),
         finalQuality.overall >= 0.6
       );
 
@@ -231,6 +235,135 @@ export class ResearchAgent {
     } finally {
       this.isRunning = false;
     }
+  }
+
+  // Execute the research-orchestrator edge function
+  private async executeResearchOrchestrator(query: string): Promise<{ success: boolean; data?: any; error?: string }> {
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+      console.log(`[ResearchAgent] Calling research-orchestrator for: "${query}"`);
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/research-orchestrator`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({ query }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[ResearchAgent] Orchestrator error: ${response.status} - ${errorText}`);
+        return { success: false, error: `Orchestrator returned ${response.status}: ${errorText}` };
+      }
+
+      const data = await response.json();
+      console.log(`[ResearchAgent] Orchestrator response:`, data);
+
+      if (data.status === 'failed') {
+        return { success: false, error: data.error || 'Research failed' };
+      }
+
+      return { success: true, data };
+    } catch (error) {
+      console.error(`[ResearchAgent] Orchestrator call failed:`, error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  // Convert orchestrator results to AgentResearchResult format
+  private convertOrchestratorResults(data: any): AgentResearchResult[] {
+    if (!data?.sources || !Array.isArray(data.sources)) {
+      console.warn('[ResearchAgent] No sources in orchestrator response');
+      return [];
+    }
+
+    return data.sources.map((source: any, index: number) => ({
+      id: source.id || `source-${Date.now()}-${index}`,
+      title: source.title || 'Untitled Source',
+      url: source.url || '',
+      content: source.content || '',
+      summary: source.content?.slice(0, 300) || '',
+      relevanceScore: source.reliability || 0.7,
+      extractedAt: new Date(source.extractedAt || Date.now()),
+      metadata: {
+        domain: source.domain || (source.url ? new URL(source.url).hostname : 'unknown'),
+        wordCount: source.content?.split(/\s+/).length || 0,
+        publishDate: source.extractedAt,
+      }
+    }));
+  }
+
+  // Convert orchestrator findings to ClaimVerification format
+  private convertOrchestratorVerifications(data: any): ClaimVerification[] {
+    if (!data?.findings || !Array.isArray(data.findings)) {
+      return [];
+    }
+
+    return data.findings.map((finding: any) => ({
+      claim: finding.claim || '',
+      status: finding.verified ? 'verified' : 'unverified',
+      confidence: finding.confidence || 0.5,
+      sources: (finding.sourceIds || []).map((id: string) => ({
+        url: id,
+        domain: 'source',
+        supportLevel: finding.confidence > 0.7 ? 'strong' : 'moderate',
+        excerpt: finding.evidence?.[0] || ''
+      })),
+      contradictions: finding.contradictions || [],
+      verifiedAt: new Date()
+    }));
+  }
+
+  // Calculate quality from orchestrator data
+  private calculateOrchestratorQuality(data: any): Partial<QualityScore> {
+    const sourceCount = data?.sources?.length || 0;
+    const findingsCount = data?.findings?.length || 0;
+    const verifiedCount = data?.findings?.filter((f: any) => f.verified).length || 0;
+    const avgConfidence = data?.report?.metadata?.confidenceScore || 0.5;
+
+    return {
+      completeness: Math.min(1, sourceCount / 5), // 5 sources = 100%
+      sourceQuality: Math.min(1, sourceCount > 0 ? 0.7 + (verifiedCount / findingsCount) * 0.3 : 0.3),
+      accuracy: avgConfidence,
+      freshness: 0.8, // Real sources are fresh
+      overall: Math.min(1, (sourceCount / 5 + avgConfidence + (verifiedCount / Math.max(findingsCount, 1))) / 3)
+    };
+  }
+
+  // Extract report from orchestrator response
+  private extractOrchestratorReport(data: any, query: string): string {
+    if (data?.report) {
+      const report = data.report;
+      let markdown = `# ${report.title || `Research Report: ${query}`}\n\n`;
+      
+      if (report.summary) {
+        markdown += `## Executive Summary\n\n${report.summary}\n\n`;
+      }
+
+      if (report.sections && Array.isArray(report.sections)) {
+        for (const section of report.sections) {
+          markdown += `## ${section.heading}\n\n${section.content}\n\n`;
+        }
+      }
+
+      if (report.metadata) {
+        markdown += `---\n\n**Research Metadata:**\n`;
+        markdown += `- Sources analyzed: ${report.metadata.totalSources || 0}\n`;
+        markdown += `- Verified claims: ${report.metadata.verifiedClaims || 0}\n`;
+        markdown += `- Confidence score: ${((report.metadata.confidenceScore || 0) * 100).toFixed(1)}%\n`;
+        markdown += `- Generated: ${report.metadata.generatedAt || new Date().toISOString()}\n`;
+      }
+
+      return markdown;
+    }
+
+    // Fallback if no report in response
+    return `# Research Report: ${query}\n\nResearch completed with ${data?.sources?.length || 0} sources.\n\n` +
+           `## Findings\n\n${data?.findings?.map((f: any) => `- ${f.claim}`).join('\n') || 'No findings extracted.'}`;
   }
 
   // Perform web search using hybrid approach (Tavily + sitemap discovery)
@@ -351,45 +484,11 @@ export class ResearchAgent {
     return 'general';
   }
 
-  // Create comprehensive AI knowledge results representing built-in research engine
-  private createAIKnowledgeResults(query: string): AgentResearchResult[] {
-    const currentDate = new Date();
-    const topics = this.extractKeyTopics(query);
-    
-    return [{
-      id: `ai-knowledge-${Date.now()}`,
-      title: 'AI Research Engine Analysis',
-      url: 'ai://built-in-research-engine',
-      content: `Comprehensive AI-powered research analysis for: ${query}
-
-This research is generated by the built-in Manus 1.6 MAX research engine using Lovable AI.
-
-Key Topics Identified: ${topics.join(', ')}
-Analysis Date: ${currentDate.toLocaleDateString()}
-
-The built-in research engine provides:
-- Multi-step reasoning and analysis
-- Structured data extraction
-- Quality scoring and verification
-- Comprehensive report generation`,
-      summary: 'Research synthesized by the built-in Manus 1.6 MAX research engine using advanced AI reasoning.',
-      relevanceScore: 0.95,
-      extractedAt: currentDate,
-      metadata: {
-        author: 'NexusAI Built-in Research Engine',
-        domain: 'AI Research Engine',
-        wordCount: 150,
-        publishDate: currentDate.toISOString()
-      }
-    }];
-  }
-
-  // Extract key topics from query for better context
+  // Helper method for extracting topics (used in fallback scenarios)
   private extractKeyTopics(query: string): string[] {
     const topics: string[] = [];
     const q = query.toLowerCase();
     
-    // Market/Finance topics
     if (/\b(ipo|stock|market|trading|invest|fund|equity)\b/.test(q)) topics.push('Financial Markets');
     if (/\b(saudi|tasi|tadawul|nomu|ksa)\b/.test(q)) topics.push('Saudi Arabia');
     if (/\b(tech|software|ai|startup)\b/.test(q)) topics.push('Technology');
@@ -398,117 +497,6 @@ The built-in research engine provides:
     if (/\b(company|corporate|business)\b/.test(q)) topics.push('Corporate');
     
     return topics.length > 0 ? topics : ['General Research'];
-  }
-
-  // Calculate quality metrics for AI-powered research
-  private calculateAIQualityMetrics(query: string): Partial<QualityScore> {
-    const queryLower = query.toLowerCase();
-    
-    // Check query complexity
-    const isComplex = query.length > 100 || query.includes(' and ') || query.includes(' or ');
-    const isTimeSensitive = /\b(202[0-9]|current|recent|latest|today)\b/i.test(query);
-    const requiresSpecificData = /\b(price|stock|share|market cap|revenue|profit)\b/i.test(queryLower);
-    
-    // Base quality for AI synthesis
-    let completeness = 0.85;
-    let accuracy = 0.82;
-    let sourceQuality = 0.9; // AI built-in engine is reliable
-    let freshness = isTimeSensitive ? 0.6 : 0.85;
-
-    // Adjust for query type
-    if (isComplex) {
-      completeness += 0.05; // AI handles complex queries well
-    }
-    if (requiresSpecificData) {
-      accuracy -= 0.1;
-      freshness -= 0.15;
-    }
-
-    const overall = (completeness + accuracy + sourceQuality + freshness) / 4;
-
-    return {
-      completeness: Math.min(1, completeness),
-      sourceQuality: Math.min(1, sourceQuality),
-      accuracy: Math.min(1, accuracy),
-      freshness: Math.min(1, freshness),
-      overall: Math.max(0.5, Math.min(1, overall))
-    };
-  }
-
-  // AI-powered verification without external sources
-  private async executeAIVerification(query: string): Promise<ClaimVerification[]> {
-    const verifications: ClaimVerification[] = [];
-    const aiSource: VerificationSource = {
-      url: 'ai://knowledge-synthesis',
-      domain: 'AI Knowledge Base',
-      supportLevel: 'moderate',
-      excerpt: 'Synthesized from AI reasoning and knowledge base'
-    };
-
-    try {
-      // Use AI to generate and self-verify key claims
-      const verificationPrompt = `Analyze the research query "${query}" and identify 3-5 key factual claims that would need verification.
-
-For each claim, provide:
-1. The claim statement
-2. Your confidence level (high/medium/low)
-3. What sources would be needed to verify this
-
-Format as JSON array:
-[{"claim": "...", "confidence": "high|medium|low", "verificationNeeded": "..."}]
-
-Only output the JSON array, nothing else.`;
-
-      const result = await researchApi.analyze(query, verificationPrompt, 'analyze');
-      
-      if (result.success && result.result && typeof result.result === 'string') {
-        try {
-          // Try to extract JSON from the response
-          const jsonMatch = result.result.match(/\[[\s\S]*\]/);
-          if (jsonMatch) {
-            const parsed = JSON.parse(jsonMatch[0]);
-            if (Array.isArray(parsed)) {
-              parsed.forEach((c: any, idx: number) => {
-                if (c && typeof c.claim === 'string') {
-                  const confidenceMap: Record<string, number> = { high: 0.85, medium: 0.65, low: 0.45 };
-                  verifications.push({
-                    id: `ai-claim-${Date.now()}-${idx}`,
-                    claim: String(c.claim),
-                    status: c.confidence === 'high' ? 'verified' : 'partially_verified',
-                    confidence: confidenceMap[c.confidence] || 0.6,
-                    sources: [{ ...aiSource, excerpt: String(c.verificationNeeded || 'Self-verified through AI reasoning') }],
-                    explanation: String(c.verificationNeeded || 'Self-verified through AI reasoning')
-                  });
-                }
-              });
-            }
-          }
-        } catch (parseError) {
-          console.warn('[ResearchAgent] JSON parse error, using fallback:', parseError);
-          // Fallback verification
-          verifications.push({
-            id: `ai-claim-${Date.now()}-fallback`,
-            claim: `Research on "${query}" synthesized from AI knowledge`,
-            status: 'partially_verified',
-            confidence: 0.7,
-            sources: [{ ...aiSource, excerpt: 'AI-synthesized research' }],
-            explanation: 'AI-synthesized research - recommend external verification for time-sensitive data'
-          });
-        }
-      }
-    } catch (error) {
-      console.error('[ResearchAgent] AI verification error:', error);
-      verifications.push({
-        id: `ai-claim-${Date.now()}-error`,
-        claim: `Research on "${query}"`,
-        status: 'partially_verified',
-        confidence: 0.6,
-        sources: [aiSource],
-        explanation: 'AI-synthesized research'
-      });
-    }
-
-    return verifications;
   }
 
   private extractDomain(url: string): string {
