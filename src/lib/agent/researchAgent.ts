@@ -68,6 +68,12 @@ export class ResearchAgent {
   private currentPlan: ResearchPlan | null = null;
   private isRunning: boolean = false;
   private reportFormat: ReportFormat = 'detailed';
+  private searchEngineInfo: {
+    engines: string[];
+    resultCounts: Record<string, number>;
+    searchMethod: string;
+    timing?: number;
+  } | null = null;
 
   constructor() {
     this.stateMachine = agentStateMachine;
@@ -107,11 +113,18 @@ export class ResearchAgent {
     quality: QualityScore;
     verifications: ClaimVerification[];
     plan: ResearchPlan;
+    searchEngineInfo?: {
+      engines: string[];
+      resultCounts: Record<string, number>;
+      searchMethod: string;
+      timing?: number;
+    };
   }> {
     this.isRunning = true;
     this.startTime = Date.now();
     this.results = [];
     this.verifications = [];
+    this.searchEngineInfo = null;
     this.stateMachine.reset();
     this.executor.reset();
 
@@ -140,12 +153,23 @@ export class ResearchAgent {
       this.callbacks.onProgress?.(15);
       this.callbacks.onDecision?.('Searching the web via embedded search engines', 0.9);
 
-      // Execute real-time search using Tavily as primary, internal as fallback
+      // Execute real-time search using embedded web-search as primary
       const searchResult = await researchApi.search(query, 15, true, {
         country: options?.country,
         strictMode: options?.strictMode?.enabled,
         minSources: options?.strictMode?.minSources,
       });
+
+      // Capture search engine info
+      if (searchResult.engines || searchResult.engineResults) {
+        this.searchEngineInfo = {
+          engines: searchResult.engines || ['duckduckgo', 'google', 'bing'],
+          resultCounts: searchResult.engineResults || {},
+          searchMethod: searchResult.searchMethod || 'embedded_web_search',
+          timing: searchResult.timing?.total,
+        };
+        console.log(`[ResearchAgent] Search engine info:`, this.searchEngineInfo);
+      }
 
       if (!searchResult.success || !searchResult.data || searchResult.data.length === 0) {
         console.warn(`[ResearchAgent] Primary embedded search returned no results, trying hybrid search`);
@@ -158,6 +182,14 @@ export class ResearchAgent {
         });
         if (hybridResult.success && hybridResult.data) {
           this.results = hybridResult.data.map((item, idx) => this.convertSearchResult(item, idx));
+          // Update search engine info for hybrid
+          if (!this.searchEngineInfo) {
+            this.searchEngineInfo = {
+              engines: ['duckduckgo', 'google', 'bing', 'internal'],
+              resultCounts: {},
+              searchMethod: hybridResult.searchMethod || 'hybrid_embedded',
+            };
+          }
         }
       } else {
         console.log(`[ResearchAgent] Search returned ${searchResult.data.length} results (method: ${searchResult.searchMethod})`);
@@ -237,7 +269,8 @@ export class ResearchAgent {
         report,
         quality: finalQuality,
         verifications: this.verifications,
-        plan: this.currentPlan
+        plan: this.currentPlan,
+        searchEngineInfo: this.searchEngineInfo || undefined,
       };
     } catch (error) {
       console.error(`[ResearchAgent] ❌ ERROR:`, error);

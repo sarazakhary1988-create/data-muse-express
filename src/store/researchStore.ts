@@ -95,6 +95,13 @@ export interface AgentStateInfo {
     sourceCoverage: SourceCoverage;
     consolidatedData: Record<string, any>;
   } | null;
+  // Search engine results tracking
+  searchEngines: {
+    engines: string[];
+    resultCounts: Record<string, number>;
+    searchMethod: string;
+    timing?: number;
+  } | null;
 }
 
 // Default Deep Verify sources configuration
@@ -223,6 +230,7 @@ interface ResearchStore {
   setAgentPlan: (plan: ResearchPlan | null) => void;
   setAgentDecision: (message: string, confidence: number) => void;
   setAgentConsolidation: (consolidation: AgentStateInfo['consolidation']) => void;
+  setAgentSearchEngines: (searchEngines: AgentStateInfo['searchEngines']) => void;
   resetAgentState: () => void;
 }
 
@@ -251,12 +259,12 @@ export const useResearchStore = create<ResearchStore>()(
         plan: null,
         lastDecision: null,
         consolidation: null,
+        searchEngines: null,
       },
       
       setSearchQuery: (query) => set({ searchQuery: query }),
       
-      addTask: (task) => set((state) => ({ 
-        tasks: [task, ...state.tasks],
+      addTask: (task) => set((state) => ({
         currentTask: task 
       })),
       
@@ -361,6 +369,10 @@ export const useResearchStore = create<ResearchStore>()(
         agentState: { ...s.agentState, consolidation }
       })),
       
+      setAgentSearchEngines: (searchEngines) => set((s) => ({
+        agentState: { ...s.agentState, searchEngines }
+      })),
+      
       resetAgentState: () => set({
         agentState: {
           state: 'idle' as AgentState,
@@ -370,6 +382,7 @@ export const useResearchStore = create<ResearchStore>()(
           plan: null,
           lastDecision: null,
           consolidation: null,
+          searchEngines: null,
         }
       }),
     }),
@@ -377,7 +390,7 @@ export const useResearchStore = create<ResearchStore>()(
       name: 'research-store',
       partialize: (state) => ({ 
         deepVerifyMode: state.deepVerifyMode,
-        deepVerifySourceConfigs: state.deepVerifySourceConfigs 
+        deepVerifySourceConfigs: state.deepVerifySourceConfigs
       }),
     }
   )

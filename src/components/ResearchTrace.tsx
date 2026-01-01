@@ -13,7 +13,8 @@ import {
   Lightbulb,
   FileText,
   Clock,
-  Zap
+  Zap,
+  Search
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -22,6 +23,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { useState } from 'react';
 import { useResearchStore, ResearchTask } from '@/store/researchStore';
 import { ResearchPlan, ClaimVerification, QualityScore } from '@/lib/agent/types';
+import { SearchEngineIndicator } from './SearchEngineIndicator';
 
 interface ResearchTraceProps {
   task: ResearchTask;
@@ -102,6 +104,11 @@ export const ResearchTrace = ({ task }: ResearchTraceProps) => {
           <p className="text-sm text-muted-foreground">
             Follow the agent's reasoning pipeline from query to conclusions
           </p>
+          
+          {/* Search Engine Indicator */}
+          <div className="mt-3">
+            <SearchEngineIndicator />
+          </div>
         </div>
 
         {/* Step 1: Query Interpretation */}
