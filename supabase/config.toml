@@ -43,3 +43,12 @@ verify_jwt = false
 
 [functions.research-extract]
 verify_jwt = false
+
+[functions.enhance-prompt]
+verify_jwt = false
+
+[functions.execute-scheduled-task]
+verify_jwt = false
+
+[functions.send-report-email]
+verify_jwt = false

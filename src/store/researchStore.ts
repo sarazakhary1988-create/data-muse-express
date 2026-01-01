@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { AgentState, QualityScore, ExecutionMetrics, ClaimVerification, ResearchPlan } from '@/lib/agent/types';
 import { Discrepancy, QualityMetrics, SourceCoverage } from '@/lib/agent/dataConsolidator';
+import { TimeFrameValue } from '@/components/TimeFrameFilter';
 
 export interface ResearchTask {
   id: string;
@@ -177,6 +178,7 @@ interface ResearchStore {
   deepVerifySources: DeepVerifySource[];
   deepVerifySourceConfigs: DeepVerifySourceConfig[];
   reportFormat: ReportFormat;
+  timeFrameFilter: TimeFrameValue;
   
   // Agent state
   agentState: AgentStateInfo;
@@ -200,6 +202,7 @@ interface ResearchStore {
   deleteSource: (id: string) => void;
   clearTasks: () => void;
   setReportFormat: (format: ReportFormat) => void;
+  setTimeFrameFilter: (filter: TimeFrameValue) => void;
   
   // Agent state actions
   setAgentState: (state: AgentState) => void;
@@ -224,6 +227,7 @@ export const useResearchStore = create<ResearchStore>()(
       deepVerifySources: [],
       deepVerifySourceConfigs: DEFAULT_DEEP_VERIFY_SOURCES,
       reportFormat: 'detailed' as ReportFormat,
+      timeFrameFilter: { type: 'all' } as TimeFrameValue,
       
       // Agent state
       agentState: {
@@ -308,6 +312,8 @@ export const useResearchStore = create<ResearchStore>()(
       clearTasks: () => set({ tasks: [], currentTask: null, reports: [] }),
       
       setReportFormat: (format) => set({ reportFormat: format }),
+      
+      setTimeFrameFilter: (filter) => set({ timeFrameFilter: filter }),
       
       // Agent state actions
       setAgentState: (state) => set((s) => ({

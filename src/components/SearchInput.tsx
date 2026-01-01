@@ -8,6 +8,8 @@ import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { SourceManager } from '@/components/SourceManager';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { TimeFrameFilter, formatTimeFrameForQuery } from '@/components/TimeFrameFilter';
+import { PromptEnhancer } from '@/components/PromptEnhancer';
 
 interface SearchInputProps {
   onSearch: (query: string) => void;
@@ -27,7 +29,17 @@ const isUrl = (text: string): boolean => {
 };
 
 export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
-  const { searchQuery, setSearchQuery, isSearching, deepVerifyMode, setDeepVerifyMode, reportFormat, setReportFormat } = useResearchStore();
+  const { 
+    searchQuery, 
+    setSearchQuery, 
+    isSearching, 
+    deepVerifyMode, 
+    setDeepVerifyMode, 
+    reportFormat, 
+    setReportFormat,
+    timeFrameFilter,
+    setTimeFrameFilter
+  } = useResearchStore();
   const [isFocused, setIsFocused] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -43,7 +55,13 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
 
   const handleSubmit = () => {
     if (searchQuery.trim() && !isSearching) {
-      onSearch(searchQuery.trim());
+      // Append time frame context to the query
+      const timeContext = formatTimeFrameForQuery(timeFrameFilter);
+      const fullQuery = timeContext 
+        ? `${searchQuery.trim()} ${timeContext}`
+        : searchQuery.trim();
+      
+      onSearch(fullQuery);
       setShowSuggestions(false);
     }
   };
@@ -52,6 +70,13 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
     if (searchQuery.trim() && !isSearching && onScrapeUrl) {
       onScrapeUrl(searchQuery.trim());
       setShowSuggestions(false);
+    }
+  };
+
+  const handleEnhancedQuery = (enhancedQuery: string) => {
+    setSearchQuery(enhancedQuery);
+    if (inputRef.current) {
+      inputRef.current.focus();
     }
   };
 
@@ -124,12 +149,21 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
           />
 
           {/* Bottom bar */}
-          <div className="flex items-center justify-between px-5 pb-4 pt-2 border-t border-border/50">
-            <div className="flex items-center gap-4 flex-wrap">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Sparkles className="w-3 h-3" />
-                <span>AI-powered deep research</span>
-              </div>
+          <div className="flex items-center justify-between px-5 pb-4 pt-2 border-t border-border/50 gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* AI Enhance Button */}
+              <PromptEnhancer 
+                query={searchQuery} 
+                onEnhanced={handleEnhancedQuery}
+                disabled={isSearching}
+                timeContext={formatTimeFrameForQuery(timeFrameFilter)}
+              />
+              
+              {/* Time Frame Filter */}
+              <TimeFrameFilter 
+                value={timeFrameFilter} 
+                onChange={setTimeFrameFilter} 
+              />
               
               {/* Report Format Selector */}
               <TooltipProvider>
@@ -137,7 +171,7 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
                   <TooltipTrigger asChild>
                     <div className="flex items-center gap-2">
                       <Select value={reportFormat} onValueChange={(value: ReportFormat) => setReportFormat(value)}>
-                        <SelectTrigger className="h-7 w-[140px] text-xs border-muted">
+                        <SelectTrigger className="h-7 w-[130px] text-xs border-muted">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -186,7 +220,7 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
                         ) : (
                           <Shield className="w-3.5 h-3.5" />
                         )}
-                        Deep Verify
+                        <span className="hidden sm:inline">Deep Verify</span>
                       </label>
                     </div>
                   </TooltipTrigger>
