@@ -4,9 +4,17 @@ import { Globe, Search, Zap, FileText, Database, Sparkles } from 'lucide-react';
 export const AnimatedBackground = () => {
   return (
     <div className="fixed inset-0 overflow-hidden pointer-events-none">
+      {/* Light mode gradient overlay */}
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-accent/5 dark:opacity-0 transition-opacity duration-500" />
+      <div className="absolute inset-0 bg-gradient-to-tl from-accent/3 via-transparent to-primary/3 dark:opacity-0 transition-opacity duration-500" />
+      
+      {/* Radial gradient for depth */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_hsl(var(--primary)/0.08),_transparent_50%)] dark:opacity-0 transition-opacity duration-500" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_left,_hsl(var(--accent)/0.06),_transparent_50%)] dark:opacity-0 transition-opacity duration-500" />
+      
       {/* Gradient orbs */}
       <motion.div
-        className="absolute -top-40 -right-40 w-96 h-96 rounded-full bg-primary/20 blur-3xl"
+        className="absolute -top-40 -right-40 w-96 h-96 rounded-full bg-primary/20 dark:bg-primary/20 blur-3xl"
         animate={{
           scale: [1, 1.2, 1],
           opacity: [0.3, 0.5, 0.3],
@@ -18,7 +26,7 @@ export const AnimatedBackground = () => {
         }}
       />
       <motion.div
-        className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full bg-accent/20 blur-3xl"
+        className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full bg-accent/20 dark:bg-accent/20 blur-3xl"
         animate={{
           scale: [1.2, 1, 1.2],
           opacity: [0.3, 0.5, 0.3],
@@ -31,9 +39,23 @@ export const AnimatedBackground = () => {
         }}
       />
       
+      {/* Additional light mode accent orb */}
+      <motion.div
+        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-gradient-to-br from-primary/10 to-accent/10 blur-3xl dark:opacity-0 transition-opacity duration-500"
+        animate={{
+          scale: [1, 1.1, 1],
+          rotate: [0, 180, 360],
+        }}
+        transition={{
+          duration: 20,
+          repeat: Infinity,
+          ease: "linear",
+        }}
+      />
+      
       {/* Grid pattern */}
       <div 
-        className="absolute inset-0 opacity-[0.02]"
+        className="absolute inset-0 opacity-[0.02] dark:opacity-[0.02]"
         style={{
           backgroundImage: `
             linear-gradient(to right, hsl(var(--foreground)) 1px, transparent 1px),
