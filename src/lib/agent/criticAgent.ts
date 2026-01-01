@@ -107,20 +107,11 @@ export class CriticAgent {
 
     // Use AI for deeper verification if available
     try {
-      const verificationPrompt = `Verify this claim against the provided content.
-
-Claim: "${claim}"
-
-Content excerpt: "${excerpt}"
-
-Analyze whether the content supports, contradicts, or does not address the claim. 
-Respond with ONLY a JSON object (no markdown): { "support": "strong|moderate|weak|contradicts|none", "reason": "brief explanation" }`;
-
       const { data } = await supabase.functions.invoke('research-analyze', {
         body: {
-          query: verificationPrompt,
+          query: claim,
           content: excerpt,
-          type: 'extract',
+          type: 'verify',
         }
       });
 
