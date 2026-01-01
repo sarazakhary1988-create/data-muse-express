@@ -56,9 +56,10 @@ export interface DeepVerifySourceConfig {
   id: string;
   name: string;
   baseUrl: string;
-  category: 'official' | 'regulator' | 'news' | 'international';
+  category: 'official' | 'regulator' | 'news' | 'international' | 'custom';
   searchTerms: string[];
   enabled: boolean;
+  isCustom?: boolean;
 }
 
 // Agent state tracking
@@ -176,6 +177,9 @@ interface ResearchStore {
   toggleSourceEnabled: (id: string) => void;
   setAllSourcesEnabled: (enabled: boolean) => void;
   resetSourceConfigs: () => void;
+  addCustomSource: (source: Omit<DeepVerifySourceConfig, 'id' | 'isCustom'>) => void;
+  updateSource: (id: string, updates: Partial<DeepVerifySourceConfig>) => void;
+  deleteSource: (id: string) => void;
   clearTasks: () => void;
   
   // Agent state actions
@@ -257,6 +261,27 @@ export const useResearchStore = create<ResearchStore>()(
       })),
       
       resetSourceConfigs: () => set({ deepVerifySourceConfigs: DEFAULT_DEEP_VERIFY_SOURCES }),
+      
+      addCustomSource: (source) => set((state) => ({
+        deepVerifySourceConfigs: [
+          ...state.deepVerifySourceConfigs,
+          {
+            ...source,
+            id: `custom-${Date.now()}`,
+            isCustom: true,
+          }
+        ]
+      })),
+      
+      updateSource: (id, updates) => set((state) => ({
+        deepVerifySourceConfigs: state.deepVerifySourceConfigs.map((s) =>
+          s.id === id ? { ...s, ...updates } : s
+        )
+      })),
+      
+      deleteSource: (id) => set((state) => ({
+        deepVerifySourceConfigs: state.deepVerifySourceConfigs.filter((s) => s.id !== id)
+      })),
       
       clearTasks: () => set({ tasks: [], currentTask: null, reports: [] }),
       

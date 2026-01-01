@@ -6,7 +6,7 @@ import { useResearchStore } from '@/store/researchStore';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { DeepVerifySettings } from '@/components/DeepVerifySettings';
+import { SourceManager } from '@/components/SourceManager';
 
 interface SearchInputProps {
   onSearch: (query: string) => void;
@@ -165,8 +165,8 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
                 </Tooltip>
               </TooltipProvider>
               
-              {/* Deep Verify Settings - only show when mode is enabled */}
-              {deepVerifyMode && <DeepVerifySettings />}
+              {/* Source Manager - always show when deep verify is enabled */}
+              {deepVerifyMode && <SourceManager />}
             </div>
             
             <div className="flex items-center gap-2">
