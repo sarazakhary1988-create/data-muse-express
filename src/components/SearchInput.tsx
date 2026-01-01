@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { TimeFrameFilter, formatTimeFrameForQuery } from '@/components/TimeFrameFilter';
 import { PromptEnhancer } from '@/components/PromptEnhancer';
 import { CountryFilter, formatCountryForQuery } from '@/components/CountryFilter';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 interface SearchInputProps {
   onSearch: (query: string) => void;
@@ -30,6 +31,7 @@ const isUrl = (text: string): boolean => {
 };
 
 export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
+  const { t, isRTL } = useLanguage();
   const { 
     searchQuery, 
     setSearchQuery, 
@@ -98,6 +100,7 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.2, type: "spring", stiffness: 100 }}
+      dir={isRTL ? 'rtl' : 'ltr'}
     >
       <motion.div
         className={`relative rounded-2xl transition-all duration-500 ${
@@ -178,9 +181,9 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
               className="text-sm text-muted-foreground font-medium"
               animate={{ opacity: isSearching ? 0.7 : 1 }}
             >
-              {isSearching ? (
+            {isSearching ? (
                 <span className="flex items-center gap-2">
-                  Searching the web
+                  {t.search.searchingWeb}
                   <motion.span
                     animate={{ opacity: [0, 1, 0] }}
                     transition={{ duration: 1.5, repeat: Infinity }}
@@ -189,9 +192,9 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
                   </motion.span>
                 </span>
               ) : detectedUrl ? (
-                'URL detected - Scrape or search for it'
+                t.search.urlDetected
               ) : (
-                'What would you like to research?'
+                t.search.whatToResearch
               )}
             </motion.span>
             
@@ -220,7 +223,7 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
                   exit={{ opacity: 0, x: 10 }}
                   className="ml-auto text-xs text-muted-foreground"
                 >
-                  {charCount} chars
+                  {charCount} {t.search.chars}
                 </motion.span>
               )}
             </AnimatePresence>
@@ -241,7 +244,7 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
                 setTimeout(() => setShowSuggestions(false), 200);
               }}
               onKeyDown={handleKeyDown}
-              placeholder="Enter your research query, topic, or URL to scrape..."
+              placeholder={t.search.placeholder}
               className="w-full bg-transparent text-foreground text-lg placeholder:text-muted-foreground/50 focus:outline-none resize-none min-h-[60px] max-h-[200px] scrollbar-thin"
               disabled={isSearching}
               rows={1}
@@ -289,7 +292,7 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
               >
                 <ChevronDown className="w-4 h-4" />
               </motion.div>
-              <span>Research Filters</span>
+              <span>{t.search.researchFilters}</span>
               <AnimatePresence>
                 {(timeFrameFilter.type !== 'all' || countryFilter !== 'any') && (
                   <motion.div
@@ -298,7 +301,7 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
                     exit={{ scale: 0 }}
                   >
                     <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                      Active
+                      {t.common.active}
                     </Badge>
                   </motion.div>
                 )}
@@ -436,14 +439,14 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
                             <Shield className="w-3.5 h-3.5" />
                           )}
                         </motion.div>
-                        <span className="hidden sm:inline">Deep Verify</span>
+                        <span className="hidden sm:inline">{t.search.deepVerify}</span>
                       </label>
                     </motion.div>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-xs">
-                    <p className="font-medium">Deep Verify Mode</p>
+                    <p className="font-medium">{t.search.deepVerify}</p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Crawls official sources first before web search for maximum accuracy on financial/market data.
+                      {t.search.deepVerifyDesc}
                     </p>
                   </TooltipContent>
                 </Tooltip>
@@ -481,7 +484,7 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
                       className="gap-2 group"
                     >
                       <FileSearch className="w-4 h-4 group-hover:rotate-12 transition-transform" />
-                      Scrape URL
+                      {t.search.scrapeUrl}
                     </Button>
                   </motion.div>
                 )}
@@ -509,7 +512,7 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
                   {isSearching ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      {deepVerifyMode ? 'Verifying...' : 'Researching...'}
+                      {t.common.processing}
                     </>
                   ) : (
                     <>
@@ -519,7 +522,7 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
                       >
                         {deepVerifyMode ? <ShieldCheck className="w-4 h-4" /> : <Search className="w-4 h-4" />}
                       </motion.div>
-                      {detectedUrl ? 'Search About' : deepVerifyMode ? 'Deep Verify' : 'Research'}
+                      {detectedUrl ? t.common.search : t.search.startResearch}
                       <motion.div
                         animate={{ x: [0, 4, 0] }}
                         transition={{ duration: 1, repeat: Infinity, repeatDelay: 2 }}

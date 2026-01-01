@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ResearchTask, useResearchStore } from '@/store/researchStore';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 interface TaskHistoryProps {
   onSelectTask: (task: ResearchTask) => void;
@@ -12,6 +13,7 @@ interface TaskHistoryProps {
 
 export const TaskHistory = ({ onSelectTask }: TaskHistoryProps) => {
   const { tasks, currentTask, clearTasks } = useResearchStore();
+  const { t, isRTL } = useLanguage();
 
   const getStatusIcon = (status: ResearchTask['status']) => {
     switch (status) {
@@ -35,22 +37,22 @@ export const TaskHistory = ({ onSelectTask }: TaskHistoryProps) => {
 
   const getStatusBadge = (status: ResearchTask['status']) => {
     const variants: Record<ResearchTask['status'], { label: string; className: string }> = {
-      pending: { label: 'Pending', className: 'bg-muted text-muted-foreground' },
-      processing: { label: 'Processing', className: 'bg-primary/10 text-primary' },
-      completed: { label: 'Completed', className: 'bg-accent/10 text-accent' },
-      failed: { label: 'Failed', className: 'bg-destructive/10 text-destructive' },
+      pending: { label: t.history.status.pending, className: 'bg-muted text-muted-foreground' },
+      processing: { label: t.history.status.processing, className: 'bg-primary/10 text-primary' },
+      completed: { label: t.history.status.completed, className: 'bg-accent/10 text-accent' },
+      failed: { label: t.history.status.failed, className: 'bg-destructive/10 text-destructive' },
     };
     return variants[status];
   };
 
   if (tasks.length === 0) {
     return (
-      <Card variant="glass" className="h-fit">
+      <Card variant="glass" className="h-fit" dir={isRTL ? 'rtl' : 'ltr'}>
         <CardContent className="py-12 text-center">
           <History className="w-12 h-12 mx-auto text-muted-foreground/30 mb-4" />
-          <p className="text-muted-foreground">No research history yet</p>
+          <p className="text-muted-foreground">{t.history.noHistory}</p>
           <p className="text-sm text-muted-foreground/60 mt-1">
-            Your research tasks will appear here
+            {t.history.noHistoryDesc}
           </p>
         </CardContent>
       </Card>
@@ -58,12 +60,12 @@ export const TaskHistory = ({ onSelectTask }: TaskHistoryProps) => {
   }
 
   return (
-    <Card variant="glass" className="h-fit">
+    <Card variant="glass" className="h-fit" dir={isRTL ? 'rtl' : 'ltr'}>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-base flex items-center gap-2">
             <History className="w-4 h-4" />
-            Research History
+            {t.history.title}
           </CardTitle>
           <Button
             variant="ghost"
@@ -72,7 +74,7 @@ export const TaskHistory = ({ onSelectTask }: TaskHistoryProps) => {
             className="text-xs text-muted-foreground hover:text-destructive"
           >
             <Trash2 className="w-3 h-3 mr-1" />
-            Clear
+            {t.history.clear}
           </Button>
         </div>
       </CardHeader>

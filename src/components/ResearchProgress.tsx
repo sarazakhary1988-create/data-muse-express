@@ -2,6 +2,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Check, Loader2, Globe, Brain, FileSearch, FileText, AlertCircle, Shield, ShieldCheck, Map, Database } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { DeepVerifySource } from '@/store/researchStore';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 interface ResearchStep {
   id: string;
@@ -69,13 +70,30 @@ const getSourceStatusLabel = (status: DeepVerifySource['status']) => {
 };
 
 export const ResearchProgress = ({ steps, currentProgress, deepVerifyMode, deepVerifySources }: ResearchProgressProps) => {
+  const { t, isRTL } = useLanguage();
   const hasActiveSources = deepVerifySources && deepVerifySources.some(s => s.status === 'mapping' || s.status === 'scraping');
+
+  const getSourceStatusLabelTranslated = (status: DeepVerifySource['status']) => {
+    switch (status) {
+      case 'completed':
+        return isRTL ? 'تم' : 'Done';
+      case 'mapping':
+        return isRTL ? 'جاري التعيين...' : 'Mapping...';
+      case 'scraping':
+        return isRTL ? 'جاري الاستخراج...' : 'Scraping...';
+      case 'failed':
+        return isRTL ? 'فشل' : 'Failed';
+      default:
+        return isRTL ? 'قيد الانتظار' : 'Pending';
+    }
+  };
   
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className="w-full max-w-2xl mx-auto"
+      dir={isRTL ? 'rtl' : 'ltr'}
     >
       <Card variant="glass" className="p-6">
         <div className="flex items-center justify-between mb-6">
@@ -84,7 +102,7 @@ export const ResearchProgress = ({ steps, currentProgress, deepVerifyMode, deepV
               <ShieldCheck className="w-5 h-5 text-emerald-500" />
             )}
             <h3 className="text-lg font-semibold">
-              {deepVerifyMode ? 'Deep Verify Research' : 'Research Progress'}
+              {deepVerifyMode ? (isRTL ? 'بحث التحقق العميق' : 'Deep Verify Research') : (isRTL ? 'تقدم البحث' : 'Research Progress')}
             </h3>
           </div>
           <span className="text-sm text-muted-foreground">{Math.round(currentProgress)}%</span>
@@ -111,7 +129,7 @@ export const ResearchProgress = ({ steps, currentProgress, deepVerifyMode, deepV
             >
               <div className="flex items-center gap-2 mb-3">
                 <Shield className="w-4 h-4 text-emerald-500" />
-                <h4 className="text-sm font-medium text-emerald-500">Official Sources</h4>
+                <h4 className="text-sm font-medium text-emerald-500">{isRTL ? 'المصادر الرسمية' : 'Official Sources'}</h4>
                 {hasActiveSources && (
                   <Loader2 className="w-3 h-3 animate-spin text-emerald-500" />
                 )}
@@ -131,9 +149,9 @@ export const ResearchProgress = ({ steps, currentProgress, deepVerifyMode, deepV
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       {source.pagesFound && source.pagesFound > 0 && (
-                        <span className="text-[10px] opacity-70">{source.pagesFound} pages</span>
+                        <span className="text-[10px] opacity-70">{source.pagesFound} {isRTL ? 'صفحات' : 'pages'}</span>
                       )}
-                      <span className="text-[10px] opacity-70">{getSourceStatusLabel(source.status)}</span>
+                      <span className="text-[10px] opacity-70">{getSourceStatusLabelTranslated(source.status)}</span>
                     </div>
                   </motion.div>
                 ))}
