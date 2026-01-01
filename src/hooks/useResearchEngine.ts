@@ -4,14 +4,46 @@ import { researchApi } from '@/lib/api/research';
 import { toast } from '@/hooks/use-toast';
 
 // Official sources for Deep Verify mode - prioritizes authoritative data
-const DEEP_VERIFY_SOURCES: { baseUrl: string; searchTerms: string[] }[] = [
+const DEEP_VERIFY_SOURCES: { baseUrl: string; name: string; searchTerms: string[] }[] = [
+  // Primary Saudi Exchange Sources
   { 
     baseUrl: 'https://www.saudiexchange.sa', 
-    searchTerms: ['IPO', 'listing', 'new listing', 'TASI', 'NOMU', '2025'] 
+    name: 'Saudi Exchange',
+    searchTerms: ['IPO', 'listing', 'new listing', 'TASI', 'NOMU', '2025', 'announce'] 
   },
   { 
     baseUrl: 'https://www.tadawul.com.sa', 
-    searchTerms: ['IPO', 'listing', 'companies', 'market'] 
+    name: 'Tadawul',
+    searchTerms: ['IPO', 'listing', 'companies', 'market', 'securities'] 
+  },
+  // Capital Market Authority
+  { 
+    baseUrl: 'https://cma.org.sa', 
+    name: 'CMA Saudi',
+    searchTerms: ['approval', 'IPO', 'listing', 'prospectus', 'offering', 'securities'] 
+  },
+  // Financial News & Data
+  { 
+    baseUrl: 'https://www.argaam.com', 
+    name: 'Argaam',
+    searchTerms: ['IPO', 'listing', 'TASI', 'NOMU', 'market', 'companies', 'saudi'] 
+  },
+  { 
+    baseUrl: 'https://english.mubasher.info', 
+    name: 'Mubasher',
+    searchTerms: ['IPO', 'listing', 'saudi', 'tadawul', 'market'] 
+  },
+  // Bloomberg Arabia (English version for better parsing)
+  { 
+    baseUrl: 'https://www.bloomberg.com/middle-east', 
+    name: 'Bloomberg ME',
+    searchTerms: ['saudi', 'IPO', 'listing', 'tadawul', 'riyadh'] 
+  },
+  // Reuters Middle East
+  { 
+    baseUrl: 'https://www.reuters.com/world/middle-east', 
+    name: 'Reuters ME',
+    searchTerms: ['saudi', 'IPO', 'listing', 'stock', 'market'] 
   },
 ];
 
@@ -148,14 +180,14 @@ ${results.map((r, i) => `${i + 1}. [${r.title}](${r.url})`).join('\n')}
       try {
         // Map the website to find relevant pages
         toast({
-          title: `Deep Verify: Mapping ${source.baseUrl}`,
-          description: "Discovering official pages...",
+          title: `Deep Verify: ${source.name}`,
+          description: `Mapping ${source.baseUrl}...`,
         });
 
         const mapResult = await researchApi.map(source.baseUrl, query, 50);
         
         if (!mapResult.success || !mapResult.links || mapResult.links.length === 0) {
-          console.log(`No pages found for ${source.baseUrl}`);
+          console.log(`No pages found for ${source.name} (${source.baseUrl})`);
           continue;
         }
 
@@ -171,16 +203,16 @@ ${results.map((r, i) => `${i + 1}. [${r.title}](${r.url})`).join('\n')}
                  urlLower.includes('new') ||
                  urlLower.includes('2025') ||
                  urlLower.includes('2024');
-        }).slice(0, 5); // Limit to 5 most relevant pages per source
+        }).slice(0, 4); // Limit to 4 most relevant pages per source
 
         if (relevantUrls.length === 0) {
           // If no filtered results, take first few pages
-          relevantUrls.push(...mapResult.links.slice(0, 3));
+          relevantUrls.push(...mapResult.links.slice(0, 2));
         }
 
         toast({
-          title: `Deep Verify: Scraping ${source.baseUrl}`,
-          description: `Found ${relevantUrls.length} relevant pages`,
+          title: `Deep Verify: ${source.name}`,
+          description: `Scraping ${relevantUrls.length} pages...`,
         });
 
         // Scrape the relevant pages
