@@ -17,6 +17,61 @@ interface TavilySearchRequest {
   excludeDomains?: string[];
 }
 
+// Extract key terms from a long query for focused search
+function extractKeyTerms(query: string): string {
+  // Remove common filler words and extract key terms
+  const stopWords = new Set([
+    'the', 'a', 'an', 'and', 'or', 'to', 'for', 'of', 'on', 'in', 'with', 'by',
+    'from', 'as', 'at', 'into', 'this', 'that', 'these', 'those', 'is', 'are',
+    'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does',
+    'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'shall',
+    'can', 'need', 'please', 'provide', 'analyze', 'identify', 'generate',
+    'create', 'make', 'give', 'report', 'analysis', 'comprehensive', 'detailed',
+    'including', 'such', 'like', 'also', 'well', 'just', 'only', 'more', 'most',
+    'other', 'some', 'any', 'each', 'every', 'all', 'both', 'few', 'many',
+    'between', 'during', 'before', 'after', 'above', 'below', 'through',
+  ]);
+
+  // Extract words and filter
+  const words = query
+    .toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length >= 2 && !stopWords.has(w));
+
+  // Prioritize numbers (years, amounts) and proper nouns (capitalized in original)
+  const priorityTerms: string[] = [];
+  const regularTerms: string[] = [];
+  
+  const originalWords = query.split(/\s+/);
+  for (const word of words) {
+    // Check if it's a year or number
+    if (/^\d{4}$/.test(word) || /^\d+$/.test(word)) {
+      priorityTerms.push(word);
+    }
+    // Check if original was capitalized (likely proper noun)
+    else if (originalWords.some(ow => ow.toLowerCase() === word && /^[A-Z]/.test(ow))) {
+      priorityTerms.push(word);
+    }
+    else {
+      regularTerms.push(word);
+    }
+  }
+
+  // Combine priority terms first, then regular terms
+  const allTerms = [...new Set([...priorityTerms, ...regularTerms])];
+  
+  // Build query string up to limit
+  let result = '';
+  for (const term of allTerms) {
+    const next = result ? `${result} ${term}` : term;
+    if (next.length > 380) break;
+    result = next;
+  }
+
+  return result || query.slice(0, 380);
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -46,7 +101,17 @@ serve(async (req) => {
       );
     }
 
-    const query = body.query.trim().slice(0, 2000);
+    // CRITICAL: Tavily API has a 400 character max query length
+    // Extract key terms and truncate intelligently
+    let query = body.query.trim();
+    
+    if (query.length > 380) {
+      // Extract key terms from the query for a focused search
+      const keyTerms = extractKeyTerms(query);
+      query = keyTerms.slice(0, 380);
+      console.log('[tavily-search] Query truncated from', body.query.length, 'to', query.length, 'chars');
+    }
+
     const searchDepth = body.searchDepth || 'advanced';
     const topic = body.topic || 'general';
     const maxResults = Math.min(Math.max(body.maxResults || 10, 1), 20);
@@ -56,6 +121,7 @@ serve(async (req) => {
 
     console.log('[tavily-search] Searching:', { 
       query: query.slice(0, 100), 
+      queryLength: query.length,
       searchDepth, 
       topic, 
       maxResults 
