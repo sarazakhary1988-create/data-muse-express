@@ -14,6 +14,8 @@ interface SearchRequest {
   timeFrame?: string;
   strictMode?: boolean; // If true, fail if not enough sources
   minSources?: number;  // Minimum sources required in strict mode
+  // Optional caller-provided seeds (e.g. scheduled task custom websites)
+  seedUrls?: string[];
 }
 
 type SearchItem = {
@@ -235,10 +237,20 @@ async function collectCandidateUrls(baseUrl: string, maxUrls: number): Promise<{
 function scoreUrl(url: string, keywords: string[]): number {
   const u = url.toLowerCase();
   let s = 0;
+
   for (const k of keywords) if (u.includes(k)) s += 2;
-  if (u.includes('ipo')) s += 2;
-  if (u.includes('news') || u.includes('press') || u.includes('announcement')) s += 1;
-  if (u.includes('2024') || u.includes('2025')) s += 1;
+
+  // Saudi market doc patterns
+  if (u.includes('ipo')) s += 3;
+  if (u.includes('listing')) s += 2;
+  if (u.includes('prospectus')) s += 2;
+  if (u.includes('disclosure') || u.includes('disclosures')) s += 2;
+  if (u.includes('announcement') || u.includes('announcements')) s += 2;
+  if (u.includes('press') || u.includes('press-release') || u.includes('pressrelease')) s += 1;
+
+  if (u.includes('news')) s += 1;
+  if (u.includes('2024') || u.includes('2025') || u.includes('2026')) s += 1;
+
   return s;
 }
 
@@ -254,11 +266,24 @@ serve(async (req) => {
 
     const kw = keywordsFromQuery(query);
     const country = (typeof body.country === 'string' ? body.country.toLowerCase().trim() : undefined);
-    const isSaudi = country === 'sa' || /\b(saudi|tasi|tadawul|nomu|riyadh)\b/i.test(query);
+    const isSaudi = country === 'sa' || /\b(saudi|tasi|tadawul|nomu|riyadh|ksa)\b/i.test(query);
+
+    const seedUrls = Array.isArray(body.seedUrls) ? body.seedUrls.filter((u): u is string => typeof u === 'string' && u.trim().length > 0).slice(0, 20) : [];
+
+    // Saudi-only allowlist enforcement: official sources + caller-provided seeds
+    const allowedHosts = new Set<string>();
+    if (isSaudi) {
+      for (const s of SAUDI_SOURCES) {
+        try { allowedHosts.add(new URL(s.baseUrl).hostname.replace('www.', '')); } catch {}
+      }
+      for (const u of seedUrls) {
+        try { allowedHosts.add(new URL(validateUrlOrThrow(u)).hostname.replace('www.', '')); } catch {}
+      }
+    }
 
     const sources = isSaudi ? SAUDI_SOURCES : SAUDI_SOURCES;
 
-    console.log('[research-search] mode=internal_fetch strictMode=' + strictMode, { isSaudi, limit, keywords: kw });
+    console.log('[research-search] mode=internal_fetch strictMode=' + strictMode, { isSaudi, limit, keywords: kw, seedUrls: seedUrls.length });
 
     // Track source status
     const sourceStatuses: SourceStatus[] = [];
@@ -296,21 +321,48 @@ serve(async (req) => {
       }
 
       // Discover URLs from sitemaps
-      const { urls, sitemapFound } = await collectCandidateUrls(safeSeed, 80);
-      
+      const { urls, sitemapFound } = await collectCandidateUrls(safeSeed, isSaudi ? 220 : 80);
+
       if (urls.length === 0 && !sitemapFound) {
         // No sitemap, just use homepage
         urls.push(safeSeed);
       }
 
-      status.pagesFound = urls.length;
-      urls.forEach(u => candidateSet.add(u));
-      
-      // Always include homepage as a candidate
-      candidateSet.add(safeSeed);
-      
-      status.status = urls.length > 0 ? 'success' : 'no_content';
+      // Saudi allowlist filtering
+      const filteredUrls = isSaudi && allowedHosts.size > 0
+        ? urls.filter(u => {
+            try {
+              const host = new URL(u).hostname.replace('www.', '');
+              return allowedHosts.has(host);
+            } catch {
+              return false;
+            }
+          })
+        : urls;
+
+      status.pagesFound = filteredUrls.length;
+      filteredUrls.forEach(u => candidateSet.add(u));
+
+      // Always include homepage as a candidate (if allowed)
+      if (!isSaudi || allowedHosts.size === 0 || allowedHosts.has(new URL(safeSeed).hostname.replace('www.', ''))) {
+        candidateSet.add(safeSeed);
+      }
+
+      status.status = filteredUrls.length > 0 ? 'success' : 'no_content';
       sourceStatuses.push(status);
+    }
+
+    // Add caller-provided seed URLs (e.g. scheduled task custom websites)
+    for (const u of seedUrls) {
+      try {
+        const safe = validateUrlOrThrow(u);
+        const host = new URL(safe).hostname.replace('www.', '');
+        if (!isSaudi || allowedHosts.size === 0 || allowedHosts.has(host)) {
+          candidateSet.add(safe);
+        }
+      } catch {
+        // ignore invalid seeds
+      }
     }
 
     // Check strict mode requirements
@@ -361,6 +413,11 @@ serve(async (req) => {
         safeUrl = validateUrlOrThrow(url);
       } catch {
         continue;
+      }
+
+      if (isSaudi && allowedHosts.size > 0) {
+        const host = new URL(safeUrl).hostname.replace('www.', '');
+        if (!allowedHosts.has(host)) continue;
       }
 
       const res = await fetchText(safeUrl);
