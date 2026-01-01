@@ -471,6 +471,12 @@ export class ResearchAgent {
       .map((r, i) => `SOURCE ${i + 1}: ${r.url}\nTITLE: ${r.title}\nDOMAIN: ${r.metadata.domain || 'unknown'}\n\nCONTENT:\n${r.content}`)
       .join('\n\n---\n\n');
 
+    // Guard: If no content, use fallback report
+    if (!combinedContent || combinedContent.trim().length < 50) {
+      console.warn('[ResearchAgent] No content available for AI report, using fallback');
+      return this.generateFallbackReport(query);
+    }
+
     try {
       const analyzeResult = await researchApi.analyze(query, combinedContent, 'report');
       
