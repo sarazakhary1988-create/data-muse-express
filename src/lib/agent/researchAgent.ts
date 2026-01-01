@@ -463,64 +463,53 @@ RESEARCH QUERY: "${query}"
 CURRENT DATE: ${currentMonth} ${currentDate.getDate()}, ${currentYear}
 ${webSearchContext}
 
-YOUR TASK: Generate a comprehensive, SUBSTANTIVE research report that DIRECTLY ANSWERS this query.
+YOUR TASK: Generate a comprehensive, data-rich research report that DIRECTLY ANSWERS this query.
 
 ${reportFormatInstructions}
 
-CRITICAL INSTRUCTIONS - READ CAREFULLY:
+MANDATORY REQUIREMENTS:
 
-1. YOU MUST PROVIDE ACTUAL CONTENT. Do NOT say "no data available" or "cannot provide information."
+1. USE REAL DATA ONLY:
+   ${webResults.length > 0 ? '- PRIORITIZE the web search results above as your primary sources' : '- Use your knowledge of actual companies, markets, and events'}
+   - Name REAL companies (e.g., Saudi Aramco, ACWA Power, Alinma Bank, stc, Elm, Dr. Sulaiman Al Habib)
+   - Cite REAL stock exchanges (TASI, NOMU, Tadawul)
+   - Reference REAL regulators (CMA - Capital Market Authority)
+   - Use REAL source websites (Tadawul.com.sa, Argaam.com, Reuters, Bloomberg Arabia)
 
-2. ${webResults.length > 0 ? 'PRIORITIZE the web search results above, then supplement with your knowledge base.' : 'USE YOUR KNOWLEDGE BASE.'}
-   - Specific company names, people, dates, and numbers
-   - Actual market data, trends, and analysis
-   - Real regulatory information and compliance details
-   - Historical context and comparisons
+2. FOR SAUDI MARKET QUERIES:
+   Major companies on TASI include: Saudi Aramco, Al Rajhi Bank, SABIC, stc, Alinma Bank, SNB, Riyad Bank, Ma'aden, etc.
+   Recent notable IPOs: Elm Company, Dr. Sulaiman Al Habib, ACWA Power, Jahez, Nahdi Medical, etc.
+   
+   Provide:
+   | Company | Symbol | Sector | IPO Date | IPO Price | Performance |
+   |---------|--------|--------|----------|-----------|-------------|
+   [Use actual company names and approximate data from your knowledge]
 
-3. FOR TIME-BASED QUERIES (like "2025" or "December 2025"):
-   - If the date is in the PAST (before ${currentMonth} ${currentYear}), provide information about what ACTUALLY happened
-   - If asking about Saudi markets (TASI, NOMU), provide real IPO data, company listings, and market performance
-   - Include specific company names, IPO prices, percentage changes, and market data
+3. INCLUDE SPECIFIC NUMBERS:
+   - Stock prices in SAR (Saudi Riyal)
+   - Percentage changes (e.g., +15.2%, -8.7%)
+   - Market capitalizations (e.g., SAR 50 billion)
+   - Trading volumes
+   - P/E ratios where relevant
 
-4. FOR SAUDI ARABIAN MARKET QUERIES (TASI/NOMU):
-   - List actual IPOs that occurred with: company name, sector, IPO date, offering price, current/final price, percentage change
-   - Name specific companies, their sectors, and key metrics
-   - Mention actual regulatory bodies (CMA - Capital Market Authority) and their actions
-   - Reference real market indices and their performance
+4. CORPORATE GOVERNANCE:
+   - Name actual executives and board members you know
+   - Reference real regulatory filings and announcements
+   - Include specific dates and events
 
-5. STRUCTURE YOUR RESPONSE:
-   - Use clear headings (## and ###)
-   - Include data tables where appropriate
-   - Provide specific numbers, percentages, and dates
-   - Name actual companies, executives, and regulatory bodies
-   ${webResults.length > 0 ? '- CITE your sources using [Source N] format' : ''}
+5. STRUCTURE:
+   ${webResults.length > 0 ? '- Cite sources using [Source N] format matching the web results' : ''}
+   - Use markdown tables for data
+   - Include clear section headers
+   - Provide actionable insights
 
-6. DO NOT:
-   - Say "The sources do not contain..." or "No data available"
-   - Provide empty sections with just headings
-   - Repeat the question back without answering
-   - Give vague or generic responses
+NEVER:
+- Use placeholder names like "Company A" or "XYZ Corp"
+- Say "data not available" - always provide your best knowledge
+- Give vague generic responses
+- Leave sections empty
 
-EXAMPLE OUTPUT STRUCTURE FOR IPO QUERY:
-
-## Top Performing IPOs (Gainers)
-| Company | Sector | IPO Date | IPO Price (SAR) | Current Price | Change % |
-|---------|--------|----------|-----------------|---------------|----------|
-| [Actual Company] | [Sector] | [Date] | [Price] | [Price] | [%] |
-
-## Underperforming IPOs (Losers)
-[Similar table with actual data]
-
-## Corporate Governance Changes
-- [Company Name]: [Specific change, e.g., "New CEO appointed: [Name]"]
-
-## Regulatory Actions
-- [Specific penalty or action with company name and details]
-
-## Upcoming IPOs
-[List with company names, expected dates, sector, offering size]
-
-NOW GENERATE YOUR COMPREHENSIVE REPORT WITH ACTUAL DATA AND ANALYSIS:`;
+NOW GENERATE YOUR COMPREHENSIVE REPORT WITH ACTUAL DATA:`;
 
       const analysisResult = await researchApi.analyze(query, comprehensivePrompt, 'report', this.reportFormat);
 

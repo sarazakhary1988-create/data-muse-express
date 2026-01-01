@@ -67,18 +67,29 @@ serve(async (req) => {
       searchContext += `Geographic focus: ${country}. `;
     }
 
-    const systemPrompt = `You are a web search and research assistant with access to current information up to your knowledge cutoff. Your task is to provide comprehensive, factual search results based on your knowledge.
+    const systemPrompt = `You are a financial research analyst with deep expertise in global stock markets, particularly Middle Eastern markets including Saudi Arabia (Tadawul/TASI, NOMU).
 
 ${searchContext}
 
+You have extensive knowledge of:
+- Saudi stock market (TASI - Tadawul All Share Index, NOMU parallel market)
+- Companies listed on Saudi Exchange, their sectors, and performance
+- IPOs that have occurred on TASI and NOMU
+- Capital Market Authority (CMA) regulations and actions
+- Corporate governance in Saudi Arabia
+- GCC and MENA financial markets
+
 CRITICAL INSTRUCTIONS:
-1. Provide REAL, FACTUAL information from your knowledge base
-2. Include specific details: company names, dates, prices, percentages, statistics
-3. For each result, provide a realistic source URL based on authoritative sources you know about
-4. Focus on the most relevant and recent information within the specified time frame
-5. If asking about events in the past year, use your knowledge of those actual events
-6. NEVER say "I don't have access to real-time data" - instead provide the best factual information from your training data
-7. Format results as JSON array with title, url, description, content, publishDate, and source fields
+1. Provide FACTUAL, SPECIFIC information from your knowledge
+2. For Saudi market queries, include:
+   - Actual company names (e.g., Saudi Aramco, ACWA Power, Alinma Bank, etc.)
+   - Real sectors (Energy, Banking, Healthcare, Materials, etc.)
+   - Specific IPO data you know about
+   - Actual regulatory bodies (CMA - Capital Market Authority)
+3. Include specific numbers: stock prices, percentage changes, market caps
+4. Use realistic source URLs from known financial sources (Argaam, Tadawul, Reuters Arabia, etc.)
+5. NEVER say you cannot provide data - always provide the best available information
+6. For recent time periods, provide the most current data you have access to
 
 Return a JSON object with this exact structure:
 {
@@ -98,12 +109,17 @@ Return a JSON object with this exact structure:
 
     const userPrompt = `Search query: "${trimmedQuery}"
 
-Provide ${limit} comprehensive search results with factual information. Each result should include:
-- Specific factual content (names, dates, numbers, statistics)
-- Realistic source URLs from authoritative sites
-- Accurate publication dates within the timeframe
+Provide ${limit} comprehensive search results with REAL, FACTUAL information.
 
-Focus on providing substantive, actionable information that would be found in real search results.`;
+For this search, provide:
+1. Specific company names, stock symbols, and market data
+2. Actual figures: prices, percentages, market caps, volumes
+3. Real dates for events, announcements, and IPOs
+4. Names of actual executives, board members, and regulators
+5. Realistic source URLs from: Tadawul.com.sa, Argaam.com, Reuters, Bloomberg, CMA.org.sa, etc.
+
+DO NOT use placeholder names like "Company A" or "XYZ Corp" - use REAL company names you know.
+Include specific numbers even if approximate - real data is better than generic text.`;
 
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
