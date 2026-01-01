@@ -35,8 +35,10 @@ export const LanguageProvider = ({ children }: LanguageProviderProps) => {
     
     if (isRTL) {
       document.documentElement.classList.add('rtl');
+      document.documentElement.classList.add('font-arabic');
     } else {
       document.documentElement.classList.remove('rtl');
+      document.documentElement.classList.remove('font-arabic');
     }
   }, [language, dir, isRTL]);
 
