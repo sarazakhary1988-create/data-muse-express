@@ -23,8 +23,10 @@ import { Logo } from '@/components/Logo';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { SettingsDialog } from '@/components/SettingsDialog';
 import { HelpDialog } from '@/components/HelpDialog';
+import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 export type ViewType = 'search' | 'results' | 'report' | 'history' | 'scraper' | 'scheduled' | 'templates' | 'hypothesis' | 'leads' | 'integrations';
 
@@ -33,60 +35,80 @@ interface SidebarProps {
   onViewChange: (view: ViewType) => void;
 }
 
+interface NavItem {
+  id: ViewType;
+  labelKey: 'search' | 'templates' | 'urlScraper' | 'hypothesis' | 'leads' | 'scheduled' | 'history' | 'integrations';
+  fallbackLabel: string;
+  icon: React.ElementType;
+  descriptionKey: string;
+  badge?: string;
+}
+
 interface NavSection {
-  title: string;
-  items: {
-    id: ViewType;
-    label: string;
-    icon: React.ElementType;
-    description: string;
-    badge?: string;
-  }[];
+  titleKey: 'research' | 'intelligence' | 'outputs' | 'system';
+  fallbackTitle: string;
+  items: NavItem[];
 }
 
 const navSections: NavSection[] = [
   {
-    title: 'Research',
+    titleKey: 'research',
+    fallbackTitle: 'Research',
     items: [
-      { id: 'search', label: 'New Research', icon: Search, description: 'Start AI research' },
-      { id: 'templates', label: 'Templates', icon: LayoutTemplate, description: 'Pre-built workflows' },
-      { id: 'hypothesis', label: 'Hypothesis Lab', icon: Lightbulb, description: 'Test theories', badge: 'AI' },
+      { id: 'search', labelKey: 'search', fallbackLabel: 'New Research', icon: Search, descriptionKey: 'Start AI research' },
+      { id: 'templates', labelKey: 'templates', fallbackLabel: 'Templates', icon: LayoutTemplate, descriptionKey: 'Pre-built workflows' },
+      { id: 'hypothesis', labelKey: 'hypothesis', fallbackLabel: 'Hypothesis Lab', icon: Lightbulb, descriptionKey: 'Test theories', badge: 'AI' },
     ]
   },
   {
-    title: 'Intelligence',
+    titleKey: 'intelligence',
+    fallbackTitle: 'Intelligence',
     items: [
-      { id: 'leads', label: 'Lead Enrichment', icon: Users, description: 'Prospect research' },
-      { id: 'scraper', label: 'URL Scraper', icon: Link, description: 'Extract data' },
-      { id: 'scheduled', label: 'Scheduled', icon: Calendar, description: 'Auto research' },
+      { id: 'leads', labelKey: 'leads', fallbackLabel: 'Lead Enrichment', icon: Users, descriptionKey: 'Prospect research' },
+      { id: 'scraper', labelKey: 'urlScraper', fallbackLabel: 'URL Scraper', icon: Link, descriptionKey: 'Extract data' },
+      { id: 'scheduled', labelKey: 'scheduled', fallbackLabel: 'Scheduled', icon: Calendar, descriptionKey: 'Auto research' },
     ]
   },
   {
-    title: 'Outputs',
+    titleKey: 'outputs',
+    fallbackTitle: 'Outputs',
     items: [
-      { id: 'results', label: 'Results', icon: BarChart3, description: 'View findings' },
-      { id: 'report', label: 'Reports', icon: FileText, description: 'Generated docs' },
-      { id: 'history', label: 'History', icon: HistoryIcon, description: 'Past research' },
+      { id: 'history', labelKey: 'history', fallbackLabel: 'History', icon: HistoryIcon, descriptionKey: 'Past research' },
     ]
   },
   {
-    title: 'System',
+    titleKey: 'system',
+    fallbackTitle: 'System',
     items: [
-      { id: 'integrations', label: 'Integrations', icon: Puzzle, description: 'Connect tools' },
+      { id: 'integrations', labelKey: 'integrations', fallbackLabel: 'Integrations', icon: Puzzle, descriptionKey: 'Connect tools' },
     ]
   }
 ];
 
 export const Sidebar = ({ activeView, onViewChange }: SidebarProps) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const { t, isRTL } = useLanguage();
+
+  // Get translated label for nav items
+  const getNavLabel = (item: NavItem) => {
+    const key = item.labelKey as keyof typeof t.nav;
+    return t.nav[key] || item.fallbackLabel;
+  };
+
+  // Get translated section title
+  const getSectionTitle = (section: NavSection) => {
+    const key = section.titleKey as keyof typeof t.nav;
+    return t.nav[key] || section.fallbackTitle;
+  };
 
   return (
     <motion.aside
-      initial={{ x: -20, opacity: 0 }}
+      initial={{ x: isRTL ? 20 : -20, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
       className={cn(
-        "flex flex-col h-full bg-card/70 backdrop-blur-2xl border-r border-border/30 transition-all duration-300 relative",
+        "flex flex-col h-full bg-card/70 backdrop-blur-2xl border-border/30 transition-all duration-300 relative",
         "shadow-2xl shadow-primary/5",
+        isRTL ? "border-l" : "border-r",
         isCollapsed ? "w-[72px]" : "w-72"
       )}
     >
@@ -111,9 +133,9 @@ export const Sidebar = ({ activeView, onViewChange }: SidebarProps) => {
           ) : (
             <motion.div
               key="expanded"
-              initial={{ opacity: 0, x: -10 }}
+              initial={{ opacity: 0, x: isRTL ? 10 : -10 }}
               animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -10 }}
+              exit={{ opacity: 0, x: isRTL ? 10 : -10 }}
             >
               <Logo />
             </motion.div>
@@ -124,7 +146,7 @@ export const Sidebar = ({ activeView, onViewChange }: SidebarProps) => {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-6">
         {navSections.map((section, sectionIndex) => (
-          <div key={section.title}>
+          <div key={section.titleKey}>
             {/* Section Title */}
             <AnimatePresence>
               {!isCollapsed && (
@@ -135,7 +157,7 @@ export const Sidebar = ({ activeView, onViewChange }: SidebarProps) => {
                   className="px-3 mb-2"
                 >
                   <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-                    {section.title}
+                    {getSectionTitle(section)}
                   </span>
                 </motion.div>
               )}
@@ -144,6 +166,7 @@ export const Sidebar = ({ activeView, onViewChange }: SidebarProps) => {
             <div className="space-y-1">
               {section.items.map((item) => {
                 const isActive = activeView === item.id;
+                const itemLabel = getNavLabel(item);
                 return (
                   <Button
                     key={item.id}
@@ -161,7 +184,10 @@ export const Sidebar = ({ activeView, onViewChange }: SidebarProps) => {
                     {isActive && !isCollapsed && (
                       <motion.div
                         layoutId="activeIndicator"
-                        className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary-foreground rounded-r-full"
+                        className={cn(
+                          "absolute top-1/2 -translate-y-1/2 w-1 h-6 bg-primary-foreground",
+                          isRTL ? "right-0 rounded-l-full" : "left-0 rounded-r-full"
+                        )}
                         transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                       />
                     )}
@@ -180,7 +206,7 @@ export const Sidebar = ({ activeView, onViewChange }: SidebarProps) => {
                           className="flex flex-col items-start overflow-hidden flex-1"
                         >
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium">{item.label}</span>
+                            <span className="text-sm font-medium">{itemLabel}</span>
                             {item.badge && (
                               <span className={cn(
                                 "px-1.5 py-0.5 text-[9px] font-bold uppercase rounded-full",
@@ -196,7 +222,7 @@ export const Sidebar = ({ activeView, onViewChange }: SidebarProps) => {
                             "text-[10px] truncate",
                             isActive ? "text-primary-foreground/70" : "text-muted-foreground"
                           )}>
-                            {item.description}
+                            {item.descriptionKey}
                           </span>
                         </motion.div>
                       )}
@@ -204,8 +230,11 @@ export const Sidebar = ({ activeView, onViewChange }: SidebarProps) => {
 
                     {/* Tooltip for collapsed state */}
                     {isCollapsed && (
-                      <div className="absolute left-full ml-2 px-2 py-1 bg-popover border border-border rounded-md shadow-lg opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap">
-                        <span className="text-xs font-medium">{item.label}</span>
+                      <div className={cn(
+                        "absolute ml-2 px-2 py-1 bg-popover border border-border rounded-md shadow-lg opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap",
+                        isRTL ? "right-full mr-2" : "left-full ml-2"
+                      )}>
+                        <span className="text-xs font-medium">{itemLabel}</span>
                       </div>
                     )}
                   </Button>
@@ -223,6 +252,7 @@ export const Sidebar = ({ activeView, onViewChange }: SidebarProps) => {
 
       {/* Footer */}
       <div className="p-3 border-t border-border/30 space-y-1">
+        <LanguageSwitcher compact={isCollapsed} />
         <ThemeToggle collapsed={isCollapsed} />
         <SettingsDialog collapsed={isCollapsed} />
         <HelpDialog collapsed={isCollapsed} />
@@ -238,11 +268,11 @@ export const Sidebar = ({ activeView, onViewChange }: SidebarProps) => {
           )}
         >
           {isCollapsed ? (
-            <ChevronRight className="w-4 h-4" />
+            isRTL ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />
           ) : (
             <>
-              <ChevronLeft className="w-4 h-4 mr-2" />
-              <span className="text-xs">Collapse</span>
+              {isRTL ? <ChevronRight className="w-4 h-4 ml-2" /> : <ChevronLeft className="w-4 h-4 mr-2" />}
+              <span className="text-xs">{t.common.close}</span>
             </>
           )}
         </Button>

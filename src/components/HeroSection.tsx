@@ -1,11 +1,15 @@
 import { motion } from 'framer-motion';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 export const HeroSection = () => {
+  const { t, isRTL } = useLanguage();
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className="text-center mb-8"
+      dir={isRTL ? 'rtl' : 'ltr'}
     >
       <motion.div
         initial={{ scale: 0.9 }}
@@ -17,18 +21,25 @@ export const HeroSection = () => {
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
           <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
         </span>
-        AI-Powered Research Engine
+        {t.hero.badge}
       </motion.div>
       
       <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-4 leading-tight">
-        Research <span className="gradient-text">Anything</span>
-        <br />
-        with AI Precision
+        {isRTL ? (
+          <>
+            {t.hero.title}
+          </>
+        ) : (
+          <>
+            Research <span className="gradient-text">Anything</span>
+            <br />
+            with AI Precision
+          </>
+        )}
       </h1>
       
       <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-        Deep web research, intelligent data extraction, and comprehensive report generation. 
-        Find accurate information from any source, structured exactly how you need it.
+        {t.hero.subtitle}
       </p>
     </motion.div>
   );

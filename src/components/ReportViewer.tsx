@@ -13,10 +13,13 @@ import {
   Sparkles,
   FileType,
   Loader2,
-  ShieldCheck
+  ShieldCheck,
+  Wand2,
+  RefreshCw
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,6 +35,8 @@ import jsPDF from 'jspdf';
 import { Discrepancy, QualityMetrics, SourceCoverage } from '@/lib/agent/dataConsolidator';
 import { DataConfidenceIndicator, generateConfidenceCategories } from '@/components/DataConfidenceIndicator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { supabase } from '@/integrations/supabase/client';
 
 export interface ValidationData {
   discrepancies: Discrepancy[];
@@ -48,11 +53,52 @@ interface ReportViewerProps {
 type ExportFormat = 'markdown' | 'html' | 'json' | 'csv' | 'txt' | 'pdf';
 
 export const ReportViewer = ({ report, validationData }: ReportViewerProps) => {
+  const { t, language, isRTL } = useLanguage();
   const [copied, setCopied] = useState(false);
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [activeTab, setActiveTab] = useState<'report' | 'confidence'>('report');
+  const [customTitle, setCustomTitle] = useState('');
+  const [isGeneratingTitle, setIsGeneratingTitle] = useState(false);
+  const [showTitleEditor, setShowTitleEditor] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
+
+  // Display title - use custom if set, otherwise original
+  const displayTitle = customTitle || report.title;
+
+  // Generate AI title
+  const handleGenerateTitle = async () => {
+    setIsGeneratingTitle(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('enhance-prompt', {
+        body: {
+          prompt: report.content.substring(0, 2000),
+          type: 'title',
+          language: language
+        }
+      });
+
+      if (error) throw error;
+      
+      const generatedTitle = data?.enhancedPrompt || data?.title;
+      if (generatedTitle) {
+        setCustomTitle(generatedTitle);
+        toast({
+          title: t.common.success,
+          description: language === 'ar' ? 'تم إنشاء العنوان بنجاح' : 'Title generated successfully',
+        });
+      }
+    } catch (error: any) {
+      console.error('Title generation error:', error);
+      toast({
+        title: t.common.error,
+        description: error.message,
+        variant: 'destructive'
+      });
+    } finally {
+      setIsGeneratingTitle(false);
+    }
+  };
 
   // Generate confidence data based on the report query
   const confidenceData = useMemo(() => {
@@ -367,7 +413,7 @@ export const ReportViewer = ({ report, validationData }: ReportViewerProps) => {
       animate={{ opacity: 1 }}
       className="w-full"
     >
-      <Card variant="glass" className="overflow-hidden shadow-2xl">
+      <Card variant="glass" className="overflow-hidden shadow-2xl" dir={isRTL ? 'rtl' : 'ltr'}>
         <CardHeader className="border-b border-border/50 bg-gradient-to-r from-card via-primary/5 to-card p-6 md:p-8">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-start gap-4">
@@ -375,16 +421,55 @@ export const ReportViewer = ({ report, validationData }: ReportViewerProps) => {
                 <FileText className="w-6 h-6 text-primary-foreground" />
               </div>
               <div className="flex-1 min-w-0">
-                <CardTitle className="text-xl md:text-2xl font-bold bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text leading-tight">
-                  {report.title}
-                </CardTitle>
-                <div className="flex items-center gap-3 mt-2 text-sm text-muted-foreground">
+                {showTitleEditor ? (
+                  <div className="flex items-center gap-2 mb-2">
+                    <Input
+                      value={customTitle || report.title}
+                      onChange={(e) => setCustomTitle(e.target.value)}
+                      className="text-lg font-bold"
+                      placeholder={t.report.generatedTitle}
+                    />
+                    <Button size="sm" variant="ghost" onClick={() => setShowTitleEditor(false)}>
+                      {t.common.save}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <CardTitle className="text-xl md:text-2xl font-bold bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text leading-tight">
+                      {displayTitle}
+                    </CardTitle>
+                    <Button 
+                      size="icon" 
+                      variant="ghost" 
+                      className="h-6 w-6"
+                      onClick={() => setShowTitleEditor(true)}
+                      title={t.common.edit}
+                    >
+                      <Wand2 className="w-3 h-3" />
+                    </Button>
+                  </div>
+                )}
+                <div className="flex items-center gap-3 mt-2 text-sm text-muted-foreground flex-wrap">
                   <span className="flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-                    AI Generated
+                    {t.report.aiGenerated}
                   </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-6 text-xs gap-1"
+                    onClick={handleGenerateTitle}
+                    disabled={isGeneratingTitle}
+                  >
+                    {isGeneratingTitle ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-3 h-3" />
+                    )}
+                    {t.report.generateTitle}
+                  </Button>
                   <span className="w-1 h-1 rounded-full bg-muted-foreground/50" />
-                  <span>{new Date(report.createdAt).toLocaleDateString('en-US', { 
+                  <span>{new Date(report.createdAt).toLocaleDateString(language === 'ar' ? 'ar-SA' : 'en-US', { 
                     year: 'numeric', 
                     month: 'long', 
                     day: 'numeric' 
