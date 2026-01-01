@@ -112,6 +112,17 @@
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 
+  /* Arabic font support */
+  html.font-arabic body,
+  html.font-arabic * {
+    font-family: 'Cairo', 'Sora', system-ui, sans-serif;
+  }
+
+  /* RTL support */
+  html[dir="rtl"] {
+    text-align: right;
+  }
+
   ::selection {
     @apply bg-primary/30 text-foreground;
   }
