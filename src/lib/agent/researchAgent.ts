@@ -1,4 +1,5 @@
 // Research Agent - Main orchestrator that coordinates all agent components
+// Enhanced with Manus-inspired validation and consolidation
 
 import { AgentStateMachine, agentStateMachine } from './stateMachine';
 import { PlanningAgent, planningAgent } from './planningAgent';
@@ -6,6 +7,8 @@ import { CriticAgent, criticAgent } from './criticAgent';
 import { MemorySystem, memorySystem } from './memorySystem';
 import { DecisionEngine, decisionEngine } from './decisionEngine';
 import { ParallelExecutor, parallelExecutor } from './parallelExecutor';
+import { sourceAuthorityManager } from './sourceAuthority';
+import { dataConsolidator, ConsolidatedResult } from './dataConsolidator';
 import { 
   AgentState, 
   ResearchPlan, 
@@ -499,8 +502,18 @@ export class ResearchAgent {
       });
     });
 
-    // Sort by relevance
-    this.results.sort((a, b) => b.relevanceScore - a.relevanceScore);
+    // Sort by relevance and source authority (Manus-inspired ranking)
+    this.results.sort((a, b) => {
+      const authA = sourceAuthorityManager.getAuthority(a.url).authority;
+      const authB = sourceAuthorityManager.getAuthority(b.url).authority;
+      // Weight: 60% relevance, 40% authority
+      const scoreA = a.relevanceScore * 0.6 + authA * 0.4;
+      const scoreB = b.relevanceScore * 0.6 + authB * 0.4;
+      return scoreB - scoreA;
+    });
+    
+    // Deduplicate results using consolidator
+    this.results = dataConsolidator.deduplicateResults(this.results);
   }
 
   private async analyzeResults(): Promise<Partial<QualityScore>> {
@@ -508,11 +521,30 @@ export class ResearchAgent {
     const uniqueDomains = new Set(this.results.map(r => r.metadata.domain)).size;
     const avgRelevance = this.results.reduce((sum, r) => sum + r.relevanceScore, 0) / Math.max(this.results.length, 1);
 
-    // Calculate quality metrics - adjusted for higher source expectations
+    // Calculate source authority metrics (Manus-inspired)
+    const consolidation = dataConsolidator.consolidate(this.results);
+    const sourceCoverage = consolidation.sourceCoverage;
+    
+    // Enhanced quality metrics with source authority weighting
     const completeness = Math.min(1, this.results.length / 15);
-    const sourceQuality = Math.min(1, uniqueDomains / 8);
+    
+    // Source quality now considers authority distribution
+    const authorityScore = sourceCoverage.totalSources > 0
+      ? (sourceCoverage.authorityDistribution.high * 1.0 +
+         sourceCoverage.authorityDistribution.medium * 0.6 +
+         sourceCoverage.authorityDistribution.low * 0.3) / sourceCoverage.totalSources
+      : 0;
+    const sourceQuality = Math.min(1, (uniqueDomains / 8 + authorityScore) / 2);
+    
     const accuracy = avgRelevance;
     const freshness = 0.8; // Would calculate from dates if available
+
+    console.log(`[ResearchAgent] Quality metrics:`, {
+      completeness: (completeness * 100).toFixed(1) + '%',
+      sourceQuality: (sourceQuality * 100).toFixed(1) + '%',
+      authorityDistribution: sourceCoverage.authorityDistribution,
+      uniqueDomains
+    });
 
     return {
       completeness,
