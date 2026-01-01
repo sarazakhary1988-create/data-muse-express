@@ -9,3 +9,11 @@ export { DecisionEngine, decisionEngine } from './decisionEngine';
 export { ParallelExecutor, parallelExecutor } from './parallelExecutor';
 export { ResearchAgent, researchAgent } from './researchAgent';
 export type { AgentResearchResult, ResearchAgentCallbacks } from './researchAgent';
+
+// Manus-inspired validation and consolidation
+export { SourceAuthorityManager, sourceAuthorityManager } from './sourceAuthority';
+export type { SourceAuthority, SourceCategory } from './sourceAuthority';
+export { CrossReferenceValidator, crossReferenceValidator } from './crossReferenceValidator';
+export type { FieldValidation, ValidationResult, DiscrepancyDetail } from './crossReferenceValidator';
+export { DataConsolidator, dataConsolidator } from './dataConsolidator';
+export type { ConsolidatedResult, QualityMetrics, SourceCoverage, Discrepancy } from './dataConsolidator';

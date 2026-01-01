@@ -1,6 +1,8 @@
 // Critic Agent - Verifies claims with per-claim confidence scoring
+// Enhanced with Manus-inspired authority-based verification
 
 import { ClaimVerification, VerificationSource, FieldConfidence } from './types';
+import { sourceAuthorityManager } from './sourceAuthority';
 import { supabase } from '@/integrations/supabase/client';
 
 interface ExtractedClaim {
@@ -52,10 +54,15 @@ export class CriticAgent {
   ): Promise<ClaimVerification> {
     const verificationSources: VerificationSource[] = [];
     let totalSupport = 0;
-    let sourceCount = 0;
+    let totalWeight = 0;
 
-    // Limit sources to check per claim (top 4 for speed)
-    const sourcesToCheck = sources.slice(0, 4);
+    // Sort sources by authority (Manus-inspired - higher authority sources first)
+    const rankedSources = sourceAuthorityManager.rankSources(
+      sources.map(s => ({ ...s, url: s.url }))
+    );
+
+    // Limit sources to check per claim (top 4 by authority for speed)
+    const sourcesToCheck = rankedSources.slice(0, 4);
 
     // PARALLEL source checking within a claim
     const supportResults = await Promise.all(
@@ -68,6 +75,9 @@ export class CriticAgent {
 
     for (const { source, support } of supportResults) {
       if (support.level !== 'none') {
+        // Get source authority for weighted scoring (Manus-inspired)
+        const authority = sourceAuthorityManager.getAuthority(source.url);
+        
         verificationSources.push({
           url: source.url,
           domain: source.domain,
@@ -76,14 +86,17 @@ export class CriticAgent {
         });
 
         const weights = { strong: 1, moderate: 0.6, weak: 0.3, contradicts: -0.5 };
-        totalSupport += weights[support.level as keyof typeof weights] || 0;
-        sourceCount++;
+        const supportWeight = weights[support.level as keyof typeof weights] || 0;
+        
+        // Weight by source authority (Manus-inspired cross-reference validation)
+        totalSupport += supportWeight * authority.authority;
+        totalWeight += authority.authority;
       }
     }
 
-    // Calculate confidence
-    const confidence = sourceCount > 0 
-      ? Math.max(0, Math.min(1, (totalSupport / sourceCount + 1) / 2))
+    // Calculate authority-weighted confidence
+    const confidence = totalWeight > 0 
+      ? Math.max(0, Math.min(1, (totalSupport / totalWeight + 1) / 2))
       : 0;
 
     // Determine status
