@@ -9,9 +9,9 @@ const Card = React.forwardRef<
   }
 >(({ className, variant = "default", ...props }, ref) => {
   const variants = {
-    default: "bg-card border border-border",
-    glass: "glass-panel",
-    gradient: "gradient-border",
+    default: "bg-card/80 backdrop-blur-xl border border-border/50 shadow-xl shadow-primary/5",
+    glass: "bg-card/60 backdrop-blur-2xl border border-border/40 shadow-2xl shadow-primary/10 ring-1 ring-white/10",
+    gradient: "gradient-border backdrop-blur-xl",
   };
 
   return (
