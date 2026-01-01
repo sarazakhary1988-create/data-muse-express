@@ -62,6 +62,15 @@ export interface DeepVerifySourceConfig {
   isCustom?: boolean;
 }
 
+// Report format options
+export type ReportFormat = 'detailed' | 'executive' | 'table';
+
+export const REPORT_FORMAT_OPTIONS: { value: ReportFormat; label: string; description: string }[] = [
+  { value: 'detailed', label: 'Detailed Report', description: 'Comprehensive analysis with full context' },
+  { value: 'executive', label: 'Executive Summary', description: 'Concise overview for quick decisions' },
+  { value: 'table', label: 'Data Table', description: 'Structured data in tabular format' },
+];
+
 // Agent state tracking
 export interface AgentStateInfo {
   state: AgentState;
@@ -159,6 +168,7 @@ interface ResearchStore {
   deepVerifyMode: boolean;
   deepVerifySources: DeepVerifySource[];
   deepVerifySourceConfigs: DeepVerifySourceConfig[];
+  reportFormat: ReportFormat;
   
   // Agent state
   agentState: AgentStateInfo;
@@ -181,6 +191,7 @@ interface ResearchStore {
   updateSource: (id: string, updates: Partial<DeepVerifySourceConfig>) => void;
   deleteSource: (id: string) => void;
   clearTasks: () => void;
+  setReportFormat: (format: ReportFormat) => void;
   
   // Agent state actions
   setAgentState: (state: AgentState) => void;
@@ -203,6 +214,7 @@ export const useResearchStore = create<ResearchStore>()(
       deepVerifyMode: false,
       deepVerifySources: [],
       deepVerifySourceConfigs: DEFAULT_DEEP_VERIFY_SOURCES,
+      reportFormat: 'detailed' as ReportFormat,
       
       // Agent state
       agentState: {
@@ -284,6 +296,8 @@ export const useResearchStore = create<ResearchStore>()(
       })),
       
       clearTasks: () => set({ tasks: [], currentTask: null, reports: [] }),
+      
+      setReportFormat: (format) => set({ reportFormat: format }),
       
       // Agent state actions
       setAgentState: (state) => set((s) => ({

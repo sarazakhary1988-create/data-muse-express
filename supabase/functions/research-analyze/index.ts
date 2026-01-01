@@ -9,12 +9,14 @@ interface AnalyzeRequest {
   query: string;
   content: string;
   type: 'summarize' | 'analyze' | 'extract' | 'report' | 'verify';
+  reportFormat?: 'detailed' | 'executive' | 'table';
 }
 
 // Input validation constants
 const MAX_QUERY_LENGTH = 2000;
 const MAX_CONTENT_LENGTH = 100000; // 100KB max
 const ALLOWED_TYPES = ['summarize', 'analyze', 'extract', 'report', 'verify'];
+const ALLOWED_REPORT_FORMATS = ['detailed', 'executive', 'table'];
 
 function validateQuery(query: unknown): string {
   if (typeof query !== 'string') return '';
@@ -58,7 +60,7 @@ serve(async (req) => {
       );
     }
 
-    const { query, content, type } = body as AnalyzeRequest;
+    const { query, content, type, reportFormat } = body as AnalyzeRequest;
 
     // Validate content
     const contentValidation = validateContent(content);
@@ -73,6 +75,7 @@ serve(async (req) => {
     // Validate other inputs
     const validatedQuery = validateQuery(query);
     const validatedType = validateType(type);
+    const validatedFormat: string = ALLOWED_REPORT_FORMATS.includes(reportFormat || '') ? (reportFormat as string) : 'detailed';
 
     const apiKey = Deno.env.get('LOVABLE_API_KEY');
     if (!apiKey) {
@@ -83,7 +86,7 @@ serve(async (req) => {
       );
     }
 
-    console.log('Analyzing content for query:', validatedQuery.substring(0, 100), '... type:', validatedType);
+    console.log('Analyzing content for query:', validatedQuery.substring(0, 100), '... type:', validatedType, 'format:', validatedFormat);
 
     const systemPrompts: Record<string, string> = {
       summarize: `You are a factual research assistant. Only use information explicitly stated in the provided sources. If something is not present in the sources, say "Not found in sources". Provide a concise summary and end with a short Sources list (URLs).`,
@@ -101,64 +104,113 @@ CRITICAL RULES:
 4. If the excerpt supports the claim, choose the strongest justified support level.
 5. Return ONLY a JSON object (no markdown, no code fences).`,
 
-      report: `You are an expert research analyst writing a comprehensive, substantive research report.
+      report: getReportPrompt(validatedFormat),
+    };
+
+    function getReportPrompt(format: string): string {
+      if (format === 'executive') {
+        return `You are an expert research analyst writing a concise executive summary.
+
+YOUR TASK: Create a brief, actionable executive summary that busy decision-makers can read in 2-3 minutes.
+
+OUTPUT FORMAT (Markdown):
+
+# Executive Summary: [Topic]
+
+## Key Takeaways
+- 3-5 bullet points with the most critical findings [1]
+- Each point should be specific and actionable [2]
+
+## Overview
+One concise paragraph (4-5 sentences) summarizing the main findings and their significance. Use citations [1], [2].
+
+## Critical Data Points
+| Metric | Value | Context |
+|--------|-------|---------|
+| Key data in table format |
+
+## Recommendations
+2-3 concise, actionable recommendations based on findings.
+
+## References
+[1] Source - URL
+[2] Source - URL`;
+      }
+      
+      if (format === 'table') {
+        return `You are a data extraction specialist creating structured tabular output.
+
+YOUR TASK: Extract and organize all relevant data from sources into clear, well-structured tables.
+
+OUTPUT FORMAT (Markdown):
+
+# Data Report: [Topic]
+
+## Summary Statistics
+Brief 2-3 sentence overview of what data was found.
+
+## Main Data Table
+| Column 1 | Column 2 | Column 3 | Column 4 | Source |
+|----------|----------|----------|----------|--------|
+| Extract all relevant data into rows |
+
+## Secondary Data (if applicable)
+Additional tables for related data categories.
+
+## Data Notes
+- Any caveats about the data
+- Missing information flagged
+
+## Sources
+[1] URL
+[2] URL`;
+      }
+
+      // Default: detailed report
+      return `You are an expert research analyst writing a comprehensive, substantive research report.
 
 YOUR PRIMARY TASK:
 Write a DETAILED, CONTENT-RICH report that thoroughly answers the user's research query. The report should read like a professional research document, NOT a list of links.
 
 CRITICAL WRITING RULES:
-1. WRITE SUBSTANTIVE CONTENT: Each section should have multiple paragraphs of detailed analysis, not just bullet points or links.
-2. SYNTHESIZE INFORMATION: Combine information from multiple sources into coherent narratives and insights.
-3. USE INLINE CITATIONS: Reference sources using numbered citations like [1], [2], etc. DO NOT put URLs inline in the text.
-4. BE COMPREHENSIVE: Include background context, detailed findings, analysis, comparisons, and implications.
-5. INCLUDE DATA: Present specific numbers, dates, names, statistics, and facts from sources.
-6. ORGANIZE LOGICALLY: Structure the report with clear sections that flow naturally.
-
-WHAT NOT TO DO:
-- DO NOT just list links or URLs in the main content
-- DO NOT write shallow one-line bullet points
-- DO NOT put raw URLs in the middle of sentences
-- DO NOT skip analysis and just quote sources
+1. WRITE SUBSTANTIVE CONTENT: Each section should have multiple paragraphs of detailed analysis.
+2. SYNTHESIZE INFORMATION: Combine information from multiple sources into coherent narratives.
+3. USE INLINE CITATIONS: Reference sources using numbered citations like [1], [2].
+4. BE COMPREHENSIVE: Include background context, detailed findings, analysis, and implications.
+5. INCLUDE DATA: Present specific numbers, dates, names, statistics from sources.
 
 OUTPUT FORMAT (Markdown):
 
-# [Clear Report Title Based on Query]
+# [Clear Report Title]
 
 ## Executive Summary
-Write 3-4 paragraphs providing a comprehensive overview of the findings. Include key facts, numbers, and conclusions. Use citations like [1], [2].
+3-4 paragraphs with comprehensive overview. Use citations [1], [2].
 
 ## Background & Context
-Provide relevant background information to understand the topic. Explain why this matters and any important context.
+Relevant background information to understand the topic.
 
 ## Detailed Findings
 
 ### [Subtopic 1]
-Write 2-3 detailed paragraphs analyzing this aspect. Include specific data, examples, and insights. Reference sources with [1], [2], etc.
+2-3 detailed paragraphs with specific data and insights [1].
 
 ### [Subtopic 2]
-Continue with substantive analysis. Compare different sources, highlight trends, discuss implications.
-
-### [Additional Subtopics as needed]
-...
+Continue with substantive analysis [2].
 
 ## Data Summary
-If applicable, include a table summarizing key data points:
 | Item | Details | Value | Notes |
 |------|---------|-------|-------|
 
 ## Analysis & Insights
-Provide your analytical synthesis of the findings. What patterns emerge? What conclusions can be drawn?
+Analytical synthesis of findings. Patterns and conclusions.
 
 ## Limitations
-Note any gaps in the available data or caveats about the findings.
+Gaps in data or caveats.
 
 ## References
-List all sources at the end with numbered citations:
 [1] Source Title - URL
-[2] Source Title - URL
-[3] Source Title - URL
-`,
-    };
+[2] Source Title - URL`;
+    }
 
     // Limit content size passed to AI
     const maxContentForAI = validatedType === 'verify' ? 8000 : 50000;

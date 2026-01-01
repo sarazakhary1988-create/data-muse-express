@@ -18,7 +18,7 @@ import {
   ExtractedData
 } from './types';
 import { researchApi } from '@/lib/api/research';
-import { DeepVerifySourceConfig } from '@/store/researchStore';
+import { DeepVerifySourceConfig, ReportFormat } from '@/store/researchStore';
 
 export interface AgentResearchResult {
   id: string;
@@ -63,6 +63,7 @@ export class ResearchAgent {
   private verifications: ClaimVerification[] = [];
   private currentPlan: ResearchPlan | null = null;
   private isRunning: boolean = false;
+  private reportFormat: ReportFormat = 'detailed';
 
   constructor() {
     this.stateMachine = agentStateMachine;
@@ -90,7 +91,8 @@ export class ResearchAgent {
   async execute(
     query: string,
     deepVerifyEnabled: boolean = false,
-    enabledSources: DeepVerifySourceConfig[] = []
+    enabledSources: DeepVerifySourceConfig[] = [],
+    reportFormat: ReportFormat = 'detailed'
   ): Promise<{
     results: AgentResearchResult[];
     report: string;
@@ -107,7 +109,9 @@ export class ResearchAgent {
 
     console.log(`[ResearchAgent] ========== STARTING RESEARCH ==========`);
     console.log(`[ResearchAgent] Query: "${query}"`);
-    console.log(`[ResearchAgent] Deep Verify: ${deepVerifyEnabled}, Sources: ${enabledSources.length}`);
+    console.log(`[ResearchAgent] Deep Verify: ${deepVerifyEnabled}, Sources: ${enabledSources.length}, Format: ${reportFormat}`);
+    
+    this.reportFormat = reportFormat;
 
     try {
       // Phase 1: Planning
@@ -657,8 +661,8 @@ ${structuredSummary}
 ${formattedSources}`;
       }
 
-      console.log(`[ResearchAgent] Sending ${enrichedContent.length} chars to AI for report generation`);
-      const analyzeResult = await researchApi.analyze(query, enrichedContent, 'report');
+      console.log(`[ResearchAgent] Sending ${enrichedContent.length} chars to AI for ${this.reportFormat} report generation`);
+      const analyzeResult = await researchApi.analyze(query, enrichedContent, 'report', this.reportFormat);
       
       if (analyzeResult.success && analyzeResult.result) {
         // Append structured data table if available

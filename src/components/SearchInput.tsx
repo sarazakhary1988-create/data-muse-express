@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Sparkles, Globe, ArrowRight, Loader2, Link, FileSearch, Shield, ShieldCheck } from 'lucide-react';
+import { Search, Sparkles, Globe, ArrowRight, Loader2, Link, FileSearch, Shield, ShieldCheck, FileText, Table, FileBarChart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useResearchStore } from '@/store/researchStore';
+import { useResearchStore, REPORT_FORMAT_OPTIONS, ReportFormat } from '@/store/researchStore';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { SourceManager } from '@/components/SourceManager';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface SearchInputProps {
   onSearch: (query: string) => void;
@@ -26,7 +27,7 @@ const isUrl = (text: string): boolean => {
 };
 
 export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
-  const { searchQuery, setSearchQuery, isSearching, deepVerifyMode, setDeepVerifyMode } = useResearchStore();
+  const { searchQuery, setSearchQuery, isSearching, deepVerifyMode, setDeepVerifyMode, reportFormat, setReportFormat } = useResearchStore();
   const [isFocused, setIsFocused] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -124,11 +125,44 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
 
           {/* Bottom bar */}
           <div className="flex items-center justify-between px-5 pb-4 pt-2 border-t border-border/50">
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 flex-wrap">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Sparkles className="w-3 h-3" />
                 <span>AI-powered deep research</span>
               </div>
+              
+              {/* Report Format Selector */}
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="flex items-center gap-2">
+                      <Select value={reportFormat} onValueChange={(value: ReportFormat) => setReportFormat(value)}>
+                        <SelectTrigger className="h-7 w-[140px] text-xs border-muted">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {REPORT_FORMAT_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value} className="text-xs">
+                              <div className="flex items-center gap-2">
+                                {option.value === 'detailed' && <FileText className="w-3 h-3" />}
+                                {option.value === 'executive' && <FileBarChart className="w-3 h-3" />}
+                                {option.value === 'table' && <Table className="w-3 h-3" />}
+                                {option.label}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-xs">
+                    <p className="font-medium">Report Format</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {REPORT_FORMAT_OPTIONS.find(o => o.value === reportFormat)?.description}
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
               
               {/* Deep Verify Toggle */}
               <TooltipProvider>
