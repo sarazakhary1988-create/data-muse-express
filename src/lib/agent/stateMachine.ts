@@ -67,8 +67,8 @@ export class AgentStateMachine {
       { from: 'scraping', to: 'searching' }, // Retry with different queries
       { from: 'scraping', to: 'failed' },
       
-      // From analyzing
-      { from: 'analyzing', to: 'verifying', condition: (ctx) => ctx.progress >= 60 },
+      // From analyzing - allow transition when analysis is done (progress set by analyzing handler)
+      { from: 'analyzing', to: 'verifying', condition: (ctx) => ctx.progress >= 50 },
       { from: 'analyzing', to: 'scraping' }, // Need more data
       { from: 'analyzing', to: 'failed' },
       
