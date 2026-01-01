@@ -51,49 +51,104 @@ export class PlanningAgent {
   }
 
   private async analyzeQuery(query: string): Promise<QueryAnalysis> {
-    // Use heuristic analysis for query planning to avoid API calls with empty content
-    // The AI analyze endpoint expects content to analyze, not just query intent extraction
-    return this.heuristicAnalysis(query);
+    // Use enhanced heuristic analysis for better query understanding
+    return this.enhancedQueryAnalysis(query);
   }
 
-  private heuristicAnalysis(query: string): QueryAnalysis {
+  private enhancedQueryAnalysis(query: string): QueryAnalysis {
     const queryLower = query.toLowerCase();
+    const queryWords = query.split(/\s+/);
     
-    // Determine intent
+    // Extract key terms (longer words, likely to be meaningful)
+    const keyTerms = queryWords.filter(w => w.length > 3 && !/^(what|which|where|when|who|how|the|and|for|with|that|this|from|have|been|will|about|into|over|after|before)$/i.test(w));
+    
+    // Determine intent with better heuristics
     let intent: QueryAnalysis['intent'] = 'exploratory';
-    if (queryLower.includes('compare') || queryLower.includes('vs') || queryLower.includes('versus')) {
+    
+    // Comparative queries
+    if (/\b(compare|vs|versus|difference|between|better|best|top|ranking)\b/i.test(queryLower)) {
       intent = 'comparative';
-    } else if (queryLower.includes('verify') || queryLower.includes('confirm') || queryLower.includes('true')) {
+    }
+    // Verification queries
+    else if (/\b(verify|confirm|true|false|fact.?check|is it true|accurate)\b/i.test(queryLower)) {
       intent = 'verification';
-    } else if (queryLower.includes('what is') || queryLower.includes('who is') || queryLower.includes('when')) {
+    }
+    // Factual/list queries - looking for specific items
+    else if (/\b(list|what are|who are|which|how many|names? of|companies? that|stocks? that)\b/i.test(queryLower)) {
+      intent = 'factual';
+    }
+    // Question-based factual queries
+    else if (/^(what|who|when|where|how|why)\b/i.test(queryLower)) {
       intent = 'factual';
     }
 
-    // Extract potential topics
-    const topics = query.split(/\s+/).filter(w => w.length > 4);
+    // Determine complexity based on query structure
+    let complexity: QueryAnalysis['complexity'] = 'simple';
+    if (queryWords.length > 15 || query.includes(' and ') || query.includes(' or ')) {
+      complexity = 'complex';
+    } else if (queryWords.length > 8 || keyTerms.length > 4) {
+      complexity = 'moderate';
+    }
 
-    // Determine complexity
-    const complexity = query.length > 100 ? 'complex' : query.length > 50 ? 'moderate' : 'simple';
+    // Extract potential entities (capitalized words, likely proper nouns)
+    const entities = queryWords
+      .filter(w => /^[A-Z][a-z]+/.test(w) && w.length > 2)
+      .slice(0, 10);
 
-    // Suggest sources based on keywords
+    // Suggest sources based on query content
     const suggestedSources: SourceType[] = ['news'];
-    if (queryLower.includes('stock') || queryLower.includes('market') || queryLower.includes('ipo') || queryLower.includes('listing')) {
+    
+    // Financial/market queries
+    if (/\b(stock|market|ipo|listing|trading|shares?|equity|investment|fund|etf|nasdaq|nyse|tasi|nomu|tadawul)\b/i.test(queryLower)) {
       suggestedSources.push('financial', 'official', 'regulatory');
     }
-    if (queryLower.includes('research') || queryLower.includes('study') || queryLower.includes('paper')) {
+    // Academic/research queries
+    if (/\b(research|study|paper|journal|academic|scientific|publication|thesis)\b/i.test(queryLower)) {
       suggestedSources.push('academic');
     }
-    if (queryLower.includes('saudi') || queryLower.includes('tadawul') || queryLower.includes('tasi')) {
+    // Tech/product queries
+    if (/\b(technology|software|app|platform|startup|tech|ai|machine learning|crypto|blockchain)\b/i.test(queryLower)) {
+      suggestedSources.push('news', 'official');
+    }
+    // Government/regulatory queries
+    if (/\b(government|regulation|law|policy|compliance|authority|sec|cma|fda)\b/i.test(queryLower)) {
       suggestedSources.push('official', 'regulatory');
     }
 
+    // Detect regions
+    let region: string | undefined;
+    if (/\b(saudi|ksa|riyadh|tadawul|tasi)\b/i.test(queryLower)) region = 'SA';
+    else if (/\b(uae|dubai|abu dhabi|emirates)\b/i.test(queryLower)) region = 'AE';
+    else if (/\b(usa|united states|american|us market)\b/i.test(queryLower)) region = 'US';
+    else if (/\b(uk|british|london|ftse)\b/i.test(queryLower)) region = 'UK';
+    else if (/\b(china|chinese|shanghai|shenzhen)\b/i.test(queryLower)) region = 'CN';
+
+    // Detect timeframe
+    let timeframe: string | undefined;
+    const yearMatch = query.match(/\b(20\d{2})\b/);
+    if (yearMatch) timeframe = yearMatch[1];
+    if (/\b(last year|past year|recent|latest|current|this year|2024|2025)\b/i.test(queryLower)) {
+      timeframe = 'recent';
+    }
+
+    console.log('[PlanningAgent] Query analysis:', {
+      intent,
+      complexity,
+      keyTerms: keyTerms.slice(0, 5),
+      entities,
+      suggestedSources: [...new Set(suggestedSources)],
+      region,
+      timeframe
+    });
+
     return {
       intent,
-      topics,
-      entities: [],
+      topics: keyTerms,
+      entities,
       complexity,
       suggestedSources: [...new Set(suggestedSources)],
-      region: queryLower.includes('saudi') ? 'SA' : undefined,
+      region,
+      timeframe,
     };
   }
 
