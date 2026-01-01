@@ -25,10 +25,10 @@ serve(async (req) => {
     const { description, industry, research_depth, source_types, geographic_focus, country, custom_websites } = body;
 
     if (!description || description.trim().length === 0) {
-      return new Response(
-        JSON.stringify({ error: "Description is required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ error: "Description is required" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
@@ -40,12 +40,12 @@ serve(async (req) => {
     const contextParts: string[] = [];
     if (industry) contextParts.push(`Industry: ${industry}`);
     if (research_depth) contextParts.push(`Depth: ${research_depth}`);
-    if (source_types?.length) contextParts.push(`Sources: ${source_types.join(', ')}`);
+    if (source_types?.length) contextParts.push(`Sources: ${source_types.join(", ")}`);
     if (geographic_focus) contextParts.push(`Region: ${geographic_focus}`);
     if (country) contextParts.push(`Country: ${country}`);
-    if (custom_websites?.length) contextParts.push(`Custom sources: ${custom_websites.join(', ')}`);
+    if (custom_websites?.length) contextParts.push(`Custom sources: ${custom_websites.join(", ")}`);
 
-    const contextStr = contextParts.length > 0 ? `\n\nResearch Context:\n${contextParts.join('\n')}` : '';
+    const contextStr = contextParts.length > 0 ? `\n\nResearch Context:\n${contextParts.join("\n")}` : "";
 
     const systemPrompt = `You are an expert research query optimizer. Your task is to transform user research descriptions into highly effective, detailed research prompts that will yield comprehensive and accurate results.
 
@@ -85,14 +85,14 @@ Please enhance this research description into an optimized, comprehensive resear
     if (!response.ok) {
       const errorText = await response.text();
       console.error("AI Gateway error:", response.status, errorText);
-      
+
       if (response.status === 429) {
-        return new Response(
-          JSON.stringify({ error: "Rate limit exceeded. Please try again later." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return new Response(JSON.stringify({ error: "Rate limit exceeded. Please try again later." }), {
+          status: 429,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
-      
+
       throw new Error(`AI Gateway error: ${response.status}`);
     }
 
@@ -104,17 +104,17 @@ Please enhance this research description into an optimized, comprehensive resear
     }
 
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         enhanced_description: enhancedDescription,
         original_description: description,
       }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (error) {
     console.error("Error in enhance-prompt:", error);
-    return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });
