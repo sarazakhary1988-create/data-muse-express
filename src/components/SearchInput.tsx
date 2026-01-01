@@ -6,6 +6,7 @@ import { useResearchStore } from '@/store/researchStore';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { DeepVerifySettings } from '@/components/DeepVerifySettings';
 
 interface SearchInputProps {
   onSearch: (query: string) => void;
@@ -158,11 +159,14 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
                   <TooltipContent side="top" className="max-w-xs">
                     <p className="font-medium">Deep Verify Mode</p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Crawls official sources (Saudi Exchange, Tadawul) first before web search for maximum accuracy on financial/market data.
+                      Crawls official sources first before web search for maximum accuracy on financial/market data.
                     </p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
+              
+              {/* Deep Verify Settings - only show when mode is enabled */}
+              {deepVerifyMode && <DeepVerifySettings />}
             </div>
             
             <div className="flex items-center gap-2">

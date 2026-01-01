@@ -3,50 +3,6 @@ import { ResearchTask, ResearchResult, Report, useResearchStore } from '@/store/
 import { researchApi } from '@/lib/api/research';
 import { toast } from '@/hooks/use-toast';
 
-// Official sources for Deep Verify mode - prioritizes authoritative data
-const DEEP_VERIFY_SOURCES: { baseUrl: string; name: string; searchTerms: string[] }[] = [
-  // Primary Saudi Exchange Sources
-  { 
-    baseUrl: 'https://www.saudiexchange.sa', 
-    name: 'Saudi Exchange',
-    searchTerms: ['IPO', 'listing', 'new listing', 'TASI', 'NOMU', '2025', 'announce'] 
-  },
-  { 
-    baseUrl: 'https://www.tadawul.com.sa', 
-    name: 'Tadawul',
-    searchTerms: ['IPO', 'listing', 'companies', 'market', 'securities'] 
-  },
-  // Capital Market Authority
-  { 
-    baseUrl: 'https://cma.org.sa', 
-    name: 'CMA Saudi',
-    searchTerms: ['approval', 'IPO', 'listing', 'prospectus', 'offering', 'securities'] 
-  },
-  // Financial News & Data
-  { 
-    baseUrl: 'https://www.argaam.com', 
-    name: 'Argaam',
-    searchTerms: ['IPO', 'listing', 'TASI', 'NOMU', 'market', 'companies', 'saudi'] 
-  },
-  { 
-    baseUrl: 'https://english.mubasher.info', 
-    name: 'Mubasher',
-    searchTerms: ['IPO', 'listing', 'saudi', 'tadawul', 'market'] 
-  },
-  // Bloomberg Arabia (English version for better parsing)
-  { 
-    baseUrl: 'https://www.bloomberg.com/middle-east', 
-    name: 'Bloomberg ME',
-    searchTerms: ['saudi', 'IPO', 'listing', 'tadawul', 'riyadh'] 
-  },
-  // Reuters Middle East
-  { 
-    baseUrl: 'https://www.reuters.com/world/middle-east', 
-    name: 'Reuters ME',
-    searchTerms: ['saudi', 'IPO', 'listing', 'stock', 'market'] 
-  },
-];
-
 export const useResearchEngine = () => {
   const { 
     addTask, 
@@ -55,10 +11,14 @@ export const useResearchEngine = () => {
     setIsSearching,
     setSearchQuery,
     deepVerifyMode,
+    deepVerifySourceConfigs,
     setDeepVerifySources,
     updateDeepVerifySource,
     clearDeepVerifySources
   } = useResearchStore();
+
+  // Get only enabled sources
+  const enabledSources = deepVerifySourceConfigs.filter(s => s.enabled);
 
   const extractDomain = (url: string): string => {
     try {
@@ -179,8 +139,8 @@ ${results.map((r, i) => `${i + 1}. [${r.title}](${r.url})`).join('\n')}
   const crawlOfficialSources = useCallback(async (query: string, taskId: string): Promise<ResearchResult[]> => {
     const officialResults: ResearchResult[] = [];
     
-    // Initialize sources status
-    const initialSources = DEEP_VERIFY_SOURCES.map(s => ({
+    // Initialize sources status using enabled sources from config
+    const initialSources = enabledSources.map(s => ({
       name: s.name,
       url: s.baseUrl,
       status: 'pending' as const,
@@ -188,7 +148,7 @@ ${results.map((r, i) => `${i + 1}. [${r.title}](${r.url})`).join('\n')}
     }));
     setDeepVerifySources(initialSources);
     
-    for (const source of DEEP_VERIFY_SOURCES) {
+    for (const source of enabledSources) {
       try {
         // Update status to mapping
         updateDeepVerifySource(source.name, { status: 'mapping' });
@@ -271,7 +231,7 @@ ${results.map((r, i) => `${i + 1}. [${r.title}](${r.url})`).join('\n')}
     }
 
     return officialResults;
-  }, [setDeepVerifySources, updateDeepVerifySource]);
+  }, [enabledSources, setDeepVerifySources, updateDeepVerifySource]);
 
   const startResearch = useCallback(async (query: string) => {
     const taskId = `task-${Date.now()}`;
