@@ -112,60 +112,89 @@ serve(async (req) => {
     const researchQuery = buildResearchQuery(task);
     console.log("Research query:", researchQuery);
 
-    // Step 1: Search for content (strict no-fabrication for Saudi market)
+    // Step 1: Determine country + strictness
     const countryCode = normalizeCountryToCode(task.country);
     const isSaudi = isSaudiContext(countryCode, researchQuery);
-
     console.log("Country analysis:", { rawCountry: task.country, countryCode, isSaudi });
+
+    // Step 2: Always scrape caller-provided sources first (custom_websites)
+    const customSeedUrls = (task.custom_websites || []).filter(Boolean).slice(0, 5);
+    const customResults: any[] = [];
+    let customSuccess = 0;
+
+    for (const url of customSeedUrls) {
+      try {
+        const scrapeResponse = await supabase.functions.invoke("research-scrape", {
+          body: { url, formats: ["markdown"], onlyMainContent: true },
+        });
+
+        if (scrapeResponse.data?.success && scrapeResponse.data?.data?.markdown) {
+          customSuccess++;
+          customResults.push({
+            url,
+            title: scrapeResponse.data.data.metadata?.title || url,
+            description: "",
+            markdown: scrapeResponse.data.data.markdown,
+          });
+        }
+      } catch (e) {
+        console.error(`Failed to scrape ${url}:`, e);
+      }
+    }
+
+    // Step 3: Search for additional authoritative sources
+    const targetSources = isSaudi ? 3 : 2;
+    const remainingSourcesNeeded = Math.max(1, targetSources - customSuccess);
 
     const searchResponse = await supabase.functions.invoke("research-search", {
       body: {
         query: researchQuery,
         limit: task.research_depth === "deep" ? 15 : task.research_depth === "quick" ? 5 : 10,
         scrapeContent: true,
-        strictMode: isSaudi, // Enforce strict mode for Saudi only
-        minSources: isSaudi ? 3 : 2, // Higher bar for Saudi
+        strictMode: isSaudi, // strict for Saudi only
+        minSources: remainingSourcesNeeded,
         country: countryCode,
+        seedUrls: customSeedUrls,
       },
     });
 
     if (searchResponse.error) {
-      throw new Error(`Search failed: ${searchResponse.error.message || "unknown error"}`);
-    }
-
-    if (!searchResponse.data?.success) {
-      const unreachable = (searchResponse.data?.unreachableSources || [])
-        .map((s: any) => `${s.name} (${s.reason})`)
-        .join(", ");
-      throw new Error(`${searchResponse.data?.error || "Search returned no results"}${unreachable ? ` | Unreachable: ${unreachable}` : ""}`);
-    }
-
-    let searchResults = searchResponse.data?.data || [];
-    console.log(`Found ${searchResults.length} search results`);
-
-    // Step 2: Scrape custom websites if provided
-    if (task.custom_websites && task.custom_websites.length > 0) {
-      for (const url of task.custom_websites.slice(0, 5)) {
-        try {
-          const scrapeResponse = await supabase.functions.invoke("research-scrape", {
-            body: { url, formats: ["markdown"], onlyMainContent: true },
-          });
-          if (scrapeResponse.data?.success && scrapeResponse.data?.data?.markdown) {
-            searchResults.push({
-              url,
-              title: scrapeResponse.data.data.metadata?.title || url,
-              description: "",
-              markdown: scrapeResponse.data.data.markdown,
-            });
-          }
-        } catch (e) {
-          console.error(`Failed to scrape ${url}:`, e);
-        }
+      // If we already have enough custom sources, proceed without search
+      if (!(isSaudi && customSuccess >= targetSources)) {
+        throw new Error(`Search failed: ${searchResponse.error.message || "unknown error"}`);
       }
     }
 
-    // Step 3: Compile content for analysis
+    if (searchResponse.data && !searchResponse.data.success) {
+      // If we already have enough custom sources, proceed without search
+      if (!(isSaudi && customSuccess >= targetSources)) {
+        const unreachable = (searchResponse.data?.unreachableSources || [])
+          .map((s: any) => `${s.name} (${s.reason})`)
+          .join(", ");
+        throw new Error(`${searchResponse.data?.error || "Search returned no results"}${unreachable ? ` | Unreachable: ${unreachable}` : ""}`);
+      }
+    }
+
+    const searchedResults = (searchResponse.data?.data || []) as any[];
+    let searchResults = [...customResults, ...searchedResults];
+
+    // De-dupe by URL
+    const seen = new Set<string>();
+    searchResults = searchResults.filter((r) => {
+      const u = String(r?.url || "");
+      if (!u) return false;
+      if (seen.has(u)) return false;
+      seen.add(u);
+      return true;
+    });
+
+    console.log(`Using ${searchResults.length} total sources (${customSuccess} custom + ${searchedResults.length} discovered)`);
+
+    // Step 4: Compile content for analysis
     const contentParts: string[] = [];
+    const sourceList = Array.from(seen);
+    contentParts.push(`## Sources Used\n${sourceList.map((u) => `- ${u}`).join("\n")}\n\n---\n`);
+
     for (const result of searchResults) {
       const content = result.markdown || result.description || "";
       if (content) {
