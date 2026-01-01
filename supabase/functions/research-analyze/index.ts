@@ -101,50 +101,62 @@ CRITICAL RULES:
 4. If the excerpt supports the claim, choose the strongest justified support level.
 5. Return ONLY a JSON object (no markdown, no code fences).`,
 
-      report: `You are an expert research analyst creating a comprehensive research report.
+      report: `You are an expert research analyst writing a comprehensive, substantive research report.
 
 YOUR PRIMARY TASK:
-Carefully read the user's research query and the provided source content. Your job is to:
-1. UNDERSTAND exactly what the user is asking for
-2. EXTRACT relevant information from the sources that answers their query
-3. ORGANIZE findings in a clear, structured format
-4. CITE every fact with its source URL
+Write a DETAILED, CONTENT-RICH report that thoroughly answers the user's research query. The report should read like a professional research document, NOT a list of links.
 
-CRITICAL RULES:
-1. FOCUS ON THE QUERY: Answer exactly what the user asked. If they ask for "companies that did X", list those companies. If they ask "how does Y work", explain Y.
-2. USE ONLY SOURCE DATA: Every fact, name, number, or date MUST come from the provided sources. Do NOT use external knowledge.
-3. CITE EVERYTHING: For each fact, include [Source: URL] or a markdown link.
-4. BE SPECIFIC: Include specific names, numbers, dates, and details from the sources.
-5. ACKNOWLEDGE GAPS: If the sources don't fully answer the query, clearly state what's missing.
-6. NO HALLUCINATION: If data isn't in the sources, say "Not found in provided sources" - do NOT make up information.
+CRITICAL WRITING RULES:
+1. WRITE SUBSTANTIVE CONTENT: Each section should have multiple paragraphs of detailed analysis, not just bullet points or links.
+2. SYNTHESIZE INFORMATION: Combine information from multiple sources into coherent narratives and insights.
+3. USE INLINE CITATIONS: Reference sources using numbered citations like [1], [2], etc. DO NOT put URLs inline in the text.
+4. BE COMPREHENSIVE: Include background context, detailed findings, analysis, comparisons, and implications.
+5. INCLUDE DATA: Present specific numbers, dates, names, statistics, and facts from sources.
+6. ORGANIZE LOGICALLY: Structure the report with clear sections that flow naturally.
+
+WHAT NOT TO DO:
+- DO NOT just list links or URLs in the main content
+- DO NOT write shallow one-line bullet points
+- DO NOT put raw URLs in the middle of sentences
+- DO NOT skip analysis and just quote sources
 
 OUTPUT FORMAT (Markdown):
 
-# Research Report: [Restate the user's query]
+# [Clear Report Title Based on Query]
 
 ## Executive Summary
-A 2-3 paragraph answer to the user's query, citing key findings with source URLs.
+Write 3-4 paragraphs providing a comprehensive overview of the findings. Include key facts, numbers, and conclusions. Use citations like [1], [2].
 
-## Key Findings
+## Background & Context
+Provide relevant background information to understand the topic. Explain why this matters and any important context.
 
-### [Topic/Category 1 based on query]
-- Specific finding with details [Source: URL]
-- Another finding [Source: URL]
+## Detailed Findings
 
-### [Topic/Category 2 based on query]
-- Specific finding with details [Source: URL]
+### [Subtopic 1]
+Write 2-3 detailed paragraphs analyzing this aspect. Include specific data, examples, and insights. Reference sources with [1], [2], etc.
 
-## Data Table (if applicable)
-| Name | Detail 1 | Detail 2 | Source |
-|------|----------|----------|--------|
-| Entry | Value | Value | [Link](URL) |
+### [Subtopic 2]
+Continue with substantive analysis. Compare different sources, highlight trends, discuss implications.
 
-## Sources Used
-List all URLs that provided useful information.
+### [Additional Subtopics as needed]
+...
 
-## Limitations & Data Gaps
-- What wasn't found
-- Caveats about the data
+## Data Summary
+If applicable, include a table summarizing key data points:
+| Item | Details | Value | Notes |
+|------|---------|-------|-------|
+
+## Analysis & Insights
+Provide your analytical synthesis of the findings. What patterns emerge? What conclusions can be drawn?
+
+## Limitations
+Note any gaps in the available data or caveats about the findings.
+
+## References
+List all sources at the end with numbered citations:
+[1] Source Title - URL
+[2] Source Title - URL
+[3] Source Title - URL
 `,
     };
 
@@ -165,15 +177,25 @@ Return ONLY a JSON object (no markdown): { "support": "strong|moderate|weak|cont
     } else if (validatedType === 'report') {
       userContent = `RESEARCH QUERY: "${validatedQuery}"
 
-INSTRUCTIONS: Read all the sources below carefully. Extract information that directly answers the research query. Include specific names, numbers, dates, and facts. Cite each piece of information with its source URL.
+YOUR TASK: Write a comprehensive, content-rich research report that thoroughly answers this query. 
 
-=== SOURCE CONTENT ===
+IMPORTANT INSTRUCTIONS:
+- Write detailed paragraphs, not just bullet points or links
+- Synthesize information into coherent analysis
+- Use numbered citations [1], [2], [3] in the text
+- List all references with URLs at the END of the report under "## References"
+- Include specific facts, data, names, dates, and statistics
+- Provide context, analysis, and insights
+
+=== SOURCE MATERIALS ===
 
 ${truncatedContent}
 
-=== END SOURCES ===
+=== END SOURCE MATERIALS ===
 
-Now write a comprehensive research report that answers the query "${validatedQuery}" using ONLY the information from the sources above. Be specific and cite everything.`;
+Now write a detailed, substantive research report answering: "${validatedQuery}"
+
+Remember: Write like a professional analyst. Substantive content first, all source URLs listed at the end under References.`;
     } else {
       userContent = `Research Query: "${validatedQuery}"
 
