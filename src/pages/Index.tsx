@@ -149,8 +149,9 @@ const Index = () => {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
-                  className="mt-8"
+                  className="mt-8 space-y-4"
                 >
+                  <AgentStatusPanel />
                   <ResearchProgress 
                     steps={researchSteps} 
                     currentProgress={currentTask.progress}
