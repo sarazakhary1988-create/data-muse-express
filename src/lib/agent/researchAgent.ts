@@ -396,48 +396,74 @@ Only output the JSON array, nothing else.`;
 
       const reportFormatInstructions = this.getReportFormatInstructions();
 
-      const comprehensivePrompt = `You are an expert research analyst with deep knowledge across many domains.
+      // Get current date context
+      const currentDate = new Date();
+      const currentYear = currentDate.getFullYear();
+      const currentMonth = currentDate.toLocaleString('default', { month: 'long' });
+
+      const comprehensivePrompt = `You are an expert research analyst with extensive knowledge of global markets, companies, regulations, and current events.
 
 RESEARCH QUERY: "${query}"
 
-TASK: Provide a comprehensive, well-researched answer to this query using your knowledge. This is a REAL research task - provide substantive, detailed information.
+CURRENT DATE: ${currentMonth} ${currentDate.getDate()}, ${currentYear}
+
+YOUR TASK: Generate a comprehensive, SUBSTANTIVE research report that DIRECTLY ANSWERS this query.
 
 ${reportFormatInstructions}
 
-IMPORTANT GUIDELINES:
-1. BE COMPREHENSIVE: Provide detailed, specific information. Include names, dates, numbers, and facts.
-2. BE STRUCTURED: Organize your response with clear sections and subsections.
-3. BE ACCURATE: Only state things you are confident about. Clearly mark anything uncertain.
-4. BE HELPFUL: Anticipate follow-up questions and address them proactively.
-5. CITE KNOWLEDGE: When referencing well-known facts, mention the general source (e.g., "According to industry reports...", "Based on official announcements...").
-6. STAY ON TOPIC: Focus ONLY on answering the specific query. Do not include unrelated information.
+CRITICAL INSTRUCTIONS - READ CAREFULLY:
 
-For LIST queries (companies, products, events, etc.):
-- Provide a complete list with details for each item
-- Include relevant metadata (dates, values, categories)
-- Organize in a table format when appropriate
+1. YOU MUST PROVIDE ACTUAL CONTENT. Do NOT say "no data available" or "cannot provide information."
 
-For COMPARATIVE queries:
-- Create clear comparison tables
-- Highlight key differences and similarities
-- Provide recommendations if appropriate
+2. USE YOUR KNOWLEDGE BASE. You have been trained on extensive data. Use it to provide:
+   - Specific company names, people, dates, and numbers
+   - Actual market data, trends, and analysis
+   - Real regulatory information and compliance details
+   - Historical context and comparisons
 
-For FACTUAL queries:
-- Give direct answers first
-- Provide context and background
-- Explain implications or related information
+3. FOR TIME-BASED QUERIES (like "2025" or "December 2025"):
+   - If the date is in the PAST (before ${currentMonth} ${currentYear}), provide information about what ACTUALLY happened
+   - If asking about Saudi markets (TASI, NOMU), provide real IPO data, company listings, and market performance
+   - Include specific company names, IPO prices, percentage changes, and market data
 
-For EXPLORATORY queries:
-- Cover the topic comprehensively
-- Include multiple perspectives
-- Suggest areas for deeper exploration
+4. FOR SAUDI ARABIAN MARKET QUERIES (TASI/NOMU):
+   - List actual IPOs that occurred with: company name, sector, IPO date, offering price, current/final price, percentage change
+   - Name specific companies, their sectors, and key metrics
+   - Mention actual regulatory bodies (CMA - Capital Market Authority) and their actions
+   - Reference real market indices and their performance
 
-CONFIDENCE MARKERS:
-- [HIGH CONFIDENCE] - Well-established facts
-- [MODERATE CONFIDENCE] - Generally accepted but may vary
-- [VERIFY] - Information that may have changed or needs confirmation
+5. STRUCTURE YOUR RESPONSE:
+   - Use clear headings (## and ###)
+   - Include data tables where appropriate
+   - Provide specific numbers, percentages, and dates
+   - Name actual companies, executives, and regulatory bodies
 
-Now provide your comprehensive research response:`;
+6. DO NOT:
+   - Say "The sources do not contain..." or "No data available"
+   - Provide empty sections with just headings
+   - Repeat the question back without answering
+   - Give vague or generic responses
+
+EXAMPLE OUTPUT STRUCTURE FOR IPO QUERY:
+
+## Top Performing IPOs (Gainers)
+| Company | Sector | IPO Date | IPO Price (SAR) | Current Price | Change % |
+|---------|--------|----------|-----------------|---------------|----------|
+| [Actual Company] | [Sector] | [Date] | [Price] | [Price] | [%] |
+
+## Underperforming IPOs (Losers)
+[Similar table with actual data]
+
+## Corporate Governance Changes
+- [Company Name]: [Specific change, e.g., "New CEO appointed: [Name]"]
+
+## Regulatory Actions
+- [Specific penalty or action with company name and details]
+
+## Upcoming IPOs
+[List with company names, expected dates, sector, offering size]
+
+NOW GENERATE YOUR COMPREHENSIVE REPORT WITH ACTUAL DATA AND ANALYSIS:`;
 
       const analysisResult = await researchApi.analyze(query, comprehensivePrompt, 'report', this.reportFormat);
 
