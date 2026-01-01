@@ -40,3 +40,9 @@ verify_jwt = false
 
 [functions.research-map]
 verify_jwt = false
+
+[functions.research-extract]
+verify_jwt = false
+
+[functions.research-perplexity]
+verify_jwt = false

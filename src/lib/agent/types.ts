@@ -75,6 +75,34 @@ export interface QualityScore {
   claimVerification: number;
 }
 
+export interface ExtractedData {
+  companies: Array<{
+    name: string;
+    ticker?: string;
+    market?: string;
+    action?: string;
+    date?: string;
+    value?: string;
+    source_url?: string;
+  }>;
+  key_dates: Array<{
+    date: string;
+    event: string;
+    entity?: string;
+  }>;
+  key_facts: Array<{
+    fact: string;
+    confidence?: 'high' | 'medium' | 'low';
+    source?: string;
+  }>;
+  numeric_data: Array<{
+    metric: string;
+    value: string;
+    unit?: string;
+    context?: string;
+  }>;
+}
+
 export interface FieldConfidence {
   field: string;
   value: any;

@@ -14,7 +14,8 @@ import {
   DecisionContext,
   ExecutionMetrics,
   ClaimVerification,
-  FieldConfidence
+  FieldConfidence,
+  ExtractedData
 } from './types';
 import { researchApi } from '@/lib/api/research';
 import { DeepVerifySourceConfig } from '@/store/researchStore';
@@ -322,18 +323,48 @@ export class ResearchAgent {
   }
 
   private async executeSearch(query: string, deepVerifyEnabled: boolean): Promise<any[]> {
-    // Increased search limits: 15 for deep verify, 20 for regular
-    const searchResult = await researchApi.search(query, deepVerifyEnabled ? 15 : 20, false);
+    const maxRetries = 3;
+    let lastError: string = '';
     
-    if (!searchResult.success || !searchResult.data) {
-      if (this.results.length > 0) {
-        // Have deep verify results, continue
-        return [];
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`[ResearchAgent] Search attempt ${attempt}/${maxRetries}`);
+        
+        // Increased search limits: 15 for deep verify, 20 for regular
+        const searchResult = await researchApi.search(query, deepVerifyEnabled ? 15 : 20, false);
+        
+        if (searchResult.success && searchResult.data && searchResult.data.length > 0) {
+          console.log(`[ResearchAgent] Search successful: ${searchResult.data.length} results`);
+          return searchResult.data;
+        }
+        
+        lastError = searchResult.error || 'No results found';
+        
+        // If rate limited, wait with exponential backoff
+        if (searchResult.error?.includes('rate') || searchResult.error?.includes('429')) {
+          const waitTime = Math.pow(2, attempt) * 1000;
+          console.log(`[ResearchAgent] Rate limited, waiting ${waitTime}ms...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : 'Search failed';
+        console.error(`[ResearchAgent] Search attempt ${attempt} failed:`, lastError);
+        
+        // Wait before retry
+        if (attempt < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        }
       }
-      throw new Error(searchResult.error || 'Search failed');
     }
-
-    return searchResult.data || [];
+    
+    // All retries failed
+    if (this.results.length > 0) {
+      // Have deep verify results, continue with what we have
+      console.log('[ResearchAgent] Search failed but have existing results, continuing...');
+      return [];
+    }
+    
+    throw new Error(lastError || 'Search failed after multiple retries');
   }
 
   private async executeScraping(searchResults: any[]): Promise<void> {
@@ -465,7 +496,7 @@ export class ResearchAgent {
   }
 
   private async compileReport(query: string): Promise<string> {
-    // Increased from 8 to 15 sources for report compilation
+    // First, extract structured data from all results
     const combinedContent = this.results
       .slice(0, 15)
       .map((r, i) => `SOURCE ${i + 1}: ${r.url}\nTITLE: ${r.title}\nDOMAIN: ${r.metadata.domain || 'unknown'}\n\nCONTENT:\n${r.content}`)
@@ -477,24 +508,91 @@ export class ResearchAgent {
       return this.generateFallbackReport(query);
     }
 
+    // Try structured extraction first for better data quality
+    let extractedData: ExtractedData | null = null;
     try {
-      const analyzeResult = await researchApi.analyze(query, combinedContent, 'report');
+      console.log('[ResearchAgent] Extracting structured data...');
+      const extractResult = await researchApi.extract(query, combinedContent, 'all');
+      if (extractResult.success && extractResult.data) {
+        extractedData = extractResult.data;
+        console.log('[ResearchAgent] Extracted:', {
+          companies: extractedData.companies?.length || 0,
+          dates: extractedData.key_dates?.length || 0,
+          facts: extractedData.key_facts?.length || 0
+        });
+      }
+    } catch (error) {
+      console.error('Structured extraction failed:', error);
+    }
+
+    try {
+      // If we have structured data, enrich the report prompt
+      let enrichedContent = combinedContent;
+      if (extractedData && (extractedData.companies?.length > 0 || extractedData.key_facts?.length > 0)) {
+        const structuredSummary = this.formatExtractedData(extractedData);
+        enrichedContent = `EXTRACTED STRUCTURED DATA:\n${structuredSummary}\n\n---\n\nSOURCE CONTENT:\n${combinedContent}`;
+      }
+
+      const analyzeResult = await researchApi.analyze(query, enrichedContent, 'report');
       
       if (analyzeResult.success && analyzeResult.result) {
-        return analyzeResult.result;
+        // Append structured data table if available
+        let report = analyzeResult.result;
+        if (extractedData && extractedData.companies?.length > 0) {
+          report += this.appendStructuredTable(extractedData);
+        }
+        return report;
       }
     } catch (error) {
       console.error('AI report generation failed:', error);
     }
 
-    return this.generateFallbackReport(query);
+    return this.generateFallbackReport(query, extractedData);
   }
 
-  private generateFallbackReport(query: string): string {
+  private formatExtractedData(data: ExtractedData): string {
+    const parts: string[] = [];
+    
+    if (data.companies?.length > 0) {
+      parts.push('COMPANIES:\n' + data.companies.map(c => 
+        `- ${c.name}${c.ticker ? ` (${c.ticker})` : ''}${c.market ? ` on ${c.market}` : ''}${c.action ? `: ${c.action}` : ''}${c.date ? ` (${c.date})` : ''}`
+      ).join('\n'));
+    }
+    
+    if (data.key_dates?.length > 0) {
+      parts.push('KEY DATES:\n' + data.key_dates.map(d => 
+        `- ${d.date}: ${d.event}${d.entity ? ` (${d.entity})` : ''}`
+      ).join('\n'));
+    }
+    
+    if (data.key_facts?.length > 0) {
+      parts.push('KEY FACTS:\n' + data.key_facts.slice(0, 10).map(f => 
+        `- ${f.fact}${f.confidence ? ` [${f.confidence}]` : ''}`
+      ).join('\n'));
+    }
+    
+    return parts.join('\n\n');
+  }
+
+  private appendStructuredTable(data: ExtractedData): string {
+    if (!data.companies || data.companies.length === 0) return '';
+    
+    let table = '\n\n---\n\n## Extracted Data Table\n\n';
+    table += '| Company | Ticker | Market | Action | Date | Value |\n';
+    table += '|---------|--------|--------|--------|------|-------|\n';
+    
+    for (const company of data.companies) {
+      table += `| ${company.name || 'N/A'} | ${company.ticker || 'N/A'} | ${company.market || 'N/A'} | ${company.action || 'N/A'} | ${company.date || 'N/A'} | ${company.value || 'N/A'} |\n`;
+    }
+    
+    return table;
+  }
+
+  private generateFallbackReport(query: string, extractedData?: ExtractedData | null): string {
     const quality = this.stateMachine.getContext().quality;
     const uniqueDomains = new Set(this.results.map(r => r.metadata.domain)).size;
 
-    return `# Research Report: ${query}
+    let report = `# Research Report: ${query}
 
 ## Executive Summary
 
@@ -519,7 +617,7 @@ ${r.summary}
 
 ## Verified Claims
 
-${this.verifications.slice(0, 5).map(v => `- **${v.status.replace('_', ' ')}** (${(v.confidence * 100).toFixed(0)}%): ${v.claim.slice(0, 100)}...`).join('\n')}
+${this.verifications.slice(0, 5).map(v => `- **${v.status.replace('_', ' ')}** (${(v.confidence * 100).toFixed(0)}%): ${v.claim.slice(0, 100)}...`).join('\n') || 'No claims verified yet.'}
 
 ---
 
@@ -531,6 +629,13 @@ ${this.results.map((r, i) => `${i + 1}. [${r.title}](${r.url})`).join('\n')}
 
 *Generated by NexusAI Research Agent on ${new Date().toLocaleDateString()}*
 `;
+
+    // Append extracted data if available
+    if (extractedData) {
+      report += this.appendStructuredTable(extractedData);
+    }
+
+    return report;
   }
 
   private async improveQuality(query: string): Promise<void> {
