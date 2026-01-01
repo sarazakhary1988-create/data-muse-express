@@ -289,4 +289,4 @@ export class ParallelExecutor {
   }
 }
 
-export const parallelExecutor = new ParallelExecutor(5);
+export const parallelExecutor = new ParallelExecutor(8); // Increased from 5 to 8 concurrent tasks

@@ -233,16 +233,17 @@ export class ResearchAgent {
           continue;
         }
 
-        // Filter relevant URLs
+        // Filter relevant URLs using search terms from source config
+        const queryWords = query.toLowerCase().split(/\s+/).filter(w => w.length > 2);
         const relevantUrls = mapResult.links.filter((url: string) => {
           const urlLower = url.toLowerCase();
-          return source.searchTerms.some(term => urlLower.includes(term.toLowerCase())) ||
-                 urlLower.includes('ipo') || urlLower.includes('listing') ||
-                 urlLower.includes('2025') || urlLower.includes('2024');
-        }).slice(0, 4);
+          // Check if URL contains query terms or source-specific search terms
+          return queryWords.some(word => urlLower.includes(word)) ||
+                 source.searchTerms.some(term => urlLower.includes(term.toLowerCase()));
+        }).slice(0, 8); // Increased from 4 to 8 pages per source
 
         if (relevantUrls.length === 0) {
-          relevantUrls.push(...mapResult.links.slice(0, 2));
+          relevantUrls.push(...mapResult.links.slice(0, 4)); // Increased fallback from 2 to 4
         }
 
         this.callbacks.onDeepVerifySourceUpdate?.(source.name, 'scraping', relevantUrls.length);
@@ -293,7 +294,8 @@ export class ResearchAgent {
   }
 
   private async executeSearch(query: string, deepVerifyEnabled: boolean): Promise<any[]> {
-    const searchResult = await researchApi.search(query, deepVerifyEnabled ? 8 : 12, false);
+    // Increased search limits: 15 for deep verify, 20 for regular
+    const searchResult = await researchApi.search(query, deepVerifyEnabled ? 15 : 20, false);
     
     if (!searchResult.success || !searchResult.data) {
       if (this.results.length > 0) {
@@ -307,7 +309,8 @@ export class ResearchAgent {
   }
 
   private async executeScraping(searchResults: any[]): Promise<void> {
-    const urlsToScrape = searchResults.slice(0, 6).map(r => r.url);
+    // Increased scraping limit from 6 to 12 sources
+    const urlsToScrape = searchResults.slice(0, 12).map(r => r.url);
 
     const { results } = await this.executor.executeAll(
       urlsToScrape,
@@ -362,9 +365,9 @@ export class ResearchAgent {
     const uniqueDomains = new Set(this.results.map(r => r.metadata.domain)).size;
     const avgRelevance = this.results.reduce((sum, r) => sum + r.relevanceScore, 0) / Math.max(this.results.length, 1);
 
-    // Calculate quality metrics
-    const completeness = Math.min(1, this.results.length / 10);
-    const sourceQuality = Math.min(1, uniqueDomains / 5);
+    // Calculate quality metrics - adjusted for higher source expectations
+    const completeness = Math.min(1, this.results.length / 15);
+    const sourceQuality = Math.min(1, uniqueDomains / 8);
     const accuracy = avgRelevance;
     const freshness = 0.8; // Would calculate from dates if available
 
@@ -392,18 +395,18 @@ export class ResearchAgent {
   }
 
   private extractClaims(): { text: string; sources: string[] }[] {
-    // Extract factual claims from content
+    // Extract factual claims from content - increased from 5 to 10 sources
     const claims: { text: string; sources: string[] }[] = [];
     
-    for (const result of this.results.slice(0, 5)) {
+    for (const result of this.results.slice(0, 10)) {
       const sentences = result.content.split(/[.!?]+/).filter(s => s.trim().length > 20);
       
       // Look for factual claims (sentences with numbers, dates, names)
-      for (const sentence of sentences.slice(0, 10)) {
+      for (const sentence of sentences.slice(0, 15)) {
         const trimmed = sentence.trim();
         if (
           /\d+/.test(trimmed) || // Contains numbers
-          /\b(January|February|March|April|May|June|July|August|September|October|November|December|2024|2025)\b/i.test(trimmed) || // Contains dates
+          /\b(January|February|March|April|May|June|July|August|September|October|November|December|20\d{2})\b/i.test(trimmed) || // Contains dates (any year 20xx)
           /\b[A-Z][a-z]+\s+[A-Z][a-z]+\b/.test(trimmed) // Contains proper nouns
         ) {
           claims.push({
@@ -414,7 +417,7 @@ export class ResearchAgent {
       }
     }
 
-    return claims.slice(0, 10); // Limit to 10 claims
+    return claims.slice(0, 20); // Increased from 10 to 20 claims
   }
 
   private calculateVerificationQuality(): Partial<QualityScore> {
@@ -434,8 +437,9 @@ export class ResearchAgent {
   }
 
   private async compileReport(query: string): Promise<string> {
+    // Increased from 8 to 15 sources for report compilation
     const combinedContent = this.results
-      .slice(0, 8)
+      .slice(0, 15)
       .map((r, i) => `SOURCE ${i + 1}: ${r.url}\nTITLE: ${r.title}\nDOMAIN: ${r.metadata.domain || 'unknown'}\n\nCONTENT:\n${r.content}`)
       .join('\n\n---\n\n');
 
