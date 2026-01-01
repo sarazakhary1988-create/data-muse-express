@@ -41,7 +41,8 @@ export const Sidebar = ({ activeView, onViewChange }: SidebarProps) => {
       initial={{ x: -20, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
       className={cn(
-        "flex flex-col h-full bg-card/50 backdrop-blur-xl border-r border-border transition-all duration-300",
+        "flex flex-col h-full bg-card/60 backdrop-blur-2xl border-r border-border/40 transition-all duration-300",
+        "shadow-xl shadow-primary/5",
         isCollapsed ? "w-20" : "w-64"
       )}
     >
