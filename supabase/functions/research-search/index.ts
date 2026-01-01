@@ -12,10 +12,10 @@ interface SearchRequest {
   lang?: string;
   country?: string;
   timeFrame?: string;
-  strictMode?: boolean; // If true, fail if not enough sources
-  minSources?: number;  // Minimum sources required in strict mode
-  // Optional caller-provided seeds (e.g. scheduled task custom websites)
+  strictMode?: boolean;
+  minSources?: number;
   seedUrls?: string[];
+  deepScrape?: boolean;
 }
 
 type SearchItem = {
@@ -24,25 +24,28 @@ type SearchItem = {
   description?: string;
   markdown?: string;
   fetchedAt: string;
-  sourceStatus: 'success' | 'partial';
+  sourceStatus: 'success' | 'partial' | 'failed';
+  responseTime?: number;
+  wordCount?: number;
 };
 
 type SourceStatus = {
   name: string;
   baseUrl: string;
-  status: 'success' | 'failed' | 'timeout' | 'blocked' | 'no_content';
+  status: 'success' | 'failed' | 'timeout' | 'blocked' | 'no_content' | 'pending' | 'scraping';
   pagesFound: number;
   pagesExtracted: number;
   error?: string;
   responseTime?: number;
 };
 
+// ============ CONFIGURATION ============
 const MAX_QUERY_LENGTH = 2000;
-const MAX_LIMIT = 20;
+const MAX_LIMIT = 25;
 const MIN_LIMIT = 1;
-
 const REQUEST_TIMEOUT_MS = 15_000;
-const MAX_HTML_BYTES = 900_000;
+const MAX_HTML_BYTES = 1_500_000;
+const CONCURRENT_FETCHES = 5;
 
 const BLOCKED_HOSTS = ["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"];
 const BLOCKED_IP_PATTERNS = [
@@ -52,28 +55,51 @@ const BLOCKED_IP_PATTERNS = [
   /^169\.254\.\d{1,3}\.\d{1,3}$/,
 ];
 
-// Saudi market sources with metadata
-const SAUDI_SOURCES = [
-  { name: 'Saudi Exchange', baseUrl: 'https://www.saudiexchange.sa', category: 'official' },
-  { name: 'Tadawul', baseUrl: 'https://www.tadawul.com.sa', category: 'official' },
-  { name: 'Capital Market Authority', baseUrl: 'https://cma.org.sa', category: 'regulator' },
-  { name: 'Argaam', baseUrl: 'https://www.argaam.com', category: 'news' },
-  { name: 'Mubasher', baseUrl: 'https://english.mubasher.info', category: 'news' },
+// User agents for rotation
+const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
 ];
 
+// Domain-specific research sources by category
+const RESEARCH_SOURCES = {
+  // General news/research
+  general: [
+    { name: 'Reuters', baseUrl: 'https://www.reuters.com', category: 'news' },
+    { name: 'Bloomberg', baseUrl: 'https://www.bloomberg.com', category: 'financial' },
+    { name: 'CNBC', baseUrl: 'https://www.cnbc.com', category: 'financial' },
+    { name: 'BBC', baseUrl: 'https://www.bbc.com', category: 'news' },
+  ],
+  // Saudi/MENA markets
+  saudi: [
+    { name: 'Saudi Exchange', baseUrl: 'https://www.saudiexchange.sa', category: 'official' },
+    { name: 'Tadawul', baseUrl: 'https://www.tadawul.com.sa', category: 'official' },
+    { name: 'Capital Market Authority', baseUrl: 'https://cma.org.sa', category: 'regulator' },
+    { name: 'Argaam', baseUrl: 'https://www.argaam.com', category: 'news' },
+    { name: 'Mubasher', baseUrl: 'https://english.mubasher.info', category: 'news' },
+  ],
+  // Technology
+  tech: [
+    { name: 'TechCrunch', baseUrl: 'https://techcrunch.com', category: 'news' },
+    { name: 'Ars Technica', baseUrl: 'https://arstechnica.com', category: 'news' },
+    { name: 'The Verge', baseUrl: 'https://www.theverge.com', category: 'news' },
+  ],
+  // Academic/Research
+  academic: [
+    { name: 'arXiv', baseUrl: 'https://arxiv.org', category: 'academic' },
+    { name: 'PubMed', baseUrl: 'https://pubmed.ncbi.nlm.nih.gov', category: 'academic' },
+  ],
+};
+
+// ============ VALIDATION HELPERS ============
 function validateUrlOrThrow(url: string): string {
   let formatted = url.trim();
   if (!formatted.startsWith("http://") && !formatted.startsWith("https://")) {
     formatted = `https://${formatted}`;
   }
 
-  let parsed: URL;
-  try {
-    parsed = new URL(formatted);
-  } catch {
-    throw new Error("Invalid URL format");
-  }
-
+  const parsed = new URL(formatted);
   if (!['http:', 'https:'].includes(parsed.protocol)) {
     throw new Error("Only HTTP/HTTPS URLs are allowed");
   }
@@ -93,7 +119,7 @@ function validateQuery(query: unknown): string {
 }
 
 function validateLimit(limit: unknown): number {
-  if (typeof limit !== 'number' || Number.isNaN(limit)) return 10;
+  if (typeof limit !== 'number' || Number.isNaN(limit)) return 12;
   return Math.max(MIN_LIMIT, Math.min(Math.floor(limit), MAX_LIMIT));
 }
 
@@ -101,8 +127,15 @@ function normalizeText(s: string): string {
   return s.replace(/\s+/g, ' ').trim();
 }
 
+// ============ KEYWORD EXTRACTION ============
 function keywordsFromQuery(query: string): string[] {
-  const stop = new Set(["the","a","an","and","or","to","for","of","on","in","with","by","from","during","as","at","into","this","that","these","those","report","generate","provide","analysis","market","ipo","ipos","tasi","nomu","saudi","arabia","riyadh"]);
+  const stop = new Set([
+    "the", "a", "an", "and", "or", "to", "for", "of", "on", "in", "with", "by", 
+    "from", "during", "as", "at", "into", "this", "that", "these", "those", 
+    "report", "generate", "provide", "analysis", "what", "how", "why", "when",
+    "where", "which", "who", "please", "can", "could", "would", "should",
+  ]);
+  
   const words = query
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, ' ')
@@ -110,13 +143,19 @@ function keywordsFromQuery(query: string): string[] {
     .filter(Boolean)
     .filter(w => w.length >= 3)
     .filter(w => !stop.has(w));
-  return Array.from(new Set(words)).slice(0, 12);
+    
+  return Array.from(new Set(words)).slice(0, 15);
 }
 
-async function fetchText(url: string, timeoutMs = REQUEST_TIMEOUT_MS): Promise<{ ok: boolean; status: number; text: string; responseTime: number; error?: string }> {
+// ============ PARALLEL FETCH WITH CONCURRENCY CONTROL ============
+async function fetchWithTimeout(
+  url: string, 
+  timeoutMs = REQUEST_TIMEOUT_MS
+): Promise<{ ok: boolean; status: number; text: string; responseTime: number; error?: string }> {
   const startTime = Date.now();
   const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), timeoutMs);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const userAgent = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
   
   try {
     const resp = await fetch(url, {
@@ -124,24 +163,24 @@ async function fetchText(url: string, timeoutMs = REQUEST_TIMEOUT_MS): Promise<{
       redirect: 'follow',
       signal: controller.signal,
       headers: {
-        'User-Agent': 'LovableResearchBot/1.0 (Research Engine)',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.5',
+        'User-Agent': userAgent,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.5',
         'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
+        'Cache-Control': 'no-cache',
       }
     });
 
     const responseTime = Date.now() - startTime;
-    const status = resp.status;
     
     if (!resp.ok) {
-      return { ok: false, status, text: '', responseTime, error: `HTTP ${status}` };
+      return { ok: false, status: resp.status, text: '', responseTime, error: `HTTP ${resp.status}` };
     }
 
     const buf = new Uint8Array(await resp.arrayBuffer());
     const sliced = buf.byteLength > MAX_HTML_BYTES ? buf.slice(0, MAX_HTML_BYTES) : buf;
     const text = new TextDecoder('utf-8').decode(sliced);
 
-    return { ok: true, status, text, responseTime };
+    return { ok: true, status: resp.status, text, responseTime };
   } catch (e) {
     const responseTime = Date.now() - startTime;
     const errorMsg = e instanceof Error ? e.message : 'Unknown error';
@@ -154,35 +193,92 @@ async function fetchText(url: string, timeoutMs = REQUEST_TIMEOUT_MS): Promise<{
       error: isTimeout ? 'Timeout' : errorMsg 
     };
   } finally {
-    clearTimeout(t);
+    clearTimeout(timeout);
   }
 }
 
-function extractReadableText(html: string): { title: string; description: string; text: string } {
+// Batch fetch with concurrency control
+async function batchFetch<T>(
+  items: T[],
+  fetchFn: (item: T) => Promise<any>,
+  concurrency: number
+): Promise<any[]> {
+  const results: any[] = [];
+  
+  for (let i = 0; i < items.length; i += concurrency) {
+    const batch = items.slice(i, i + concurrency);
+    const batchResults = await Promise.allSettled(batch.map(fetchFn));
+    
+    for (const result of batchResults) {
+      if (result.status === 'fulfilled') {
+        results.push(result.value);
+      } else {
+        results.push({ error: result.reason?.message || 'Failed' });
+      }
+    }
+  }
+  
+  return results;
+}
+
+// ============ CONTENT EXTRACTION ============
+function extractReadableText(html: string): { 
+  title: string; 
+  description: string; 
+  text: string;
+  wordCount: number;
+  headings: string[];
+} {
   const doc = new DOMParser().parseFromString(html, 'text/html');
-  if (!doc) return { title: '', description: '', text: '' };
+  if (!doc) return { title: '', description: '', text: '', wordCount: 0, headings: [] };
 
-  const title = normalizeText(doc.querySelector('title')?.textContent ?? '');
-  const description = normalizeText(doc.querySelector('meta[name="description"]')?.getAttribute('content') ?? '');
+  const title = normalizeText(
+    doc.querySelector('meta[property="og:title"]')?.getAttribute('content') ||
+    doc.querySelector('h1')?.textContent ||
+    doc.querySelector('title')?.textContent || ''
+  );
+  
+  const description = normalizeText(
+    doc.querySelector('meta[property="og:description"]')?.getAttribute('content') ||
+    doc.querySelector('meta[name="description"]')?.getAttribute('content') || ''
+  );
 
+  // Find main content
   const candidates = [
     doc.querySelector('article'),
     doc.querySelector('main'),
     doc.querySelector('[role="main"]'),
+    doc.querySelector('.content'),
+    doc.querySelector('#content'),
     doc.body,
   ].filter(Boolean) as any[];
 
   const root = candidates[0];
-  if (!root) return { title, description, text: '' };
+  if (!root) return { title, description, text: '', wordCount: 0, headings: [] };
 
-  for (const sel of ['script','style','noscript','nav','footer','aside','header']) {
-    root.querySelectorAll(sel).forEach((n: any) => n.remove());
+  // Remove noise
+  for (const sel of ['script', 'style', 'noscript', 'nav', 'footer', 'aside', 'header', '.ad', '.advertisement', '.social', '.comment']) {
+    try {
+      root.querySelectorAll(sel).forEach((n: any) => n.remove());
+    } catch { /* ignore */ }
   }
 
-  const text = normalizeText(root.textContent ?? '');
-  return { title, description, text };
+  // Extract headings
+  const headings: string[] = [];
+  root.querySelectorAll('h1, h2, h3').forEach((h: any) => {
+    const text = normalizeText(h.textContent || '');
+    if (text.length > 3 && text.length < 150) {
+      headings.push(text);
+    }
+  });
+
+  const text = normalizeText(root.textContent || '');
+  const wordCount = text.split(/\s+/).filter(Boolean).length;
+  
+  return { title, description, text, wordCount, headings };
 }
 
+// ============ URL DISCOVERY FROM SITEMAPS ============
 function parseSitemapUrls(xml: string): string[] {
   const urls: string[] = [];
   const re = /<loc>([^<]+)<\/loc>/gim;
@@ -196,9 +292,10 @@ function parseSitemapUrls(xml: string): string[] {
 
 async function discoverSitemaps(baseUrl: string): Promise<string[]> {
   const out = new Set<string>();
+  
   try {
     const robotsUrl = new URL('/robots.txt', baseUrl).toString();
-    const r = await fetchText(robotsUrl, 8000);
+    const r = await fetchWithTimeout(robotsUrl, 5000);
     if (r.ok && r.text) {
       for (const line of r.text.split('\n')) {
         const m = line.match(/^\s*Sitemap:\s*(.+)\s*$/i);
@@ -207,8 +304,10 @@ async function discoverSitemaps(baseUrl: string): Promise<string[]> {
     }
   } catch { /* ignore */ }
 
+  // Default sitemaps
   try { out.add(new URL('/sitemap.xml', baseUrl).toString()); } catch {}
   try { out.add(new URL('/sitemap_index.xml', baseUrl).toString()); } catch {}
+  try { out.add(new URL('/news-sitemap.xml', baseUrl).toString()); } catch {}
 
   return Array.from(out);
 }
@@ -218,12 +317,20 @@ async function collectCandidateUrls(baseUrl: string, maxUrls: number): Promise<{
   const urls: string[] = [];
   let sitemapFound = false;
 
-  for (const sm of sitemaps.slice(0, 3)) {
-    const res = await fetchText(sm, 10_000);
-    if (!res.ok || !res.text) continue;
+  // Fetch sitemaps in parallel
+  const results = await batchFetch(
+    sitemaps.slice(0, 3),
+    async (sm) => {
+      const res = await fetchWithTimeout(sm, 8000);
+      return res.ok ? res.text : null;
+    },
+    3
+  );
 
+  for (const content of results) {
+    if (!content) continue;
     sitemapFound = true;
-    const found = parseSitemapUrls(res.text);
+    const found = parseSitemapUrls(content);
     for (const u of found) {
       if (urls.length >= maxUrls) break;
       urls.push(u);
@@ -234,134 +341,231 @@ async function collectCandidateUrls(baseUrl: string, maxUrls: number): Promise<{
   return { urls, sitemapFound };
 }
 
-function scoreUrl(url: string, keywords: string[]): number {
+// ============ URL SCORING FOR RELEVANCE ============
+function scoreUrl(url: string, keywords: string[], query: string): number {
   const u = url.toLowerCase();
-  let s = 0;
+  const q = query.toLowerCase();
+  let score = 0;
 
-  for (const k of keywords) if (u.includes(k)) s += 2;
+  // Keyword matches
+  for (const k of keywords) {
+    if (u.includes(k)) score += 3;
+  }
 
-  // Saudi market doc patterns
-  if (u.includes('ipo')) s += 3;
-  if (u.includes('listing')) s += 2;
-  if (u.includes('prospectus')) s += 2;
-  if (u.includes('disclosure') || u.includes('disclosures')) s += 2;
-  if (u.includes('announcement') || u.includes('announcements')) s += 2;
-  if (u.includes('press') || u.includes('press-release') || u.includes('pressrelease')) s += 1;
+  // Recency signals
+  const currentYear = new Date().getFullYear();
+  if (u.includes(String(currentYear))) score += 5;
+  if (u.includes(String(currentYear - 1))) score += 3;
+  
+  // Content type signals
+  if (u.includes('news') || u.includes('article')) score += 2;
+  if (u.includes('press') || u.includes('announcement')) score += 2;
+  if (u.includes('report') || u.includes('analysis')) score += 3;
+  if (u.includes('ipo') || u.includes('listing')) score += 4;
+  if (u.includes('disclosure')) score += 3;
+  
+  // Negative signals
+  if (u.includes('login') || u.includes('signup') || u.includes('register')) score -= 10;
+  if (u.includes('cart') || u.includes('checkout')) score -= 10;
+  if (u.includes('privacy') || u.includes('terms') || u.includes('cookie')) score -= 5;
+  if (u.includes('.pdf')) score -= 2; // PDFs often fail to parse
 
-  if (u.includes('news')) s += 1;
-  if (u.includes('2024') || u.includes('2025') || u.includes('2026')) s += 1;
-
-  return s;
+  return score;
 }
 
+// ============ DETECT QUERY DOMAIN ============
+function detectQueryDomain(query: string): string[] {
+  const q = query.toLowerCase();
+  const domains: string[] = [];
+  
+  if (/\b(saudi|tasi|tadawul|nomu|riyadh|ksa|mena|gcc)\b/.test(q)) {
+    domains.push('saudi');
+  }
+  if (/\b(tech|software|ai|machine learning|startup|silicon|app)\b/.test(q)) {
+    domains.push('tech');
+  }
+  if (/\b(research|study|paper|academic|science|journal)\b/.test(q)) {
+    domains.push('academic');
+  }
+  
+  if (domains.length === 0) {
+    domains.push('general');
+  }
+  
+  return domains;
+}
+
+// ============ MAIN HANDLER ============
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
+  const startTime = Date.now();
+  
   try {
     const body = await req.json() as SearchRequest;
     const query = validateQuery(body.query);
     const limit = validateLimit(body.limit);
     const strictMode = body.strictMode === true;
     const minSources = typeof body.minSources === 'number' ? Math.max(1, body.minSources) : 2;
+    const deepScrape = body.deepScrape !== false;
 
-    const kw = keywordsFromQuery(query);
+    const keywords = keywordsFromQuery(query);
+    const domains = detectQueryDomain(query);
     const country = (typeof body.country === 'string' ? body.country.toLowerCase().trim() : undefined);
-    const isSaudi = country === 'sa' || /\b(saudi|tasi|tadawul|nomu|riyadh|ksa)\b/i.test(query);
-
-    const seedUrls = Array.isArray(body.seedUrls) ? body.seedUrls.filter((u): u is string => typeof u === 'string' && u.trim().length > 0).slice(0, 20) : [];
-
-    // Saudi-only allowlist enforcement: official sources + caller-provided seeds
-    const allowedHosts = new Set<string>();
-    if (isSaudi) {
-      for (const s of SAUDI_SOURCES) {
-        try { allowedHosts.add(new URL(s.baseUrl).hostname.replace('www.', '')); } catch {}
-      }
-      for (const u of seedUrls) {
-        try { allowedHosts.add(new URL(validateUrlOrThrow(u)).hostname.replace('www.', '')); } catch {}
-      }
+    
+    // Override domains if country specified
+    if (country === 'sa' || domains.includes('saudi')) {
+      domains.length = 0;
+      domains.push('saudi');
     }
 
-    const sources = isSaudi ? SAUDI_SOURCES : SAUDI_SOURCES;
+    const seedUrls = Array.isArray(body.seedUrls) 
+      ? body.seedUrls.filter((u): u is string => typeof u === 'string' && u.trim().length > 0).slice(0, 20) 
+      : [];
 
-    console.log('[research-search] mode=internal_fetch strictMode=' + strictMode, { isSaudi, limit, keywords: kw, seedUrls: seedUrls.length });
+    console.log('[research-search] Starting', { query: query.slice(0, 100), domains, keywords, strictMode, limit });
 
-    // Track source status
-    const sourceStatuses: SourceStatus[] = [];
-    const candidateSet = new Set<string>();
-
-    // Process each source
-    for (const source of sources) {
-      const status: SourceStatus = {
-        name: source.name,
-        baseUrl: source.baseUrl,
-        status: 'failed',
-        pagesFound: 0,
-        pagesExtracted: 0,
-      };
-
-      let safeSeed: string;
-      try {
-        safeSeed = validateUrlOrThrow(source.baseUrl);
-      } catch (e) {
-        status.status = 'blocked';
-        status.error = 'Invalid URL';
-        sourceStatuses.push(status);
-        continue;
-      }
-
-      // Test connectivity first
-      const connectTest = await fetchText(safeSeed, 8000);
-      status.responseTime = connectTest.responseTime;
-
-      if (!connectTest.ok) {
-        status.status = connectTest.error?.includes('Timeout') ? 'timeout' : 'failed';
-        status.error = connectTest.error || `HTTP ${connectTest.status}`;
-        sourceStatuses.push(status);
-        continue;
-      }
-
-      // Discover URLs from sitemaps
-      const { urls, sitemapFound } = await collectCandidateUrls(safeSeed, isSaudi ? 220 : 80);
-
-      if (urls.length === 0 && !sitemapFound) {
-        // No sitemap, just use homepage
-        urls.push(safeSeed);
-      }
-
-      // Saudi allowlist filtering
-      const filteredUrls = isSaudi && allowedHosts.size > 0
-        ? urls.filter(u => {
-            try {
-              const host = new URL(u).hostname.replace('www.', '');
-              return allowedHosts.has(host);
-            } catch {
-              return false;
-            }
-          })
-        : urls;
-
-      status.pagesFound = filteredUrls.length;
-      filteredUrls.forEach(u => candidateSet.add(u));
-
-      // Always include homepage as a candidate (if allowed)
-      if (!isSaudi || allowedHosts.size === 0 || allowedHosts.has(new URL(safeSeed).hostname.replace('www.', ''))) {
-        candidateSet.add(safeSeed);
-      }
-
-      status.status = filteredUrls.length > 0 ? 'success' : 'no_content';
-      sourceStatuses.push(status);
+    // Collect sources based on detected domains
+    const sources: { name: string; baseUrl: string; category: string }[] = [];
+    for (const domain of domains) {
+      const domainSources = RESEARCH_SOURCES[domain as keyof typeof RESEARCH_SOURCES] || [];
+      sources.push(...domainSources);
     }
 
-    // Add caller-provided seed URLs (e.g. scheduled task custom websites)
-    for (const u of seedUrls) {
+    // Add seed URLs as custom sources
+    for (const seedUrl of seedUrls) {
       try {
-        const safe = validateUrlOrThrow(u);
-        const host = new URL(safe).hostname.replace('www.', '');
-        if (!isSaudi || allowedHosts.size === 0 || allowedHosts.has(host)) {
-          candidateSet.add(safe);
+        const parsed = new URL(validateUrlOrThrow(seedUrl));
+        sources.push({ 
+          name: parsed.hostname.replace('www.', ''), 
+          baseUrl: seedUrl, 
+          category: 'custom' 
+        });
+      } catch { /* ignore invalid */ }
+    }
+
+    // Initialize source statuses
+    const sourceStatuses: SourceStatus[] = sources.map(s => ({
+      name: s.name,
+      baseUrl: s.baseUrl,
+      status: 'pending',
+      pagesFound: 0,
+      pagesExtracted: 0,
+    }));
+
+    // Phase 1: Parallel source discovery
+    console.log('[research-search] Phase 1: Discovering URLs from', sources.length, 'sources');
+    
+    const discoveryResults = await batchFetch(
+      sources,
+      async (source) => {
+        const idx = sources.indexOf(source);
+        sourceStatuses[idx].status = 'scraping';
+        
+        let safeUrl: string;
+        try {
+          safeUrl = validateUrlOrThrow(source.baseUrl);
+        } catch (e) {
+          sourceStatuses[idx].status = 'blocked';
+          sourceStatuses[idx].error = 'Invalid URL';
+          return { urls: [], error: 'Invalid URL' };
         }
-      } catch {
-        // ignore invalid seeds
+
+        // Test connectivity
+        const connectTest = await fetchWithTimeout(safeUrl, 8000);
+        sourceStatuses[idx].responseTime = connectTest.responseTime;
+
+        if (!connectTest.ok) {
+          sourceStatuses[idx].status = connectTest.error?.includes('Timeout') ? 'timeout' : 'failed';
+          sourceStatuses[idx].error = connectTest.error || `HTTP ${connectTest.status}`;
+          return { urls: [], error: connectTest.error };
+        }
+
+        // Discover URLs from sitemaps
+        const { urls, sitemapFound } = await collectCandidateUrls(safeUrl, 150);
+        
+        if (urls.length === 0) {
+          urls.push(safeUrl); // At least include homepage
+        }
+
+        sourceStatuses[idx].pagesFound = urls.length;
+        sourceStatuses[idx].status = urls.length > 0 ? 'success' : 'no_content';
+        
+        return { urls, sitemapFound };
+      },
+      CONCURRENT_FETCHES
+    );
+
+    // Collect and score all candidate URLs
+    const candidateSet = new Map<string, number>(); // url -> score
+    
+    for (const result of discoveryResults) {
+      if (result.error) continue;
+      for (const url of result.urls || []) {
+        const score = scoreUrl(url, keywords, query);
+        const existing = candidateSet.get(url) || 0;
+        candidateSet.set(url, Math.max(existing, score));
+      }
+    }
+
+    // Sort by score and take top candidates
+    const sortedCandidates = Array.from(candidateSet.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit * 3)
+      .map(([url]) => url);
+
+    console.log('[research-search] Phase 2: Fetching', sortedCandidates.length, 'candidate pages');
+
+    // Phase 2: Parallel content extraction
+    const items: SearchItem[] = [];
+    
+    if (deepScrape && sortedCandidates.length > 0) {
+      const fetchResults = await batchFetch(
+        sortedCandidates,
+        async (url) => {
+          let safeUrl: string;
+          try {
+            safeUrl = validateUrlOrThrow(url);
+          } catch {
+            return null;
+          }
+
+          const res = await fetchWithTimeout(safeUrl, 12000);
+          if (!res.ok || !res.text) return null;
+
+          const extracted = extractReadableText(res.text);
+          if (!extracted.text || extracted.wordCount < 50) return null;
+
+          // Relevance check
+          const textLower = extracted.text.toLowerCase();
+          const hitCount = keywords.reduce((acc, k) => acc + (textLower.includes(k) ? 1 : 0), 0);
+          if (keywords.length > 0 && hitCount === 0) return null;
+
+          // Update source status
+          const domain = new URL(safeUrl).hostname;
+          const sourceIdx = sourceStatuses.findIndex(s => safeUrl.includes(new URL(s.baseUrl).hostname));
+          if (sourceIdx >= 0) {
+            sourceStatuses[sourceIdx].pagesExtracted++;
+          }
+
+          return {
+            url: safeUrl,
+            title: extracted.title || domain.replace('www.', ''),
+            description: extracted.description || extracted.text.slice(0, 200),
+            markdown: `# ${extracted.title || 'Source'}\n\n${extracted.text.slice(0, 3000)}\n\n---\nSource: ${safeUrl}`,
+            fetchedAt: new Date().toISOString(),
+            sourceStatus: 'success' as const,
+            responseTime: res.responseTime,
+            wordCount: extracted.wordCount,
+          };
+        },
+        CONCURRENT_FETCHES
+      );
+
+      for (const result of fetchResults) {
+        if (result && items.length < limit) {
+          items.push(result);
+        }
       }
     }
 
@@ -369,7 +573,7 @@ serve(async (req) => {
     const successfulSources = sourceStatuses.filter(s => s.status === 'success').length;
     
     if (strictMode && successfulSources < minSources) {
-      console.log('[research-search] STRICT MODE FAILURE - not enough sources');
+      console.log('[research-search] STRICT MODE FAILURE');
       
       return new Response(
         JSON.stringify({
@@ -383,111 +587,34 @@ serve(async (req) => {
             reason: s.error || s.status,
             responseTime: s.responseTime
           })),
-          reachableSources: sourceStatuses.filter(s => s.status === 'success').map(s => ({
-            name: s.name,
-            url: s.baseUrl,
-            pagesFound: s.pagesFound
-          })),
-          recommendations: [
-            'Try again later - some sources may be temporarily unavailable',
-            'Check if the sources are accessible from your region',
-            'Disable strict mode to get partial results'
-          ]
+          timing: { total: Date.now() - startTime },
         }),
         { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const candidates = Array.from(candidateSet);
-    candidates.sort((a, b) => scoreUrl(b, kw) - scoreUrl(a, kw));
-
-    // Fetch + extract top pages
-    const chosen = candidates.slice(0, Math.max(limit * 2, 12));
-    const items: SearchItem[] = [];
-
-    for (const url of chosen) {
-      if (items.length >= limit) break;
-
-      let safeUrl: string;
-      try {
-        safeUrl = validateUrlOrThrow(url);
-      } catch {
-        continue;
-      }
-
-      if (isSaudi && allowedHosts.size > 0) {
-        const host = new URL(safeUrl).hostname.replace('www.', '');
-        if (!allowedHosts.has(host)) continue;
-      }
-
-      const res = await fetchText(safeUrl);
-      if (!res.ok || !res.text) continue;
-
-      const extracted = extractReadableText(res.text);
-      const text = extracted.text;
-      if (!text || text.length < 200) continue;
-
-      // Update source status with extracted count
-      const domain = new URL(safeUrl).hostname;
-      const sourceStatus = sourceStatuses.find(s => safeUrl.includes(new URL(s.baseUrl).hostname));
-      if (sourceStatus) {
-        sourceStatus.pagesExtracted++;
-      }
-
-      // Simple relevance filter
-      const low = text.toLowerCase();
-      const hitCount = kw.reduce((acc, k) => acc + (low.includes(k) ? 1 : 0), 0);
-      if (kw.length > 0 && hitCount === 0 && !/\bipo\b/i.test(query)) continue;
-
-      const snippet = normalizeText(text.slice(0, 800));
-
-      items.push({
-        url: safeUrl,
-        title: extracted.title || new URL(safeUrl).hostname.replace('www.', ''),
-        description: extracted.description || snippet.slice(0, 180),
-        markdown: `# ${extracted.title || 'Source'}\n\n${snippet}\n\n---\n\nSource: ${safeUrl}`,
-        fetchedAt: new Date().toISOString(),
-        sourceStatus: 'success',
-      });
-    }
-
-    // Final strict mode check - must have actual extracted content
     if (strictMode && items.length < Math.min(minSources, limit)) {
       return new Response(
         JSON.stringify({
           success: false,
-          error: `Strict Mode: Only ${items.length} pages with relevant content found (minimum ${Math.min(minSources, limit)} required)`,
+          error: `Strict Mode: Only ${items.length} relevant pages found (minimum ${Math.min(minSources, limit)} required)`,
           strictModeFailure: true,
           sourceStatuses,
-          extractedCount: items.length,
-          unreachableSources: sourceStatuses.filter(s => s.status !== 'success').map(s => ({
-            name: s.name,
-            url: s.baseUrl,
-            reason: s.error || s.status,
-            responseTime: s.responseTime
-          })),
-          recommendations: [
-            'The query may be too specific - try broader search terms',
-            'Some sources may not have content matching your query',
-            'Disable strict mode to get partial results'
-          ]
+          timing: { total: Date.now() - startTime },
         }),
         { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log('[research-search] SUCCESS', { 
-      itemsFound: items.length, 
-      sourcesReached: successfulSources,
-      strictMode 
-    });
+    const totalTime = Date.now() - startTime;
+    console.log('[research-search] SUCCESS', { items: items.length, sources: successfulSources, time: totalTime });
 
     return new Response(
       JSON.stringify({
         success: true,
         data: items,
         totalResults: items.length,
-        searchMethod: 'internal_fetch',
+        searchMethod: 'realtime_scrape',
         country: country || null,
         strictMode,
         sourceStatuses,
@@ -496,15 +623,24 @@ serve(async (req) => {
           sourcesReachable: successfulSources,
           sourcesUnreachable: sourceStatuses.length - successfulSources,
           totalPagesFound: sourceStatuses.reduce((acc, s) => acc + s.pagesFound, 0),
-          totalPagesExtracted: items.length
+          totalPagesExtracted: items.length,
+          keywords,
+          domains,
+        },
+        timing: {
+          total: totalTime,
         }
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (e) {
-    console.error('[research-search] error', e);
+    console.error('[research-search] Error:', e);
     return new Response(
-      JSON.stringify({ success: false, error: e instanceof Error ? e.message : 'Search failed' }),
+      JSON.stringify({ 
+        success: false, 
+        error: e instanceof Error ? e.message : 'Search failed',
+        timing: { total: Date.now() - startTime },
+      }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
