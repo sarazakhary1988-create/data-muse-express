@@ -12,7 +12,7 @@ export const useResearchEngine = () => {
     setSearchQuery,
     deepVerifyMode,
     deepVerifySourceConfigs,
-    reportFormat,
+    reportFormat, countryFilter, strictMode,
     setDeepVerifySources,
     updateDeepVerifySource,
     clearDeepVerifySources,
@@ -132,7 +132,8 @@ export const useResearchEngine = () => {
         query,
         deepVerifyMode,
         enabledSources,
-        reportFormat
+        reportFormat,
+        { country: countryFilter, strictMode }
       );
 
       // Calculate consolidation data (Manus-inspired)

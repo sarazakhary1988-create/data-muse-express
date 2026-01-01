@@ -247,28 +247,31 @@ ${truncatedContent}
 Return ONLY a JSON object (no markdown): { "support": "strong|moderate|weak|contradicts|none", "reason": "brief explanation" }`;
     } else if (validatedType === 'report') {
       const currentDate = new Date();
+      const isSaudi = /\b(saudi|tadawul|tasi|nomu|cma|riyadh)\b/i.test(validatedQuery);
+
+      const saudiGuardrails = isSaudi ? `
+SAUDI MARKET GUARDRAILS (NON-NEGOTIABLE):
+- No synthetic financial data: do NOT invent companies, tickers, IPO prices, returns, market caps, subscription ratios, P/E, or any numbers.
+- Every numeric or factual claim MUST be directly supported by the provided sources and include a citation like [1].
+- If a requested metric/event is not present in sources, write "Data not yet available in retrieved sources" (do not guess).
+- If the query asks about dates after CURRENT DATE, do not guess; state "Data not yet available".
+` : '';
+
       userContent = `RESEARCH QUERY: "${validatedQuery}"
 
 CURRENT DATE: ${currentDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
 
-YOUR TASK: Generate a comprehensive research report that DIRECTLY ANSWERS this query with ACTUAL DATA and SPECIFIC INFORMATION.
+${saudiGuardrails}
 
-CRITICAL INSTRUCTIONS:
-1. USE YOUR KNOWLEDGE to provide REAL information - company names, dates, numbers, market data
-2. DO NOT say "no data available" or "sources do not contain" - provide what you KNOW
-3. For financial queries: Include specific company names, tickers, prices, percentages
-4. For time-based queries: If the period is in the past, report on what ACTUALLY HAPPENED
-5. Include tables with actual data where appropriate
-6. Be specific and substantive - no vague or generic responses
-
-${truncatedContent && truncatedContent.length > 100 ? `
-ADDITIONAL CONTEXT PROVIDED:
+SOURCES (use ONLY these; do not use external knowledge):
 ${truncatedContent}
 
-Use this context to enhance your report, but do NOT limit yourself to only this content. Supplement with your knowledge base.
-` : ''}
-
-NOW GENERATE A DETAILED, SUBSTANTIVE REPORT WITH ACTUAL DATA for: "${validatedQuery}"`;
+OUTPUT RULES:
+- Use ONLY the source content above.
+- For every important claim, include a citation like [1] that corresponds to a source URL present above.
+- If something is missing from sources, explicitly say it is missing / not yet available.
+- End with a "## References" section listing each unique source URL.
+`;
     } else {
       userContent = `Research Query: "${validatedQuery}"
 
