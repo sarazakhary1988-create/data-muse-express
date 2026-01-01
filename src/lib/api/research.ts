@@ -34,6 +34,38 @@ export interface AnalyzeResult {
   error?: string;
 }
 
+export interface ExtractResult {
+  success: boolean;
+  data?: {
+    companies: Array<{
+      name: string;
+      ticker?: string;
+      market?: string;
+      action?: string;
+      date?: string;
+      value?: string;
+      source_url?: string;
+    }>;
+    key_dates: Array<{
+      date: string;
+      event: string;
+      entity?: string;
+    }>;
+    key_facts: Array<{
+      fact: string;
+      confidence?: 'high' | 'medium' | 'low';
+      source?: string;
+    }>;
+    numeric_data: Array<{
+      metric: string;
+      value: string;
+      unit?: string;
+      context?: string;
+    }>;
+  };
+  error?: string;
+}
+
 export interface MapResult {
   success: boolean;
   links?: string[];
@@ -104,6 +136,29 @@ export const researchApi = {
     } catch (err) {
       console.error('Analyze error:', err);
       return { success: false, error: err instanceof Error ? err.message : 'Failed to analyze' };
+    }
+  },
+
+  // Extract structured data with AI tool calling
+  async extract(
+    query: string,
+    content: string,
+    extractType: 'entities' | 'companies' | 'dates' | 'facts' | 'all' = 'all'
+  ): Promise<ExtractResult> {
+    try {
+      const { data, error } = await supabase.functions.invoke('research-extract', {
+        body: { query, content, extractType },
+      });
+
+      if (error) {
+        console.error('Extract function error:', error);
+        return { success: false, error: error.message };
+      }
+
+      return data;
+    } catch (err) {
+      console.error('Extract error:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Failed to extract' };
     }
   },
 

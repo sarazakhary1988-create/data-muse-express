@@ -51,49 +51,8 @@ export class PlanningAgent {
   }
 
   private async analyzeQuery(query: string): Promise<QueryAnalysis> {
-    try {
-      // Use AI to analyze the query
-      const { data, error } = await supabase.functions.invoke('research-analyze', {
-        body: {
-          query,
-          content: '',
-          type: 'extract',
-          extractionPrompt: `Analyze this research query and extract:
-1. Intent (factual/comparative/exploratory/verification)
-2. Main topics (array of strings)
-3. Named entities (companies, people, places)
-4. Timeframe if mentioned
-5. Region/country if mentioned
-6. Complexity level (simple/moderate/complex)
-7. Suggested source types (official/news/academic/social/regulatory/financial)
-
-Query: \"${query}\"
-
-Return as JSON.`
-        }
-      });
-
-      if (data?.result) {
-        try {
-          const parsed = JSON.parse(data.result);
-          return {
-            intent: parsed.intent || 'exploratory',
-            topics: parsed.topics || [query],
-            entities: parsed.entities || [],
-            timeframe: parsed.timeframe,
-            region: parsed.region,
-            complexity: parsed.complexity || 'moderate',
-            suggestedSources: parsed.suggestedSources || ['news', 'official'],
-          };
-        } catch {
-          // Fallback to heuristic analysis
-          return this.heuristicAnalysis(query);
-        }
-      }
-    } catch (error) {
-      console.error('Query analysis error:', error);
-    }
-
+    // Use heuristic analysis for query planning to avoid API calls with empty content
+    // The AI analyze endpoint expects content to analyze, not just query intent extraction
     return this.heuristicAnalysis(query);
   }
 
