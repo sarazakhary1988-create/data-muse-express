@@ -45,10 +45,10 @@ export const useResearchEngine = () => {
   };
 
   const generateReport = async (query: string, results: ResearchResult[]): Promise<Report> => {
-    // Combine all content for AI analysis
+    // Combine all content for AI analysis (explicit, source-grounded format)
     const combinedContent = results
       .slice(0, 8)
-      .map(r => `## ${r.title}\nSource: ${r.url}\n\n${r.content}`)
+      .map((r, i) => `SOURCE ${i + 1}: ${r.url}\nTITLE: ${r.title}\nDOMAIN: ${r.metadata.domain || 'unknown'}\n\nCONTENT:\n${r.content}`)
       .join('\n\n---\n\n');
 
     let reportContent = '';
@@ -143,44 +143,98 @@ ${results.map((r, i) => `${i + 1}. [${r.title}](${r.url})`).join('\n')}
     setIsSearching(true);
 
     try {
-      // Step 1: Search the web
+      // Step 1: Search the web (return URLs + snippets; we will scrape top results for accuracy)
       updateTask(taskId, { progress: 10 });
-      
+
       toast({
         title: "Searching the web...",
         description: `Finding sources for: ${query}`,
       });
 
-      const searchResult = await researchApi.search(query, 10, true);
-      
-      updateTask(taskId, { progress: 40 });
+      const searchResult = await researchApi.search(query, 12, false);
+
+      updateTask(taskId, { progress: 30 });
 
       if (!searchResult.success || !searchResult.data) {
         throw new Error(searchResult.error || 'Search failed');
       }
 
-      // Step 2: Process search results
+      // Step 2: Scrape top results for high-signal, page-level content
       toast({
-        title: "Processing results...",
-        description: `Found ${searchResult.data.length} sources`,
+        title: "Extracting source pages...",
+        description: "Scraping top results for accuracy",
       });
 
-      updateTask(taskId, { progress: 60 });
-
-      // Transform search results to ResearchResult format
-      const results: ResearchResult[] = searchResult.data.map((item, index) => ({
+      const baseResults: ResearchResult[] = searchResult.data.map((item, index) => ({
         id: `result-${Date.now()}-${index}`,
         title: item.title || 'Untitled',
         url: item.url,
-        content: item.markdown || item.description || '',
-        summary: item.description || (item.markdown ? item.markdown.substring(0, 300) + '...' : 'No summary available'),
+        content: item.description || '',
+        summary: item.description || 'No summary available',
         relevanceScore: calculateRelevanceScore(item, query),
         extractedAt: new Date(),
         metadata: {
           domain: extractDomain(item.url),
-          wordCount: item.markdown?.split(/\s+/).length || 0,
+          wordCount: 0,
         },
       }));
+
+      // Sort by relevance before scraping
+      baseResults.sort((a, b) => b.relevanceScore - a.relevanceScore);
+
+      const isLowSignal = (md: string) => {
+        const m = md.toLowerCase();
+        return (
+          m.includes('see all search results') ||
+          m.includes('search result') ||
+          (m.includes('tasi') && m.includes('nomu') && md.length > 20000 && m.includes('loader'))
+        );
+      };
+
+      const toScrape = baseResults.slice(0, 6);
+
+      // Scrape in parallel (best-effort)
+      const scraped = await Promise.allSettled(
+        toScrape.map(async (r) => {
+          const first = await researchApi.scrape(r.url, ['markdown']);
+          const md1 = first?.data?.markdown || '';
+          if (first.success && md1 && !isLowSignal(md1)) {
+            return { url: r.url, markdown: md1 };
+          }
+          // Retry with onlyMainContent=false for tricky sites
+          const retry = await researchApi.scrape(r.url, ['markdown'], false);
+          const md2 = retry?.data?.markdown || '';
+          return { url: r.url, markdown: md2 || md1 };
+        })
+      );
+
+      const scrapedByUrl = new Map<string, string>();
+      scraped.forEach((p) => {
+        if (p.status === 'fulfilled') {
+          scrapedByUrl.set(p.value.url, p.value.markdown || '');
+        }
+      });
+
+      const results: ResearchResult[] = baseResults.map((r) => {
+        const md = scrapedByUrl.get(r.url);
+        const content = md && md.trim().length > 200 ? md : r.content;
+        return {
+          ...r,
+          content,
+          summary: r.summary || (content ? content.substring(0, 300) + '...' : 'No summary available'),
+          metadata: {
+            ...r.metadata,
+            wordCount: content ? content.split(/\s+/).length : 0,
+          },
+        };
+      });
+
+      updateTask(taskId, { progress: 70, results });
+
+      toast({
+        title: "Generating grounded report...",
+        description: "Only cited facts will be included",
+      });
 
       // Sort by relevance
       results.sort((a, b) => b.relevanceScore - a.relevanceScore);

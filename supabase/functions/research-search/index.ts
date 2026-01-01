@@ -9,6 +9,9 @@ interface SearchRequest {
   query: string;
   limit?: number;
   scrapeContent?: boolean;
+  lang?: string;
+  country?: string;
+  tbs?: string;
 }
 
 serve(async (req) => {
@@ -17,7 +20,14 @@ serve(async (req) => {
   }
 
   try {
-    const { query, limit = 10, scrapeContent = true } = await req.json() as SearchRequest;
+    const {
+      query,
+      limit = 12,
+      scrapeContent = false,
+      lang,
+      country,
+      tbs,
+    } = await req.json() as SearchRequest;
 
     if (!query) {
       console.error('No query provided');
@@ -43,7 +53,12 @@ serve(async (req) => {
       limit,
     };
 
-    // If scraping content, include scrape options
+    if (lang) requestBody.lang = lang;
+    if (country) requestBody.country = country;
+    if (tbs) requestBody.tbs = tbs;
+
+    // NOTE: Search endpoint "scrapeOptions" often returns low-signal content on some sites.
+    // We default scrapeContent=false and instead scrape top results explicitly via /scrape.
     if (scrapeContent) {
       requestBody.scrapeOptions = {
         formats: ['markdown'],

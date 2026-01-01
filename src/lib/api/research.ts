@@ -42,10 +42,15 @@ export interface MapResult {
 
 export const researchApi = {
   // Scrape a single URL
-  async scrape(url: string, formats: string[] = ['markdown', 'links']): Promise<ScrapeResult> {
+  async scrape(
+    url: string,
+    formats: string[] = ['markdown', 'links'],
+    onlyMainContent: boolean = true,
+    waitFor: number = 3000
+  ): Promise<ScrapeResult> {
     try {
       const { data, error } = await supabase.functions.invoke('research-scrape', {
-        body: { url, formats },
+        body: { url, formats, onlyMainContent, waitFor },
       });
 
       if (error) {
@@ -61,10 +66,10 @@ export const researchApi = {
   },
 
   // Search the web for a query
-  async search(query: string, limit: number = 10, scrapeContent: boolean = true): Promise<SearchResult> {
+  async search(query: string, limit: number = 12, scrapeContent: boolean = false): Promise<SearchResult> {
     try {
       const { data, error } = await supabase.functions.invoke('research-search', {
-        body: { query, limit, scrapeContent },
+        body: { query, limit, scrapeContent, lang: 'en', country: 'SA' },
       });
 
       if (error) {
