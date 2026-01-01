@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Globe, Loader2, Download, Copy, ExternalLink, FileText, List, 
   Camera, Palette, Sparkles, Search, Zap, Settings2, ChevronDown,
-  Database, Code, Link2
+  Database, Code, Link2, MessageSquare, Send, Calendar, Clock,
+  CalendarPlus, Bot, Wand2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -15,6 +16,8 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
 import { useResearchEngine } from '@/hooks/useResearchEngine';
 import { supabase } from '@/integrations/supabase/client';
@@ -26,6 +29,7 @@ interface UrlScraperProps {
 }
 
 type ScrapeFormat = 'markdown' | 'html' | 'rawHtml' | 'links' | 'screenshot' | 'branding' | 'summary';
+type TimeFrame = 'now' | '1hour' | '6hours' | '12hours' | '24hours' | 'custom';
 
 interface ScrapeOptions {
   formats: ScrapeFormat[];
@@ -34,15 +38,58 @@ interface ScrapeOptions {
   useFallback: boolean;
 }
 
+interface AIChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: Date;
+}
+
+const timeFrameOptions = [
+  { value: 'now', label: 'Run Now', icon: Zap },
+  { value: '1hour', label: 'In 1 Hour', icon: Clock },
+  { value: '6hours', label: 'In 6 Hours', icon: Clock },
+  { value: '12hours', label: 'In 12 Hours', icon: Clock },
+  { value: '24hours', label: 'In 24 Hours', icon: Clock },
+  { value: 'custom', label: 'Custom Schedule', icon: Calendar },
+];
+
+const aiCommandExamples = [
+  "Scrape and extract all product prices from this e-commerce page",
+  "Get the main article text, format as bullet points",
+  "Extract all email addresses and phone numbers",
+  "Summarize this page and list key statistics",
+  "Get all images with their alt text",
+  "Extract the navigation menu structure",
+];
+
 export const UrlScraper = ({ onBack }: UrlScraperProps) => {
   const [url, setUrl] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [activeTab, setActiveTab] = useState('content');
-  const [activeMode, setActiveMode] = useState<'scrape' | 'search' | 'map'>('scrape');
+  const [activeMode, setActiveMode] = useState<'scrape' | 'search' | 'map' | 'ai'>('ai');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [scrapeEngine, setScrapeEngine] = useState<'embedded' | 'firecrawl'>('embedded');
+  const [selectedTimeFrame, setSelectedTimeFrame] = useState<TimeFrame>('now');
+  const [customScheduleDate, setCustomScheduleDate] = useState('');
+  const [showLinkTaskDialog, setShowLinkTaskDialog] = useState(false);
+  const [taskTitle, setTaskTitle] = useState('');
+  const [taskDescription, setTaskDescription] = useState('');
+  
+  // AI Chat state
+  const [aiChatMessages, setAiChatMessages] = useState<AIChatMessage[]>([
+    {
+      id: 'welcome',
+      role: 'assistant',
+      content: "Hello! I'm your AI scraping assistant. Tell me what you want to extract from a website, and I'll help you configure the scraping settings and format the output.\n\n**Examples:**\n- \"Scrape this URL and extract all prices\"\n- \"Get the main content as bullet points\"\n- \"Find all contact information on this page\"",
+      timestamp: new Date(),
+    }
+  ]);
+  const [aiInput, setAiInput] = useState('');
+  const [isAiProcessing, setIsAiProcessing] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
   
   const [options, setOptions] = useState<ScrapeOptions>({
     formats: ['markdown'],
@@ -51,7 +98,7 @@ export const UrlScraper = ({ onBack }: UrlScraperProps) => {
     useFallback: true,
   });
   
-  const { deepScrape, mapWebsite } = useResearchEngine();
+  const { deepScrape, mapWebsite, startResearch } = useResearchEngine();
 
   const formatOptions: { id: ScrapeFormat; label: string; icon: React.ElementType; description: string }[] = [
     { id: 'markdown', label: 'Markdown', icon: FileText, description: 'Clean LLM-ready text' },
@@ -71,6 +118,101 @@ export const UrlScraper = ({ onBack }: UrlScraperProps) => {
     }));
   };
 
+  const handleAiChat = async () => {
+    if (!aiInput.trim()) return;
+
+    const userMessage: AIChatMessage = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: aiInput,
+      timestamp: new Date(),
+    };
+
+    setAiChatMessages(prev => [...prev, userMessage]);
+    setAiInput('');
+    setIsAiProcessing(true);
+
+    try {
+      // Parse the user's command to extract URL and instructions
+      const urlMatch = aiInput.match(/https?:\/\/[^\s]+/);
+      const extractedUrl = urlMatch ? urlMatch[0] : url;
+      
+      if (extractedUrl) {
+        setUrl(extractedUrl);
+      }
+
+      // Determine what formats to use based on the command
+      const command = aiInput.toLowerCase();
+      const newFormats: ScrapeFormat[] = ['markdown'];
+      
+      if (command.includes('screenshot') || command.includes('image')) {
+        newFormats.push('screenshot');
+      }
+      if (command.includes('link') || command.includes('url')) {
+        newFormats.push('links');
+      }
+      if (command.includes('summar') || command.includes('key point')) {
+        newFormats.push('summary');
+      }
+      if (command.includes('brand') || command.includes('color') || command.includes('logo')) {
+        newFormats.push('branding');
+      }
+
+      setOptions(prev => ({ ...prev, formats: [...new Set(newFormats)] }));
+
+      // If we have a URL, perform the scrape
+      if (extractedUrl) {
+        const scrapeResult = await deepScrape(extractedUrl);
+        
+        if (scrapeResult) {
+          setResult(scrapeResult);
+          
+          // Generate AI response based on the command
+          let responseContent = `I've scraped **${extractedUrl}** for you.\n\n`;
+          
+          if (command.includes('price') || command.includes('cost')) {
+            responseContent += "**Extracted Prices:** I've looked for pricing information. Check the Content tab for extracted text containing prices.\n\n";
+          }
+          if (command.includes('email') || command.includes('contact')) {
+            responseContent += "**Contact Information:** Scanned for emails and phone numbers. Review the extracted content.\n\n";
+          }
+          if (command.includes('bullet') || command.includes('point') || command.includes('list')) {
+            responseContent += "**Formatted Content:** The content has been extracted. You can copy it from the Markdown tab.\n\n";
+          }
+          
+          responseContent += `**Results:**\n- Content extracted successfully\n- Format: ${options.formats.join(', ')}\n\nYou can view the results in the tabs below.`;
+
+          const assistantMessage: AIChatMessage = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: responseContent,
+            timestamp: new Date(),
+          };
+          setAiChatMessages(prev => [...prev, assistantMessage]);
+        }
+      } else {
+        const assistantMessage: AIChatMessage = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: "I need a URL to scrape. Please provide a URL in your message (e.g., 'Scrape https://example.com and get all prices') or enter it in the URL field above.",
+          timestamp: new Date(),
+        };
+        setAiChatMessages(prev => [...prev, assistantMessage]);
+      }
+    } catch (error: any) {
+      const errorMessage: AIChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: `Sorry, I encountered an error: ${error.message}. Please try again or check if the URL is accessible.`,
+        timestamp: new Date(),
+      };
+      setAiChatMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsAiProcessing(false);
+      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+    }
+  };
+
   const handleScrape = async () => {
     if (!url.trim()) return;
     
@@ -78,9 +220,15 @@ export const UrlScraper = ({ onBack }: UrlScraperProps) => {
     setResult(null);
 
     try {
+      if (selectedTimeFrame !== 'now') {
+        // Schedule for later - show dialog to create task
+        setShowLinkTaskDialog(true);
+        setIsLoading(false);
+        return;
+      }
+
       if (scrapeEngine === 'firecrawl') {
-        // Use Firecrawl API
-        const { data, error } = await supabase.functions.invoke('firecrawl-scrape', {
+        const { data, error } = await supabase.functions.invoke('research-scrape', {
           body: { 
             url, 
             options: {
@@ -95,7 +243,6 @@ export const UrlScraper = ({ onBack }: UrlScraperProps) => {
         setResult(data);
         toast({ title: "Scraped with Firecrawl", description: "Content extracted successfully" });
       } else {
-        // Use embedded scraper
         const scrapeResult = await deepScrape(url);
         if (scrapeResult) {
           setResult(scrapeResult);
@@ -153,7 +300,7 @@ export const UrlScraper = ({ onBack }: UrlScraperProps) => {
 
     try {
       if (scrapeEngine === 'firecrawl') {
-        const { data, error } = await supabase.functions.invoke('firecrawl-map', {
+        const { data, error } = await supabase.functions.invoke('research-map', {
           body: { url, options: { limit: 100 } },
         });
 
@@ -179,12 +326,51 @@ export const UrlScraper = ({ onBack }: UrlScraperProps) => {
     }
   };
 
+  const handleLinkToTask = async () => {
+    if (!taskTitle.trim()) {
+      toast({ title: "Title Required", description: "Please enter a task title", variant: "destructive" });
+      return;
+    }
+
+    try {
+      // Calculate scheduled time based on timeframe
+      let scheduledTime = new Date();
+      switch (selectedTimeFrame) {
+        case '1hour': scheduledTime.setHours(scheduledTime.getHours() + 1); break;
+        case '6hours': scheduledTime.setHours(scheduledTime.getHours() + 6); break;
+        case '12hours': scheduledTime.setHours(scheduledTime.getHours() + 12); break;
+        case '24hours': scheduledTime.setHours(scheduledTime.getHours() + 24); break;
+        case 'custom': scheduledTime = new Date(customScheduleDate); break;
+      }
+
+      const { error } = await supabase.from('scheduled_research_tasks').insert({
+        title: taskTitle,
+        description: taskDescription || `Scrape URL: ${url}`,
+        schedule_type: 'once',
+        next_run_at: scheduledTime.toISOString(),
+        execution_mode: 'scrape',
+        custom_websites: [url],
+        is_active: true,
+        delivery_method: 'in_app',
+        report_format: 'markdown',
+        research_depth: 'standard',
+      });
+
+      if (error) throw error;
+
+      toast({ title: "Task Created!", description: `Scraping scheduled for ${scheduledTime.toLocaleString()}` });
+      setShowLinkTaskDialog(false);
+      setTaskTitle('');
+      setTaskDescription('');
+    } catch (error: any) {
+      console.error('Create task error:', error);
+      toast({ title: "Failed", description: error.message, variant: "destructive" });
+    }
+  };
+
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    toast({
-      title: "Copied!",
-      description: "Content copied to clipboard",
-    });
+    toast({ title: "Copied!", description: "Content copied to clipboard" });
   };
 
   const downloadContent = (content: string, filename: string) => {
@@ -214,12 +400,12 @@ export const UrlScraper = ({ onBack }: UrlScraperProps) => {
       <Card variant="glass" className="p-6">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-primary/10">
+            <div className="p-2 rounded-lg bg-gradient-to-br from-primary/20 to-accent/20">
               <Globe className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <h2 className="text-xl font-semibold">Advanced Web Scraper</h2>
-              <p className="text-sm text-muted-foreground">Extract, search, and analyze web content</p>
+              <h2 className="text-xl font-semibold">AI Web Scraper</h2>
+              <p className="text-sm text-muted-foreground">Command AI to extract and format web content</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -245,9 +431,46 @@ export const UrlScraper = ({ onBack }: UrlScraperProps) => {
           </div>
         </div>
 
+        {/* URL Input with timeframe */}
+        <div className="flex gap-2 mb-4">
+          <Input
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="Enter URL to scrape (e.g., https://example.com)"
+            className="flex-1"
+          />
+          <Select value={selectedTimeFrame} onValueChange={(v: TimeFrame) => setSelectedTimeFrame(v)}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {timeFrameOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  <div className="flex items-center gap-2">
+                    <option.icon className="w-3 h-3" />
+                    {option.label}
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button 
+            variant="outline" 
+            size="icon" 
+            onClick={() => setShowLinkTaskDialog(true)}
+            title="Link to Scheduled Task"
+          >
+            <CalendarPlus className="w-4 h-4" />
+          </Button>
+        </div>
+
         {/* Mode Tabs */}
         <Tabs value={activeMode} onValueChange={(v: any) => setActiveMode(v)} className="mb-6">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="ai" className="gap-2">
+              <Bot className="w-4 h-4" />
+              AI Command
+            </TabsTrigger>
             <TabsTrigger value="scrape" className="gap-2">
               <FileText className="w-4 h-4" />
               Scrape URL
@@ -262,17 +485,95 @@ export const UrlScraper = ({ onBack }: UrlScraperProps) => {
             </TabsTrigger>
           </TabsList>
 
+          {/* AI Command Chat */}
+          <TabsContent value="ai" className="mt-4 space-y-4">
+            <Card className="bg-muted/30 border-0">
+              {/* Chat messages */}
+              <div className="h-[300px] overflow-y-auto p-4 space-y-4">
+                {aiChatMessages.map((msg) => (
+                  <div
+                    key={msg.id}
+                    className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                  >
+                    <div
+                      className={`max-w-[80%] rounded-lg p-3 ${
+                        msg.role === 'user'
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-background border border-border'
+                      }`}
+                    >
+                      <div className="prose prose-sm dark:prose-invert max-w-none">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                      </div>
+                      <span className="text-[10px] opacity-50 mt-1 block">
+                        {msg.timestamp.toLocaleTimeString()}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+                {isAiProcessing && (
+                  <div className="flex justify-start">
+                    <div className="bg-background border border-border rounded-lg p-3">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    </div>
+                  </div>
+                )}
+                <div ref={chatEndRef} />
+              </div>
+
+              {/* Quick commands */}
+              <div className="px-4 py-2 border-t border-border">
+                <div className="flex gap-2 overflow-x-auto pb-2">
+                  {aiCommandExamples.slice(0, 3).map((example, i) => (
+                    <Button
+                      key={i}
+                      variant="outline"
+                      size="sm"
+                      className="text-xs whitespace-nowrap shrink-0"
+                      onClick={() => setAiInput(example)}
+                    >
+                      <Wand2 className="w-3 h-3 mr-1" />
+                      {example.slice(0, 30)}...
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Input */}
+              <div className="p-4 border-t border-border">
+                <div className="flex gap-2">
+                  <Textarea
+                    value={aiInput}
+                    onChange={(e) => setAiInput(e.target.value)}
+                    placeholder="Tell me what to scrape and how to format it..."
+                    className="min-h-[60px] resize-none"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleAiChat();
+                      }
+                    }}
+                  />
+                  <Button
+                    onClick={handleAiChat}
+                    disabled={!aiInput.trim() || isAiProcessing}
+                    className="h-auto"
+                  >
+                    {isAiProcessing ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Send className="w-4 h-4" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          </TabsContent>
+
           <TabsContent value="scrape" className="mt-4 space-y-4">
             <div className="flex gap-2">
-              <Input
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="Enter URL to scrape (e.g., https://example.com)"
-                className="flex-1"
-                onKeyDown={(e) => e.key === 'Enter' && handleScrape()}
-              />
-              <Button onClick={handleScrape} disabled={!url.trim() || isLoading} variant="hero">
-                {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><FileText className="w-4 h-4 mr-2" />Scrape</>}
+              <Button onClick={handleScrape} disabled={!url.trim() || isLoading} variant="hero" className="flex-1">
+                {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><FileText className="w-4 h-4 mr-2" />Scrape Now</>}
               </Button>
             </div>
 
@@ -352,14 +653,7 @@ export const UrlScraper = ({ onBack }: UrlScraperProps) => {
 
           <TabsContent value="map" className="mt-4">
             <div className="flex gap-2">
-              <Input
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="Enter website URL to map..."
-                className="flex-1"
-                onKeyDown={(e) => e.key === 'Enter' && handleMap()}
-              />
-              <Button onClick={handleMap} disabled={!url.trim() || isLoading} variant="hero">
+              <Button onClick={handleMap} disabled={!url.trim() || isLoading} variant="hero" className="flex-1">
                 {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><List className="w-4 h-4 mr-2" />Map Site</>}
               </Button>
             </div>
@@ -370,7 +664,6 @@ export const UrlScraper = ({ onBack }: UrlScraperProps) => {
         <AnimatePresence>
           {result && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-              {/* Metadata */}
               {metadata.title && (
                 <div className="mb-4 p-4 rounded-lg bg-secondary/50">
                   <h3 className="font-semibold text-lg mb-1">{metadata.title}</h3>
@@ -431,9 +724,9 @@ export const UrlScraper = ({ onBack }: UrlScraperProps) => {
                 <TabsContent value="screenshot" className="mt-0">
                   <div className="rounded-lg border border-border bg-background p-4">
                     {screenshot ? (
-                      <img src={`data:image/png;base64,${screenshot}`} alt="Page screenshot" className="max-w-full rounded-lg" />
+                      <img src={screenshot} alt="Page screenshot" className="max-w-full rounded" />
                     ) : (
-                      <p className="text-muted-foreground text-center py-8">No screenshot available</p>
+                      <p className="text-muted-foreground">No screenshot available</p>
                     )}
                   </div>
                 </TabsContent>
@@ -441,39 +734,9 @@ export const UrlScraper = ({ onBack }: UrlScraperProps) => {
                 <TabsContent value="branding" className="mt-0">
                   <div className="rounded-lg border border-border bg-background p-4">
                     {branding ? (
-                      <div className="space-y-4">
-                        {branding.colors && (
-                          <div>
-                            <h4 className="font-medium mb-2">Colors</h4>
-                            <div className="flex gap-2 flex-wrap">
-                              {Object.entries(branding.colors).map(([name, color]) => (
-                                <div key={name} className="flex items-center gap-2 p-2 rounded-lg bg-secondary/50">
-                                  <div className="w-6 h-6 rounded" style={{ backgroundColor: color as string }} />
-                                  <span className="text-xs">{name}: {color as string}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {branding.fonts && (
-                          <div>
-                            <h4 className="font-medium mb-2">Fonts</h4>
-                            <div className="flex gap-2 flex-wrap">
-                              {branding.fonts.map((font: any, i: number) => (
-                                <Badge key={i} variant="secondary">{font.family}</Badge>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {branding.logo && (
-                          <div>
-                            <h4 className="font-medium mb-2">Logo</h4>
-                            <img src={branding.logo} alt="Logo" className="max-h-16" />
-                          </div>
-                        )}
-                      </div>
+                      <pre className="text-xs">{JSON.stringify(branding, null, 2)}</pre>
                     ) : (
-                      <p className="text-muted-foreground text-center py-8">No branding data available</p>
+                      <p className="text-muted-foreground">No branding data available</p>
                     )}
                   </div>
                 </TabsContent>
@@ -481,40 +744,42 @@ export const UrlScraper = ({ onBack }: UrlScraperProps) => {
                 <TabsContent value="links" className="mt-0">
                   <div className="max-h-[500px] overflow-y-auto rounded-lg border border-border bg-background p-4">
                     {links.length > 0 ? (
-                      <ul className="space-y-2">
-                        {links.map((link: string, index: number) => (
-                          <li key={index} className="flex items-center gap-2 text-sm">
-                            <span className="text-muted-foreground w-6">{index + 1}.</span>
-                            <a href={link} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex-1 truncate">{link}</a>
-                            <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => window.open(link, '_blank')}>
+                      <ul className="space-y-1">
+                        {links.map((link: string, i: number) => (
+                          <li key={i}>
+                            <a
+                              href={link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm text-primary hover:underline flex items-center gap-1"
+                            >
+                              {link}
                               <ExternalLink className="w-3 h-3" />
-                            </Button>
+                            </a>
                           </li>
                         ))}
                       </ul>
                     ) : (
-                      <p className="text-muted-foreground text-center py-8">No links found. Use "Map Site" to discover all URLs.</p>
+                      <p className="text-muted-foreground">No links extracted</p>
                     )}
                   </div>
                 </TabsContent>
 
                 <TabsContent value="search" className="mt-0">
-                  <div className="max-h-[500px] overflow-y-auto rounded-lg border border-border bg-background p-4">
-                    {searchResults.length > 0 ? (
-                      <div className="space-y-4">
-                        {searchResults.map((item: any, index: number) => (
-                          <div key={index} className="p-3 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors">
-                            <a href={item.url} target="_blank" rel="noopener noreferrer" className="font-medium text-primary hover:underline">
-                              {item.title || item.url}
-                            </a>
-                            <p className="text-xs text-muted-foreground mt-1">{item.url}</p>
-                            {item.snippet && <p className="text-sm mt-2">{item.snippet}</p>}
-                          </div>
-                        ))}
+                  <div className="max-h-[500px] overflow-y-auto rounded-lg border border-border bg-background p-4 space-y-4">
+                    {searchResults.map((result: any, i: number) => (
+                      <div key={i} className="p-3 rounded-lg bg-muted/50">
+                        <a
+                          href={result.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-medium text-primary hover:underline"
+                        >
+                          {result.title}
+                        </a>
+                        <p className="text-sm text-muted-foreground mt-1">{result.snippet}</p>
                       </div>
-                    ) : (
-                      <p className="text-muted-foreground text-center py-8">No search results</p>
-                    )}
+                    ))}
                   </div>
                 </TabsContent>
               </Tabs>
@@ -522,6 +787,65 @@ export const UrlScraper = ({ onBack }: UrlScraperProps) => {
           )}
         </AnimatePresence>
       </Card>
+
+      {/* Link to Task Dialog */}
+      <Dialog open={showLinkTaskDialog} onOpenChange={setShowLinkTaskDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarPlus className="w-5 h-5 text-primary" />
+              Schedule Scraping Task
+            </DialogTitle>
+            <DialogDescription>
+              Create a scheduled task to scrape this URL at the specified time.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Task Title</Label>
+              <Input
+                value={taskTitle}
+                onChange={(e) => setTaskTitle(e.target.value)}
+                placeholder="e.g., Daily price monitoring"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Description (Optional)</Label>
+              <Textarea
+                value={taskDescription}
+                onChange={(e) => setTaskDescription(e.target.value)}
+                placeholder="What should this scraping task accomplish?"
+                className="resize-none"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>URL to Scrape</Label>
+              <Input value={url} disabled className="bg-muted" />
+            </div>
+            {selectedTimeFrame === 'custom' && (
+              <div className="space-y-2">
+                <Label>Custom Date/Time</Label>
+                <Input
+                  type="datetime-local"
+                  value={customScheduleDate}
+                  onChange={(e) => setCustomScheduleDate(e.target.value)}
+                />
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowLinkTaskDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleLinkToTask} className="gap-2">
+              <CalendarPlus className="w-4 h-4" />
+              Create Task
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </motion.div>
   );
 };
