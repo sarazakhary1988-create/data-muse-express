@@ -224,11 +224,12 @@ export const researchApi = {
   async analyze(
     query: string, 
     content: string, 
-    type: 'summarize' | 'analyze' | 'extract' | 'report' | 'verify' = 'analyze'
+    type: 'summarize' | 'analyze' | 'extract' | 'report' | 'verify' = 'analyze',
+    reportFormat?: 'detailed' | 'executive' | 'table'
   ): Promise<AnalyzeResult> {
     try {
       const { data, error } = await supabase.functions.invoke('research-analyze', {
-        body: { query, content, type },
+        body: { query, content, type, reportFormat },
       });
 
       if (error) {

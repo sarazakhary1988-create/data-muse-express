@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { ResearchTask, Report, useResearchStore } from '@/store/researchStore';
+import { ResearchTask, Report, useResearchStore, ReportFormat } from '@/store/researchStore';
 import { researchAgent } from '@/lib/agent';
 import { toast } from '@/hooks/use-toast';
 
@@ -12,6 +12,7 @@ export const useResearchEngine = () => {
     setSearchQuery,
     deepVerifyMode,
     deepVerifySourceConfigs,
+    reportFormat,
     setDeepVerifySources,
     updateDeepVerifySource,
     clearDeepVerifySources,
@@ -129,7 +130,8 @@ export const useResearchEngine = () => {
       const { results, report, quality, verifications, plan } = await researchAgent.execute(
         query,
         deepVerifyMode,
-        enabledSources
+        enabledSources,
+        reportFormat
       );
 
       // Create report object
@@ -197,6 +199,7 @@ export const useResearchEngine = () => {
     setSearchQuery, 
     deepVerifyMode, 
     enabledSources,
+    reportFormat,
     setDeepVerifySources,
     updateDeepVerifySource,
     setAgentState,
