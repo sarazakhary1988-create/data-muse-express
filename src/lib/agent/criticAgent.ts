@@ -17,22 +17,33 @@ export class CriticAgent {
     claims: ExtractedClaim[], 
     availableSources: { url: string; content: string; domain: string }[]
   ): Promise<ClaimVerification[]> {
-    const verifications: ClaimVerification[] = [];
-
-    for (const claim of claims) {
+    // Limit claims to verify for speed (max 8 key claims)
+    const claimsToVerify = claims.slice(0, 8);
+    
+    // Check cache first, collect uncached claims
+    const cached: ClaimVerification[] = [];
+    const uncached: ExtractedClaim[] = [];
+    
+    for (const claim of claimsToVerify) {
       const cacheKey = this.generateCacheKey(claim);
-      
       if (this.verificationCache.has(cacheKey)) {
-        verifications.push(this.verificationCache.get(cacheKey)!);
-        continue;
+        cached.push(this.verificationCache.get(cacheKey)!);
+      } else {
+        uncached.push(claim);
       }
-
-      const verification = await this.verifySingleClaim(claim, availableSources);
-      this.verificationCache.set(cacheKey, verification);
-      verifications.push(verification);
     }
 
-    return verifications;
+    // PARALLEL verification of uncached claims
+    const verificationPromises = uncached.map(claim => 
+      this.verifySingleClaim(claim, availableSources).then(verification => {
+        this.verificationCache.set(this.generateCacheKey(claim), verification);
+        return verification;
+      })
+    );
+
+    const newVerifications = await Promise.all(verificationPromises);
+    
+    return [...cached, ...newVerifications];
   }
 
   private async verifySingleClaim(
@@ -43,9 +54,19 @@ export class CriticAgent {
     let totalSupport = 0;
     let sourceCount = 0;
 
-    for (const source of sources) {
-      const support = await this.checkSourceSupport(claim.text, source.content, source.url);
-      
+    // Limit sources to check per claim (top 4 for speed)
+    const sourcesToCheck = sources.slice(0, 4);
+
+    // PARALLEL source checking within a claim
+    const supportResults = await Promise.all(
+      sourcesToCheck.map(source => 
+        this.checkSourceSupport(claim.text, source.content, source.url)
+          .then(support => ({ source, support }))
+          .catch(() => ({ source, support: { level: 'none', excerpt: '' } }))
+      )
+    );
+
+    for (const { source, support } of supportResults) {
       if (support.level !== 'none') {
         verificationSources.push({
           url: source.url,
@@ -54,7 +75,6 @@ export class CriticAgent {
           excerpt: support.excerpt,
         });
 
-        // Weight support levels
         const weights = { strong: 1, moderate: 0.6, weak: 0.3, contradicts: -0.5 };
         totalSupport += weights[support.level as keyof typeof weights] || 0;
         sourceCount++;
@@ -91,13 +111,14 @@ export class CriticAgent {
     content: string, 
     url: string
   ): Promise<{ level: string; excerpt: string }> {
-    // Quick heuristic check first
+    // Quick heuristic check first - FAST path, no API call needed for clear cases
     const claimWords = claim.toLowerCase().split(/\s+/).filter(w => w.length > 3);
     const contentLower = content.toLowerCase();
     
     const matchCount = claimWords.filter(word => contentLower.includes(word)).length;
-    const matchRatio = matchCount / claimWords.length;
+    const matchRatio = claimWords.length > 0 ? matchCount / claimWords.length : 0;
 
+    // Early exit for no match - skip API call
     if (matchRatio < 0.3) {
       return { level: 'none', excerpt: '' };
     }
@@ -105,37 +126,35 @@ export class CriticAgent {
     // Find relevant excerpt
     const excerpt = this.findRelevantExcerpt(claim, content);
 
-    // Use AI for deeper verification if available
+    // For high confidence matches, use heuristic directly (skip API)
+    if (matchRatio > 0.85) return { level: 'strong', excerpt };
+    if (matchRatio > 0.7) return { level: 'moderate', excerpt };
+
+    // Only use AI for ambiguous cases (0.3 - 0.7 match ratio)
     try {
       const { data } = await supabase.functions.invoke('research-analyze', {
         body: {
-          query: claim,
-          content: excerpt,
+          query: claim.substring(0, 200), // Limit claim size
+          content: excerpt.substring(0, 500), // Limit content size
           type: 'verify',
         }
       });
 
       if (data?.result) {
-        try {
-          // Try to extract JSON from response
-          const jsonMatch = data.result.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            const parsed = JSON.parse(jsonMatch[0]);
-            return { 
-              level: parsed.support || (matchRatio > 0.7 ? 'moderate' : 'weak'), 
-              excerpt 
-            };
-          }
-        } catch {
-          // Fall through to heuristic
+        const jsonMatch = data.result.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          return { 
+            level: parsed.support || (matchRatio > 0.5 ? 'moderate' : 'weak'), 
+            excerpt 
+          };
         }
       }
     } catch {
-      // Fall through to heuristic
+      // Use heuristic on error
     }
 
     // Heuristic fallback
-    if (matchRatio > 0.8) return { level: 'strong', excerpt };
     if (matchRatio > 0.6) return { level: 'moderate', excerpt };
     if (matchRatio > 0.4) return { level: 'weak', excerpt };
     return { level: 'none', excerpt: '' };

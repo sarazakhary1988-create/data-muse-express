@@ -534,29 +534,42 @@ export class ResearchAgent {
   }
 
   private extractClaims(): { text: string; sources: string[] }[] {
-    // Extract factual claims from content - increased from 5 to 10 sources
+    // Extract FEWER but more meaningful claims for faster verification
     const claims: { text: string; sources: string[] }[] = [];
+    const seenClaims = new Set<string>();
     
-    for (const result of this.results.slice(0, 10)) {
-      const sentences = result.content.split(/[.!?]+/).filter(s => s.trim().length > 20);
+    // Only check top 5 results for speed
+    for (const result of this.results.slice(0, 5)) {
+      const sentences = result.content.split(/[.!?]+/).filter(s => s.trim().length > 30 && s.trim().length < 300);
       
-      // Look for factual claims (sentences with numbers, dates, names)
-      for (const sentence of sentences.slice(0, 15)) {
+      // Look for high-value factual claims only (max 3 per source)
+      let claimsFromSource = 0;
+      for (const sentence of sentences) {
+        if (claimsFromSource >= 3) break;
+        
         const trimmed = sentence.trim();
-        if (
-          /\d+/.test(trimmed) || // Contains numbers
-          /\b(January|February|March|April|May|June|July|August|September|October|November|December|20\d{2})\b/i.test(trimmed) || // Contains dates (any year 20xx)
-          /\b[A-Z][a-z]+\s+[A-Z][a-z]+\b/.test(trimmed) // Contains proper nouns
-        ) {
+        const claimKey = trimmed.toLowerCase().substring(0, 50);
+        
+        // Skip duplicates
+        if (seenClaims.has(claimKey)) continue;
+        
+        // Only extract sentences with strong factual indicators
+        const hasNumbers = /\d+/.test(trimmed);
+        const hasDate = /\b(January|February|March|April|May|June|July|August|September|October|November|December|20\d{2})\b/i.test(trimmed);
+        const hasProperNouns = /\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b/.test(trimmed);
+        
+        if (hasNumbers || hasDate || hasProperNouns) {
           claims.push({
             text: trimmed.slice(0, 200),
             sources: [result.url]
           });
+          seenClaims.add(claimKey);
+          claimsFromSource++;
         }
       }
     }
 
-    return claims.slice(0, 20); // Increased from 10 to 20 claims
+    return claims.slice(0, 8); // Reduced from 20 to 8 for speed
   }
 
   private calculateVerificationQuality(): Partial<QualityScore> {
