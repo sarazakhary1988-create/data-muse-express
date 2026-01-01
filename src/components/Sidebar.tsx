@@ -1,11 +1,9 @@
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Layers, 
   Globe, 
   FileText, 
-  Settings, 
-  HelpCircle,
   ChevronLeft,
   ChevronRight,
   Sparkles,
@@ -14,6 +12,9 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Logo } from '@/components/Logo';
+import { ThemeToggle } from '@/components/ThemeToggle';
+import { SettingsDialog } from '@/components/SettingsDialog';
+import { HelpDialog } from '@/components/HelpDialog';
 import { cn } from '@/lib/utils';
 
 export type ViewType = 'search' | 'results' | 'report' | 'history' | 'scraper' | 'scheduled';
@@ -113,26 +114,9 @@ export const Sidebar = ({ activeView, onViewChange }: SidebarProps) => {
 
       {/* Footer */}
       <div className="p-3 border-t border-border/50 space-y-1">
-        <Button
-          variant="ghost"
-          className={cn(
-            "w-full justify-start gap-3",
-            isCollapsed && "justify-center px-0"
-          )}
-        >
-          <Settings className="w-5 h-5" />
-          {!isCollapsed && <span>Settings</span>}
-        </Button>
-        <Button
-          variant="ghost"
-          className={cn(
-            "w-full justify-start gap-3",
-            isCollapsed && "justify-center px-0"
-          )}
-        >
-          <HelpCircle className="w-5 h-5" />
-          {!isCollapsed && <span>Help</span>}
-        </Button>
+        <ThemeToggle collapsed={isCollapsed} />
+        <SettingsDialog collapsed={isCollapsed} />
+        <HelpDialog collapsed={isCollapsed} />
         
         {/* Collapse toggle */}
         <Button

@@ -49,6 +49,54 @@ export const ResultsView = ({ task, onBack, onViewReport }: ResultsViewProps) =>
     );
   }
 
+  // Extract a clean title from the query
+  const extractTitle = (query: string): { title: string; description: string } => {
+    // Check if query looks like an enhanced prompt with detailed instructions
+    const isEnhanced = query.length > 100 || query.includes('analyze') || query.includes('focus on') || query.includes('identify');
+    
+    if (isEnhanced) {
+      // Extract the core topic from the first sentence or key phrase
+      const sentences = query.split(/[.!?]/);
+      const firstSentence = sentences[0]?.trim() || query;
+      
+      // Look for common patterns to extract the main topic
+      const patterns = [
+        /(?:research|analyze|investigate|study|examine)\s+(?:about\s+)?(.+?)(?:\s+and\s+|\s+with\s+|\s+focusing|\s+including|$)/i,
+        /^(.+?)\s+(?:company|organization|business|market|industry)/i,
+        /^(.+?)(?:\s+analysis|\s+report|\s+study)/i,
+      ];
+      
+      for (const pattern of patterns) {
+        const match = firstSentence.match(pattern);
+        if (match && match[1]) {
+          const title = match[1].trim().replace(/^(the|a|an)\s+/i, '');
+          return {
+            title: title.charAt(0).toUpperCase() + title.slice(1),
+            description: query.length > 200 ? query.substring(0, 200) + '...' : query
+          };
+        }
+      }
+      
+      // Fallback: use first 50 chars as title
+      const shortTitle = firstSentence.length > 50 
+        ? firstSentence.substring(0, 50).trim() + '...'
+        : firstSentence;
+      
+      return {
+        title: shortTitle,
+        description: query.length > 200 ? query.substring(0, 200) + '...' : query
+      };
+    }
+    
+    // Simple query - use as is
+    return {
+      title: query,
+      description: ''
+    };
+  };
+
+  const { title: researchTitle, description: researchDescription } = extractTitle(task.query);
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -62,15 +110,20 @@ export const ResultsView = ({ task, onBack, onViewReport }: ResultsViewProps) =>
           Back to Search
         </Button>
         
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h2 className="text-2xl font-bold">Research Results</h2>
-            <p className="text-muted-foreground mt-1">
-              Found <span className="text-primary font-medium">{task.results.length}</span> relevant sources for: "{task.query}"
+        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+          <div className="flex-1">
+            <h2 className="text-2xl font-bold">{researchTitle}</h2>
+            {researchDescription && (
+              <p className="text-sm text-muted-foreground mt-2 max-w-2xl leading-relaxed">
+                {researchDescription}
+              </p>
+            )}
+            <p className="text-sm text-muted-foreground/70 mt-3">
+              Found <span className="text-primary font-medium">{task.results.length}</span> relevant sources
             </p>
           </div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             {taskReport && (
               <Button variant="hero" size="sm" onClick={onViewReport} className="gap-2">
                 <FileText className="w-4 h-4" />
