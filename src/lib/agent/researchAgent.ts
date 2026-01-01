@@ -130,14 +130,23 @@ export class ResearchAgent {
       this.callbacks.onPlanUpdate?.(this.currentPlan);
       this.stateMachine.updateContext({ plan: this.currentPlan });
 
-      // Phase 2: AI-Powered Research (Primary Mode - No External Tools)
-      console.log(`[ResearchAgent] 🧠 Phase 2: AI KNOWLEDGE SYNTHESIS`);
+      // Phase 2: Web Search + AI Knowledge Synthesis
+      console.log(`[ResearchAgent] 🌐 Phase 2: WEB SEARCH + AI SYNTHESIS`);
       await this.stateMachine.transition('searching');
       this.callbacks.onProgress?.(15);
-      this.callbacks.onDecision?.('Executing AI-powered research synthesis', 0.85);
+      this.callbacks.onDecision?.('Searching web for real-time data', 0.85);
 
-      // Build virtual results from AI knowledge for internal tracking
-      this.results = this.createAIKnowledgeResults(query);
+      // Try to get real-time web search results
+      const webSearchResults = await this.performWebSearch(query);
+      
+      if (webSearchResults.length > 0) {
+        console.log(`[ResearchAgent] Found ${webSearchResults.length} web search results`);
+        this.results = webSearchResults;
+      } else {
+        console.log(`[ResearchAgent] No web results, using AI knowledge synthesis`);
+        this.results = this.createAIKnowledgeResults(query);
+      }
+      
       this.stateMachine.updateContext({ results: this.results });
       this.callbacks.onResultsUpdate?.(this.results);
 
@@ -224,6 +233,39 @@ export class ResearchAgent {
       throw error;
     } finally {
       this.isRunning = false;
+    }
+  }
+
+  // Perform web search using the AI-powered search
+  private async performWebSearch(query: string): Promise<AgentResearchResult[]> {
+    try {
+      console.log('[ResearchAgent] Performing AI-powered web search for:', query);
+      
+      const searchResult = await researchApi.search(query, 10, false);
+      
+      if (!searchResult.success || !searchResult.data || searchResult.data.length === 0) {
+        console.log('[ResearchAgent] No web search results found');
+        return [];
+      }
+
+      console.log('[ResearchAgent] Web search returned', searchResult.data.length, 'results');
+
+      return searchResult.data.map((item, index) => ({
+        id: `web-search-${Date.now()}-${index}`,
+        title: item.title || `Search Result ${index + 1}`,
+        url: item.url || `https://search-result-${index + 1}.com`,
+        content: item.markdown || item.description || '',
+        summary: item.description || '',
+        relevanceScore: 0.85 - (index * 0.05), // Decreasing relevance
+        extractedAt: new Date(),
+        metadata: {
+          domain: new URL(item.url || 'https://example.com').hostname.replace('www.', ''),
+          wordCount: (item.markdown || item.description || '').split(/\s+/).length
+        }
+      }));
+    } catch (error) {
+      console.error('[ResearchAgent] Web search error:', error);
+      return [];
     }
   }
 
@@ -401,11 +443,25 @@ Only output the JSON array, nothing else.`;
       const currentYear = currentDate.getFullYear();
       const currentMonth = currentDate.toLocaleString('default', { month: 'long' });
 
+      // Build context from web search results
+      let webSearchContext = '';
+      const webResults = this.results.filter(r => r.url !== 'ai://knowledge-synthesis');
+      
+      if (webResults.length > 0) {
+        console.log('[ResearchAgent] Including', webResults.length, 'web search results in report generation');
+        webSearchContext = `\n\nWEB SEARCH RESULTS (use these as primary sources):\n${webResults.map((r, i) => `
+[Source ${i + 1}] ${r.title}
+URL: ${r.url}
+Content: ${r.content.substring(0, 2000)}
+`).join('\n---\n')}`;
+      }
+
       const comprehensivePrompt = `You are an expert research analyst with extensive knowledge of global markets, companies, regulations, and current events.
 
 RESEARCH QUERY: "${query}"
 
 CURRENT DATE: ${currentMonth} ${currentDate.getDate()}, ${currentYear}
+${webSearchContext}
 
 YOUR TASK: Generate a comprehensive, SUBSTANTIVE research report that DIRECTLY ANSWERS this query.
 
@@ -415,7 +471,7 @@ CRITICAL INSTRUCTIONS - READ CAREFULLY:
 
 1. YOU MUST PROVIDE ACTUAL CONTENT. Do NOT say "no data available" or "cannot provide information."
 
-2. USE YOUR KNOWLEDGE BASE. You have been trained on extensive data. Use it to provide:
+2. ${webResults.length > 0 ? 'PRIORITIZE the web search results above, then supplement with your knowledge base.' : 'USE YOUR KNOWLEDGE BASE.'}
    - Specific company names, people, dates, and numbers
    - Actual market data, trends, and analysis
    - Real regulatory information and compliance details
@@ -437,6 +493,7 @@ CRITICAL INSTRUCTIONS - READ CAREFULLY:
    - Include data tables where appropriate
    - Provide specific numbers, percentages, and dates
    - Name actual companies, executives, and regulatory bodies
+   ${webResults.length > 0 ? '- CITE your sources using [Source N] format' : ''}
 
 6. DO NOT:
    - Say "The sources do not contain..." or "No data available"

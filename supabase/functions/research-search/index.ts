@@ -101,10 +101,40 @@ serve(async (req) => {
 
     const apiKey = Deno.env.get('FIRECRAWL_API_KEY');
     if (!apiKey) {
-      console.log('FIRECRAWL_API_KEY not configured - returning fallback indicator');
+      console.log('FIRECRAWL_API_KEY not configured - using AI web search fallback');
+      
+      // Use AI web search as fallback
+      const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
+      if (!lovableApiKey) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'No search provider configured', fallback: true }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      // Call AI web search function
+      const supabaseUrl = Deno.env.get('SUPABASE_URL');
+      const aiSearchResponse = await fetch(`${supabaseUrl}/functions/v1/ai-web-search`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`,
+        },
+        body: JSON.stringify({
+          query: queryValidation.value,
+          limit: validatedLimit,
+          timeFrame: validatedTbs,
+          lang: validatedLang,
+          country: validatedCountry,
+        }),
+      });
+      
+      const aiSearchData = await aiSearchResponse.json();
+      console.log('AI Web Search fallback result:', aiSearchData.success, 'results:', aiSearchData.data?.length || 0);
+      
       return new Response(
-        JSON.stringify({ success: false, error: 'Firecrawl not configured', fallback: true }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify(aiSearchData),
+        { status: aiSearchResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
