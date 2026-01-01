@@ -189,6 +189,13 @@ export function useScheduledTasks() {
       toast.success('Task execution started');
       setRuns(prev => [runData as ScheduledTaskRun, ...prev]);
       
+      // Trigger the edge function to execute immediately
+      supabase.functions.invoke('execute-scheduled-task', {
+        body: { taskId: task.id, runId: runData.id },
+      }).catch(err => {
+        console.error('Error invoking execute-scheduled-task:', err);
+      });
+      
       return runData as ScheduledTaskRun;
     } catch (error) {
       console.error('Error starting task run:', error);
