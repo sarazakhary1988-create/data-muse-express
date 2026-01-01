@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Helmet } from 'react-helmet';
 import { AnimatedBackground } from '@/components/AnimatedBackground';
-import { Sidebar } from '@/components/Sidebar';
+import { Sidebar, ViewType } from '@/components/Sidebar';
 import { SearchInput } from '@/components/SearchInput';
 import { HeroSection } from '@/components/HeroSection';
 import { FeatureGrid } from '@/components/FeatureGrid';
@@ -10,10 +10,9 @@ import { ResearchProgress, defaultResearchSteps } from '@/components/ResearchPro
 import { ResultsView } from '@/components/ResultsView';
 import { ReportViewer } from '@/components/ReportViewer';
 import { TaskHistory } from '@/components/TaskHistory';
+import { UrlScraper } from '@/components/UrlScraper';
 import { useResearchStore, ResearchTask } from '@/store/researchStore';
 import { useResearchEngine } from '@/hooks/useResearchEngine';
-
-type ViewType = 'search' | 'results' | 'report' | 'history';
 
 const Index = () => {
   const [activeView, setActiveView] = useState<ViewType>('search');
@@ -23,10 +22,11 @@ const Index = () => {
     isSearching, 
     currentTask, 
     reports,
-    setCurrentTask 
+    setCurrentTask,
+    setSearchQuery
   } = useResearchStore();
   
-  const { startResearch } = useResearchEngine();
+  const { startResearch, deepScrape } = useResearchEngine();
 
   const currentReport = reports.find(r => r.taskId === currentTask?.id);
 
@@ -77,6 +77,11 @@ const Index = () => {
     }
   };
 
+  const handleScrapeUrl = async (url: string) => {
+    setSearchQuery('');
+    setActiveView('scraper');
+  };
+
   const handleSelectTask = (task: ResearchTask) => {
     setCurrentTask(task);
     if (task.status === 'completed') {
@@ -100,7 +105,7 @@ const Index = () => {
         return (
           <div className="w-full max-w-5xl mx-auto px-4 py-8 md:py-16">
             <HeroSection />
-            <SearchInput onSearch={handleSearch} />
+            <SearchInput onSearch={handleSearch} onScrapeUrl={handleScrapeUrl} />
             
             <AnimatePresence>
               {isSearching && currentTask && (
@@ -119,6 +124,18 @@ const Index = () => {
             </AnimatePresence>
             
             {!isSearching && <FeatureGrid />}
+          </div>
+        );
+
+      case 'scraper':
+        return (
+          <div className="w-full max-w-5xl mx-auto px-4 py-8">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
+              <UrlScraper onBack={handleBackToSearch} />
+            </motion.div>
           </div>
         );
 
