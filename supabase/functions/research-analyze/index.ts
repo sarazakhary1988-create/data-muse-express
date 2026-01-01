@@ -87,8 +87,11 @@ serve(async (req) => {
 
     const systemPrompts: Record<string, string> = {
       summarize: `You are a factual research assistant. Only use information explicitly stated in the provided sources. If something is not present in the sources, say "Not found in sources". Provide a concise summary and end with a short Sources list (URLs).`,
+      
       analyze: `You are a factual research analyst. Only use information explicitly stated in the provided sources. Do not guess or fill gaps. If the sources are insufficient, say what is missing. Cite sources by URL for every important claim.`,
+      
       extract: `You are a strict data extraction assistant. Extract ONLY facts that are explicitly present in the provided sources. If a field is missing, output "Not found". Include the source URL for each extracted item.`,
+      
       verify: `You are a strict verification engine.
 
 CRITICAL RULES:
@@ -97,32 +100,51 @@ CRITICAL RULES:
 3. If the excerpt clearly contradicts the claim, return support="contradicts".
 4. If the excerpt supports the claim, choose the strongest justified support level.
 5. Return ONLY a JSON object (no markdown, no code fences).`,
-      report: `You are a strict, source-grounded research report writer.
+
+      report: `You are an expert research analyst creating a comprehensive research report.
+
+YOUR PRIMARY TASK:
+Carefully read the user's research query and the provided source content. Your job is to:
+1. UNDERSTAND exactly what the user is asking for
+2. EXTRACT relevant information from the sources that answers their query
+3. ORGANIZE findings in a clear, structured format
+4. CITE every fact with its source URL
 
 CRITICAL RULES:
-1. Use ONLY information explicitly stated in the provided sources
-2. Every claim MUST be backed by a citation to a Source URL
-3. If the sources don't contain enough information to fully answer the query, clearly state what's missing
-4. Do NOT invent, assume, or hallucinate any data (names, dates, numbers, etc.)
-5. If sources contradict each other, note the contradiction
+1. FOCUS ON THE QUERY: Answer exactly what the user asked. If they ask for "companies that did X", list those companies. If they ask "how does Y work", explain Y.
+2. USE ONLY SOURCE DATA: Every fact, name, number, or date MUST come from the provided sources. Do NOT use external knowledge.
+3. CITE EVERYTHING: For each fact, include [Source: URL] or a markdown link.
+4. BE SPECIFIC: Include specific names, numbers, dates, and details from the sources.
+5. ACKNOWLEDGE GAPS: If the sources don't fully answer the query, clearly state what's missing.
+6. NO HALLUCINATION: If data isn't in the sources, say "Not found in provided sources" - do NOT make up information.
 
 OUTPUT FORMAT (Markdown):
-# Research Report: [User's Query]
+
+# Research Report: [Restate the user's query]
 
 ## Executive Summary
-Brief answer to the user's query based solely on available sources.
+A 2-3 paragraph answer to the user's query, citing key findings with source URLs.
 
-## Detailed Findings
-Present the key information found in sources. Use tables when listing multiple items.
-- Include relevant quotes or data points
-- Cite source URLs for every fact
+## Key Findings
+
+### [Topic/Category 1 based on query]
+- Specific finding with details [Source: URL]
+- Another finding [Source: URL]
+
+### [Topic/Category 2 based on query]
+- Specific finding with details [Source: URL]
+
+## Data Table (if applicable)
+| Name | Detail 1 | Detail 2 | Source |
+|------|----------|----------|--------|
+| Entry | Value | Value | [Link](URL) |
 
 ## Sources Used
-- Bulleted list of all URLs that provided information
+List all URLs that provided useful information.
 
-## Data Gaps & Limitations
-- What information was requested but not found in sources
-- Any caveats about source reliability or coverage
+## Limitations & Data Gaps
+- What wasn't found
+- Caveats about the data
 `,
     };
 
@@ -130,19 +152,35 @@ Present the key information found in sources. Use tables when listing multiple i
     const maxContentForAI = validatedType === 'verify' ? 8000 : 50000;
     const truncatedContent = contentValidation.value!.substring(0, maxContentForAI);
 
-    const userContent =
-      validatedType === 'verify'
-        ? `Claim: "${validatedQuery}"
+    // Build user content with clear structure
+    let userContent: string;
+    
+    if (validatedType === 'verify') {
+      userContent = `Claim: "${validatedQuery}"
 
 Content excerpt:
 ${truncatedContent}
 
-Return ONLY a JSON object (no markdown): { "support": "strong|moderate|weak|contradicts|none", "reason": "brief explanation" }`
-        : `Research Query: "${validatedQuery}"
+Return ONLY a JSON object (no markdown): { "support": "strong|moderate|weak|contradicts|none", "reason": "brief explanation" }`;
+    } else if (validatedType === 'report') {
+      userContent = `RESEARCH QUERY: "${validatedQuery}"
+
+INSTRUCTIONS: Read all the sources below carefully. Extract information that directly answers the research query. Include specific names, numbers, dates, and facts. Cite each piece of information with its source URL.
+
+=== SOURCE CONTENT ===
+
+${truncatedContent}
+
+=== END SOURCES ===
+
+Now write a comprehensive research report that answers the query "${validatedQuery}" using ONLY the information from the sources above. Be specific and cite everything.`;
+    } else {
+      userContent = `Research Query: "${validatedQuery}"
 
 Content to analyze:
 
 ${truncatedContent}`;
+    }
 
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
@@ -158,7 +196,6 @@ ${truncatedContent}`;
         ],
       }),
     });
-
 
     if (!response.ok) {
       if (response.status === 429) {

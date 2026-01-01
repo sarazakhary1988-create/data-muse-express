@@ -327,42 +327,66 @@ export class ResearchAgent {
     let lastError: string = '';
     let usedFallback = false;
     
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        console.log(`[ResearchAgent] Search attempt ${attempt}/${maxRetries}`);
-        
-        const searchResult = await researchApi.search(query, deepVerifyEnabled ? 15 : 20, false);
+    // Generate optimized search queries based on the research query
+    const searchQueries = this.generateSearchQueries(query);
+    console.log(`[ResearchAgent] Generated ${searchQueries.length} search queries:`, searchQueries);
+    
+    const allResults: any[] = [];
+    
+    for (const searchQuery of searchQueries) {
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          console.log(`[ResearchAgent] Search "${searchQuery.substring(0, 50)}..." attempt ${attempt}/${maxRetries}`);
+          
+          const limit = deepVerifyEnabled ? 10 : 15;
+          const searchResult = await researchApi.search(searchQuery, limit, false);
 
-        // If external search is unavailable, do NOT use synthetic results as sources.
-        // We continue in AI-only mode (or with deep-verify sources if present).
-        if (searchResult.fallback) {
-          usedFallback = true;
-          console.log('[ResearchAgent] External search unavailable - continuing without web results');
-          this.callbacks.onDecision?.('External search unavailable - continuing with agent reasoning', 0.7);
-          return [];
-        }
+          // If external search is unavailable, do NOT use synthetic results as sources.
+          if (searchResult.fallback) {
+            usedFallback = true;
+            console.log('[ResearchAgent] External search unavailable - continuing without web results');
+            this.callbacks.onDecision?.('External search unavailable - continuing with agent reasoning', 0.7);
+            break;
+          }
 
-        if (searchResult.success && searchResult.data && searchResult.data.length > 0) {
-          console.log(`[ResearchAgent] Search successful: ${searchResult.data.length} results${usedFallback ? ' (fallback)' : ''}`);
-          return searchResult.data;
-        }
+          if (searchResult.success && searchResult.data && searchResult.data.length > 0) {
+            console.log(`[ResearchAgent] Search successful: ${searchResult.data.length} results for "${searchQuery.substring(0, 30)}..."`);
+            allResults.push(...searchResult.data);
+            break; // Success, move to next query
+          }
 
-        lastError = searchResult.error || 'No results found';
-        
-        // If rate limited, wait with exponential backoff
-        if (searchResult.error?.includes('rate') || searchResult.error?.includes('429')) {
-          const waitTime = Math.pow(2, attempt) * 1000;
-          console.log(`[ResearchAgent] Rate limited, waiting ${waitTime}ms...`);
-          await new Promise(resolve => setTimeout(resolve, waitTime));
-        }
-      } catch (error) {
-        lastError = error instanceof Error ? error.message : 'Search failed';
-        console.error(`[ResearchAgent] Search attempt ${attempt} failed:`, lastError);
-        
-        if (attempt < maxRetries) {
-          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+          lastError = searchResult.error || 'No results found';
+          
+          // If rate limited, wait with exponential backoff
+          if (searchResult.error?.includes('rate') || searchResult.error?.includes('429')) {
+            const waitTime = Math.pow(2, attempt) * 1000;
+            console.log(`[ResearchAgent] Rate limited, waiting ${waitTime}ms...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+          }
+        } catch (error) {
+          lastError = error instanceof Error ? error.message : 'Search failed';
+          console.error(`[ResearchAgent] Search attempt ${attempt} failed:`, lastError);
+          
+          if (attempt < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+          }
         }
       }
+      
+      // If we have enough results, stop searching
+      if (allResults.length >= 20) {
+        break;
+      }
+    }
+    
+    // Deduplicate results by URL
+    const uniqueResults = allResults.filter((result, index, self) => 
+      index === self.findIndex(r => r.url === result.url)
+    );
+    
+    if (uniqueResults.length > 0) {
+      console.log(`[ResearchAgent] Total unique search results: ${uniqueResults.length}`);
+      return uniqueResults;
     }
     
     // All retries failed - continue with existing results or empty
@@ -375,6 +399,52 @@ export class ResearchAgent {
     console.log('[ResearchAgent] No external search available, entering AI-only research mode');
     this.callbacks.onDecision?.('Running in AI-only mode - synthesizing from knowledge', 0.6);
     return [];
+  }
+
+  // Generate multiple search queries from a complex research query
+  private generateSearchQueries(query: string): string[] {
+    const queries: string[] = [];
+    
+    // Add the original query (cleaned)
+    const cleanQuery = query.trim().replace(/[?!.]+$/, '');
+    queries.push(cleanQuery);
+    
+    // Extract key phrases for additional searches
+    const queryLower = query.toLowerCase();
+    
+    // If it's a "list" or "what are" query, create a more direct search
+    if (/\b(list|what are|which|who are|names? of)\b/i.test(query)) {
+      // Extract the main subject
+      const listMatch = query.match(/(?:list|what are|which|who are|names? of)\s+(?:the\s+)?(.+)/i);
+      if (listMatch && listMatch[1]) {
+        const subject = listMatch[1].replace(/[?!.]+$/, '').trim();
+        queries.push(subject);
+        
+        // Add variations
+        if (subject.includes(' that ')) {
+          queries.push(subject.replace(' that ', ' '));
+        }
+      }
+    }
+    
+    // For comparison queries, search for each item
+    if (/\b(compare|vs|versus)\b/i.test(query)) {
+      const parts = query.split(/\s+(?:vs|versus|compare|and)\s+/i);
+      parts.forEach(part => {
+        if (part.length > 5) {
+          queries.push(part.trim());
+        }
+      });
+    }
+    
+    // Add time-bounded search if a year is mentioned
+    const yearMatch = query.match(/\b(20\d{2})\b/);
+    if (yearMatch && !cleanQuery.includes(yearMatch[1])) {
+      queries.push(`${cleanQuery} ${yearMatch[1]}`);
+    }
+    
+    // Remove duplicates and limit
+    return [...new Set(queries)].slice(0, 3);
   }
 
   private async executeScraping(searchResults: any[]): Promise<void> {
@@ -516,15 +586,31 @@ export class ResearchAgent {
       return this.generateAIOnlyReport(query);
     }
     
-    // Standard flow with sources
-    const combinedContent = this.results
+    // Build structured content with clear source demarcation
+    const validResults = this.results
       .slice(0, 15)
-      .filter(r => r.content && r.content.length > 50)
-      .map((r, i) => `SOURCE ${i + 1}: ${r.url}\nTITLE: ${r.title}\nDOMAIN: ${r.metadata.domain || 'unknown'}\n\nCONTENT:\n${r.content}`)
-      .join('\n\n---\n\n');
+      .filter(r => r.content && r.content.length > 50);
+    
+    // Format each source with clear boundaries and metadata
+    const formattedSources = validResults.map((r, i) => {
+      const domain = r.metadata.domain || new URL(r.url).hostname.replace('www.', '');
+      const wordCount = r.content.split(/\s+/).length;
+      
+      return `
+=== SOURCE ${i + 1} ===
+URL: ${r.url}
+TITLE: ${r.title}
+DOMAIN: ${domain}
+RELEVANCE: ${Math.round(r.relevanceScore * 100)}%
+WORD COUNT: ${wordCount}
+
+CONTENT:
+${r.content.substring(0, 8000)}
+=== END SOURCE ${i + 1} ===`;
+    }).join('\n\n');
 
     // Guard: If no content after filtering, use AI synthesis
-    if (!combinedContent || combinedContent.trim().length < 100) {
+    if (!formattedSources || formattedSources.trim().length < 200) {
       console.warn('[ResearchAgent] Filtered content too short, using AI synthesis');
       return this.generateAIOnlyReport(query);
     }
@@ -533,7 +619,7 @@ export class ResearchAgent {
     let extractedData: ExtractedData | null = null;
     try {
       console.log('[ResearchAgent] Extracting structured data...');
-      const extractResult = await researchApi.extract(query, combinedContent, 'all');
+      const extractResult = await researchApi.extract(query, formattedSources, 'all');
       if (extractResult.success && extractResult.data) {
         extractedData = extractResult.data;
         console.log('[ResearchAgent] Extracted:', {
@@ -547,13 +633,18 @@ export class ResearchAgent {
     }
 
     try {
-      // If we have structured data, enrich the report prompt
-      let enrichedContent = combinedContent;
+      // If we have structured data, prepend it for context
+      let enrichedContent = formattedSources;
       if (extractedData && (extractedData.companies?.length > 0 || extractedData.key_facts?.length > 0)) {
         const structuredSummary = this.formatExtractedData(extractedData);
-        enrichedContent = `EXTRACTED STRUCTURED DATA:\n${structuredSummary}\n\n---\n\nSOURCE CONTENT:\n${combinedContent}`;
+        enrichedContent = `=== PRE-EXTRACTED STRUCTURED DATA ===
+${structuredSummary}
+=== END STRUCTURED DATA ===
+
+${formattedSources}`;
       }
 
+      console.log(`[ResearchAgent] Sending ${enrichedContent.length} chars to AI for report generation`);
       const analyzeResult = await researchApi.analyze(query, enrichedContent, 'report');
       
       if (analyzeResult.success && analyzeResult.result) {
