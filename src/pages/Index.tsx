@@ -12,6 +12,7 @@ import { ReportViewer } from '@/components/ReportViewer';
 import { TaskHistory } from '@/components/TaskHistory';
 import { UrlScraper } from '@/components/UrlScraper';
 import { AgentStatusPanel } from '@/components/AgentStatusPanel';
+import { ScheduledTasksView } from '@/components/scheduled/ScheduledTasksView';
 import { useResearchStore, ResearchTask } from '@/store/researchStore';
 import { useResearchEngine } from '@/hooks/useResearchEngine';
 
@@ -214,6 +215,9 @@ const Index = () => {
             </motion.div>
           </div>
         );
+
+      case 'scheduled':
+        return <ScheduledTasksView onBack={handleBackToSearch} />;
 
       case 'history':
         return (

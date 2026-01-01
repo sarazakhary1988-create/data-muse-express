@@ -14,7 +14,137 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      scheduled_research_tasks: {
+        Row: {
+          country: string | null
+          created_at: string
+          custom_interval_days: number | null
+          custom_websites: string[] | null
+          delivery_email: string | null
+          delivery_method: string
+          description: string
+          enhanced_description: string | null
+          execution_mode: string
+          geographic_focus: string | null
+          id: string
+          industry: string | null
+          is_active: boolean
+          last_run_at: string | null
+          next_run_at: string | null
+          report_format: string
+          research_depth: string
+          schedule_day_of_month: number | null
+          schedule_day_of_week: number | null
+          schedule_month: number | null
+          schedule_time: string | null
+          schedule_type: string
+          source_types: string[] | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          country?: string | null
+          created_at?: string
+          custom_interval_days?: number | null
+          custom_websites?: string[] | null
+          delivery_email?: string | null
+          delivery_method?: string
+          description: string
+          enhanced_description?: string | null
+          execution_mode?: string
+          geographic_focus?: string | null
+          id?: string
+          industry?: string | null
+          is_active?: boolean
+          last_run_at?: string | null
+          next_run_at?: string | null
+          report_format?: string
+          research_depth?: string
+          schedule_day_of_month?: number | null
+          schedule_day_of_week?: number | null
+          schedule_month?: number | null
+          schedule_time?: string | null
+          schedule_type?: string
+          source_types?: string[] | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          country?: string | null
+          created_at?: string
+          custom_interval_days?: number | null
+          custom_websites?: string[] | null
+          delivery_email?: string | null
+          delivery_method?: string
+          description?: string
+          enhanced_description?: string | null
+          execution_mode?: string
+          geographic_focus?: string | null
+          id?: string
+          industry?: string | null
+          is_active?: boolean
+          last_run_at?: string | null
+          next_run_at?: string | null
+          report_format?: string
+          research_depth?: string
+          schedule_day_of_month?: number | null
+          schedule_day_of_week?: number | null
+          schedule_month?: number | null
+          schedule_time?: string | null
+          schedule_type?: string
+          source_types?: string[] | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      scheduled_task_runs: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          email_sent: boolean | null
+          error_message: string | null
+          id: string
+          report_content: string | null
+          report_format: string | null
+          started_at: string | null
+          status: string
+          task_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          email_sent?: boolean | null
+          error_message?: string | null
+          id?: string
+          report_content?: string | null
+          report_format?: string | null
+          started_at?: string | null
+          status?: string
+          task_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          email_sent?: boolean | null
+          error_message?: string | null
+          id?: string
+          report_content?: string | null
+          report_format?: string | null
+          started_at?: string | null
+          status?: string
+          task_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scheduled_task_runs_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "scheduled_research_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

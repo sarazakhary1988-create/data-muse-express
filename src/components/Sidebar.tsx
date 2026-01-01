@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Logo } from '@/components/Logo';
 import { cn } from '@/lib/utils';
 
-export type ViewType = 'search' | 'results' | 'report' | 'history' | 'scraper';
+export type ViewType = 'search' | 'results' | 'report' | 'history' | 'scraper' | 'scheduled';
 
 interface SidebarProps {
   activeView: ViewType;
@@ -25,6 +25,7 @@ interface SidebarProps {
 
 const menuItems = [
   { id: 'search', label: 'Research', icon: Globe, description: 'Start new research' },
+  { id: 'scheduled', label: 'Scheduled Tasks', icon: Sparkles, description: 'Automated research' },
   { id: 'scraper', label: 'URL Scraper', icon: Link, description: 'Scrape any website' },
   { id: 'results', label: 'Results', icon: Layers, description: 'View findings' },
   { id: 'report', label: 'Reports', icon: FileText, description: 'Generated reports' },
