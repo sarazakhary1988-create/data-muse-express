@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { ResearchTask, ResearchResult, Report, useResearchStore } from '@/store/researchStore';
+import { researchApi } from '@/lib/api/research';
 import { toast } from '@/hooks/use-toast';
 
-// Simulated research engine - in production, this would connect to real APIs
 export const useResearchEngine = () => {
   const { 
     addTask, 
@@ -12,78 +12,86 @@ export const useResearchEngine = () => {
     setSearchQuery 
   } = useResearchStore();
 
-  const generateMockResults = (query: string): ResearchResult[] => {
-    const domains = ['wikipedia.org', 'arxiv.org', 'medium.com', 'github.com', 'stackoverflow.com', 'docs.google.com', 'research.google', 'nature.com'];
-    const numResults = Math.floor(Math.random() * 5) + 5;
-    
-    return Array.from({ length: numResults }, (_, i) => ({
-      id: `result-${Date.now()}-${i}`,
-      title: `${query} - Comprehensive Analysis Part ${i + 1}`,
-      url: `https://${domains[i % domains.length]}/research/${encodeURIComponent(query.toLowerCase().replace(/\s+/g, '-'))}-${i}`,
-      content: `This is a detailed analysis of ${query}. The research indicates significant findings that contribute to the understanding of this topic. Key points include methodology, data analysis, and conclusions drawn from extensive study.`,
-      summary: `In-depth exploration of ${query} covering key aspects, methodologies, and findings. This source provides valuable insights into the subject matter with supporting evidence and expert analysis.`,
-      relevanceScore: 0.6 + Math.random() * 0.4,
-      extractedAt: new Date(),
-      metadata: {
-        author: ['Dr. Sarah Chen', 'Prof. Michael Roberts', 'Research Team Alpha', 'Academic Publishing'][Math.floor(Math.random() * 4)],
-        publishDate: new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000).toLocaleDateString(),
-        wordCount: Math.floor(Math.random() * 5000) + 1000,
-        domain: domains[i % domains.length],
-      },
-    }));
+  const extractDomain = (url: string): string => {
+    try {
+      const urlObj = new URL(url);
+      return urlObj.hostname.replace('www.', '');
+    } catch {
+      return 'unknown';
+    }
   };
 
-  const generateReport = (query: string, results: ResearchResult[]): Report => {
+  const calculateRelevanceScore = (item: any, query: string): number => {
+    const queryLower = query.toLowerCase();
+    const title = (item.title || '').toLowerCase();
+    const description = (item.description || '').toLowerCase();
+    const markdown = (item.markdown || '').toLowerCase();
+    
+    let score = 0.5;
+    
+    // Title contains query terms
+    const queryWords = queryLower.split(/\s+/).filter(w => w.length > 2);
+    for (const word of queryWords) {
+      if (title.includes(word)) score += 0.15;
+      if (description.includes(word)) score += 0.1;
+      if (markdown.includes(word)) score += 0.05;
+    }
+    
+    // Exact phrase match
+    if (title.includes(queryLower)) score += 0.2;
+    if (description.includes(queryLower)) score += 0.1;
+    
+    return Math.min(1, score);
+  };
+
+  const generateReport = async (query: string, results: ResearchResult[]): Promise<Report> => {
+    // Combine all content for AI analysis
+    const combinedContent = results
+      .slice(0, 8)
+      .map(r => `## ${r.title}\nSource: ${r.url}\n\n${r.content}`)
+      .join('\n\n---\n\n');
+
+    let reportContent = '';
+    
+    try {
+      // Generate AI-powered report
+      const analyzeResult = await researchApi.analyze(query, combinedContent, 'report');
+      
+      if (analyzeResult.success && analyzeResult.result) {
+        reportContent = analyzeResult.result;
+      } else {
+        // Fallback to basic report
+        reportContent = generateBasicReport(query, results);
+      }
+    } catch (error) {
+      console.error('AI report generation failed:', error);
+      reportContent = generateBasicReport(query, results);
+    }
+
     const sections = [
-      {
-        id: 'executive-summary',
-        title: 'Executive Summary',
-        content: `This report presents comprehensive research findings on "${query}". Through analysis of ${results.length} authoritative sources, we have compiled key insights and actionable information.`,
-        order: 1,
-      },
-      {
-        id: 'methodology',
-        title: 'Research Methodology',
-        content: `Our research methodology involved systematic web crawling, content extraction, and AI-powered analysis. Sources were evaluated based on relevance, authority, and recency.`,
-        order: 2,
-      },
-      {
-        id: 'findings',
-        title: 'Key Findings',
-        content: results.map((r, i) => `${i + 1}. **${r.title}**: ${r.summary}`).join('\n\n'),
-        order: 3,
-      },
-      {
-        id: 'sources',
-        title: 'Source Analysis',
-        content: results.map(r => `- [${r.title}](${r.url}) - Relevance: ${Math.round(r.relevanceScore * 100)}%`).join('\n'),
-        order: 4,
-      },
-      {
-        id: 'conclusion',
-        title: 'Conclusion',
-        content: `Based on the analysis of ${results.length} sources, this research provides a comprehensive overview of "${query}". The findings demonstrate the breadth and depth of available information on this topic.`,
-        order: 5,
-      },
+      { id: 'content', title: 'Full Report', content: reportContent, order: 1 },
     ];
 
-    const content = `# Research Report: ${query}
+    return {
+      id: `report-${Date.now()}`,
+      title: `Research Report: ${query}`,
+      taskId: '',
+      format: 'markdown',
+      content: reportContent,
+      createdAt: new Date(),
+      sections,
+    };
+  };
+
+  const generateBasicReport = (query: string, results: ResearchResult[]): string => {
+    const uniqueDomains = new Set(results.map(r => r.metadata.domain)).size;
+    const avgRelevance = Math.round(results.reduce((acc, r) => acc + r.relevanceScore, 0) / results.length * 100);
+    
+    return `# Research Report: ${query}
 
 ## Executive Summary
 
-This comprehensive research report analyzes "${query}" using advanced AI-powered web research capabilities. We examined ${results.length} high-quality sources to compile the most relevant and accurate information available.
-
----
-
-## Research Methodology
-
-Our research process follows a systematic approach:
-
-1. **Query Analysis**: Understanding the research intent and identifying key topics
-2. **Web Search**: Searching multiple authoritative sources
-3. **Content Extraction**: Extracting relevant content from discovered pages
-4. **AI Analysis**: Processing and synthesizing information
-5. **Report Generation**: Compiling findings into a structured format
+This comprehensive research report analyzes "${query}" using AI-powered web research. We examined ${results.length} high-quality sources from ${uniqueDomains} unique domains.
 
 ---
 
@@ -93,9 +101,8 @@ ${results.slice(0, 5).map((r, i) => `### ${i + 1}. ${r.title}
 
 ${r.summary}
 
-**Relevance Score**: ${Math.round(r.relevanceScore * 100)}%  
 **Source**: [${r.metadata.domain}](${r.url})  
-${r.metadata.author ? `**Author**: ${r.metadata.author}` : ''}
+**Relevance**: ${Math.round(r.relevanceScore * 100)}%
 `).join('\n')}
 
 ---
@@ -104,44 +111,20 @@ ${r.metadata.author ? `**Author**: ${r.metadata.author}` : ''}
 
 | Metric | Value |
 |--------|-------|
-| Total Sources Analyzed | ${results.length} |
-| Average Relevance Score | ${Math.round(results.reduce((acc, r) => acc + r.relevanceScore, 0) / results.length * 100)}% |
-| Total Word Count | ${results.reduce((acc, r) => acc + (r.metadata.wordCount || 0), 0).toLocaleString()} |
-| Unique Domains | ${new Set(results.map(r => r.metadata.domain)).size} |
+| Total Sources | ${results.length} |
+| Average Relevance | ${avgRelevance}% |
+| Unique Domains | ${uniqueDomains} |
 
 ---
 
-## Sources Referenced
+## All Sources
 
-${results.map((r, i) => `${i + 1}. [${r.title}](${r.url}) - ${r.metadata.domain}`).join('\n')}
-
----
-
-## Conclusion
-
-This research provides a thorough analysis of "${query}". The compiled information represents current, authoritative content from ${new Set(results.map(r => r.metadata.domain)).size} distinct domains.
-
-### Recommendations
-
-1. Review the top-ranked sources for detailed information
-2. Cross-reference findings with domain-specific experts
-3. Consider temporal relevance of the information
-4. Use the exported data for further analysis
+${results.map((r, i) => `${i + 1}. [${r.title}](${r.url})`).join('\n')}
 
 ---
 
-*Report generated by NexusAI Research Engine on ${new Date().toLocaleDateString()}*
+*Generated by NexusAI Research Engine on ${new Date().toLocaleDateString()}*
 `;
-
-    return {
-      id: `report-${Date.now()}`,
-      title: `Research Report: ${query}`,
-      taskId: '',
-      format: 'markdown',
-      content,
-      createdAt: new Date(),
-      sections,
-    };
   };
 
   const startResearch = useCallback(async (query: string) => {
@@ -160,24 +143,61 @@ This research provides a thorough analysis of "${query}". The compiled informati
     setIsSearching(true);
 
     try {
-      // Simulate research steps
-      const steps = [
-        { progress: 20, delay: 800 },
-        { progress: 45, delay: 1200 },
-        { progress: 70, delay: 1500 },
-        { progress: 90, delay: 1000 },
-        { progress: 100, delay: 500 },
-      ];
+      // Step 1: Search the web
+      updateTask(taskId, { progress: 10 });
+      
+      toast({
+        title: "Searching the web...",
+        description: `Finding sources for: ${query}`,
+      });
 
-      for (const step of steps) {
-        await new Promise(resolve => setTimeout(resolve, step.delay));
-        updateTask(taskId, { progress: step.progress });
+      const searchResult = await researchApi.search(query, 10, true);
+      
+      updateTask(taskId, { progress: 40 });
+
+      if (!searchResult.success || !searchResult.data) {
+        throw new Error(searchResult.error || 'Search failed');
       }
 
-      // Generate mock results
-      const results = generateMockResults(query);
-      const report = generateReport(query, results);
+      // Step 2: Process search results
+      toast({
+        title: "Processing results...",
+        description: `Found ${searchResult.data.length} sources`,
+      });
 
+      updateTask(taskId, { progress: 60 });
+
+      // Transform search results to ResearchResult format
+      const results: ResearchResult[] = searchResult.data.map((item, index) => ({
+        id: `result-${Date.now()}-${index}`,
+        title: item.title || 'Untitled',
+        url: item.url,
+        content: item.markdown || item.description || '',
+        summary: item.description || (item.markdown ? item.markdown.substring(0, 300) + '...' : 'No summary available'),
+        relevanceScore: calculateRelevanceScore(item, query),
+        extractedAt: new Date(),
+        metadata: {
+          domain: extractDomain(item.url),
+          wordCount: item.markdown?.split(/\s+/).length || 0,
+        },
+      }));
+
+      // Sort by relevance
+      results.sort((a, b) => b.relevanceScore - a.relevanceScore);
+
+      updateTask(taskId, { progress: 75, results });
+
+      // Step 3: Generate AI report
+      toast({
+        title: "Generating report...",
+        description: "AI is analyzing the research data",
+      });
+
+      const report = await generateReport(query, results);
+      
+      updateTask(taskId, { progress: 100 });
+
+      // Complete the task
       updateTask(taskId, {
         status: 'completed',
         progress: 100,
@@ -190,19 +210,23 @@ This research provides a thorough analysis of "${query}". The compiled informati
 
       toast({
         title: "Research Complete",
-        description: `Found ${results.length} relevant sources and generated a comprehensive report.`,
+        description: `Analyzed ${results.length} sources and generated a comprehensive report.`,
       });
 
       return { task: newTask, results, report };
     } catch (error) {
+      console.error('Research error:', error);
+      
       updateTask(taskId, {
         status: 'failed',
         progress: 0,
       });
 
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
       toast({
         title: "Research Failed",
-        description: "An error occurred during research. Please try again.",
+        description: errorMessage,
         variant: "destructive",
       });
 
@@ -212,5 +236,61 @@ This research provides a thorough analysis of "${query}". The compiled informati
     }
   }, [addTask, updateTask, addReport, setIsSearching, setSearchQuery]);
 
-  return { startResearch };
+  // Deep research - scrapes specific URLs
+  const deepScrape = useCallback(async (url: string) => {
+    toast({
+      title: "Scraping...",
+      description: `Extracting content from ${url}`,
+    });
+
+    const result = await researchApi.scrape(url);
+    
+    if (!result.success) {
+      toast({
+        title: "Scrape Failed",
+        description: result.error || 'Failed to scrape URL',
+        variant: "destructive",
+      });
+      return null;
+    }
+
+    toast({
+      title: "Scrape Complete",
+      description: `Successfully extracted content from ${extractDomain(url)}`,
+    });
+
+    return result;
+  }, []);
+
+  // Map a website to discover URLs
+  const mapWebsite = useCallback(async (url: string, searchTerm?: string) => {
+    toast({
+      title: "Mapping website...",
+      description: `Discovering URLs on ${url}`,
+    });
+
+    const result = await researchApi.map(url, searchTerm);
+    
+    if (!result.success) {
+      toast({
+        title: "Map Failed",
+        description: result.error || 'Failed to map website',
+        variant: "destructive",
+      });
+      return null;
+    }
+
+    toast({
+      title: "Map Complete",
+      description: `Found ${result.links?.length || 0} URLs`,
+    });
+
+    return result;
+  }, []);
+
+  return { 
+    startResearch, 
+    deepScrape, 
+    mapWebsite 
+  };
 };

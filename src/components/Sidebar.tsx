@@ -9,19 +9,23 @@ import {
   ChevronLeft,
   ChevronRight,
   Sparkles,
-  History as HistoryIcon
+  History as HistoryIcon,
+  Link
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Logo } from '@/components/Logo';
 import { cn } from '@/lib/utils';
 
+export type ViewType = 'search' | 'results' | 'report' | 'history' | 'scraper';
+
 interface SidebarProps {
-  activeView: 'search' | 'results' | 'report' | 'history';
-  onViewChange: (view: 'search' | 'results' | 'report' | 'history') => void;
+  activeView: ViewType;
+  onViewChange: (view: ViewType) => void;
 }
 
 const menuItems = [
   { id: 'search', label: 'Research', icon: Globe, description: 'Start new research' },
+  { id: 'scraper', label: 'URL Scraper', icon: Link, description: 'Scrape any website' },
   { id: 'results', label: 'Results', icon: Layers, description: 'View findings' },
   { id: 'report', label: 'Reports', icon: FileText, description: 'Generated reports' },
   { id: 'history', label: 'History', icon: HistoryIcon, description: 'Past research' },
@@ -75,7 +79,7 @@ export const Sidebar = ({ activeView, onViewChange }: SidebarProps) => {
             <Button
               key={item.id}
               variant={isActive ? "default" : "ghost"}
-              onClick={() => onViewChange(item.id)}
+              onClick={() => onViewChange(item.id as ViewType)}
               className={cn(
                 "w-full justify-start gap-3 h-12 transition-all",
                 isCollapsed && "justify-center px-0",

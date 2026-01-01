@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Sparkles, Globe, ArrowRight, Loader2 } from 'lucide-react';
+import { Search, Sparkles, Globe, ArrowRight, Loader2, Link, FileSearch } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useResearchStore } from '@/store/researchStore';
+import { Badge } from '@/components/ui/badge';
 
 interface SearchInputProps {
   onSearch: (query: string) => void;
+  onScrapeUrl?: (url: string) => void;
 }
 
 const exampleQueries = [
@@ -15,11 +17,18 @@ const exampleQueries = [
   "Comprehensive guide to modern web development",
 ];
 
-export const SearchInput = ({ onSearch }: SearchInputProps) => {
+const isUrl = (text: string): boolean => {
+  const urlPattern = /^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$/i;
+  return urlPattern.test(text.trim());
+};
+
+export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
   const { searchQuery, setSearchQuery, isSearching } = useResearchStore();
   const [isFocused, setIsFocused] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const detectedUrl = isUrl(searchQuery);
 
   useEffect(() => {
     if (inputRef.current) {
@@ -31,6 +40,13 @@ export const SearchInput = ({ onSearch }: SearchInputProps) => {
   const handleSubmit = () => {
     if (searchQuery.trim() && !isSearching) {
       onSearch(searchQuery.trim());
+      setShowSuggestions(false);
+    }
+  };
+
+  const handleScrape = () => {
+    if (searchQuery.trim() && !isSearching && onScrapeUrl) {
+      onScrapeUrl(searchQuery.trim());
       setShowSuggestions(false);
     }
   };
@@ -65,13 +81,22 @@ export const SearchInput = ({ onSearch }: SearchInputProps) => {
             >
               {isSearching ? (
                 <Loader2 className="w-5 h-5 text-primary" />
+              ) : detectedUrl ? (
+                <Link className="w-5 h-5 text-primary" />
               ) : (
                 <Globe className="w-5 h-5 text-primary" />
               )}
             </motion.div>
             <span className="text-sm text-muted-foreground font-medium">
-              {isSearching ? 'Searching the web...' : 'What would you like to research?'}
+              {isSearching ? 'Searching the web...' : 
+               detectedUrl ? 'URL detected - Scrape or search for it' :
+               'What would you like to research?'}
             </span>
+            {detectedUrl && (
+              <Badge variant="secondary" className="text-xs">
+                URL
+              </Badge>
+            )}
           </div>
 
           {/* Textarea */}
@@ -88,7 +113,7 @@ export const SearchInput = ({ onSearch }: SearchInputProps) => {
               setTimeout(() => setShowSuggestions(false), 200);
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Enter your research query, topic, or URL to analyze..."
+            placeholder="Enter your research query, topic, or URL to scrape..."
             className="w-full px-5 py-3 bg-transparent text-foreground text-lg placeholder:text-muted-foreground/50 focus:outline-none resize-none min-h-[60px] max-h-[200px] scrollbar-thin"
             disabled={isSearching}
             rows={1}
@@ -98,28 +123,42 @@ export const SearchInput = ({ onSearch }: SearchInputProps) => {
           <div className="flex items-center justify-between px-5 pb-4 pt-2 border-t border-border/50">
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Sparkles className="w-3 h-3" />
-              <span>AI-powered deep research</span>
+              <span>AI-powered deep research with real web scraping</span>
             </div>
-            <Button
-              onClick={handleSubmit}
-              disabled={!searchQuery.trim() || isSearching}
-              variant="hero"
-              size="default"
-              className="gap-2"
-            >
-              {isSearching ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Researching...
-                </>
-              ) : (
-                <>
-                  <Search className="w-4 h-4" />
-                  Research
-                  <ArrowRight className="w-4 h-4" />
-                </>
+            <div className="flex items-center gap-2">
+              {detectedUrl && onScrapeUrl && (
+                <Button
+                  onClick={handleScrape}
+                  disabled={!searchQuery.trim() || isSearching}
+                  variant="outline"
+                  size="default"
+                  className="gap-2"
+                >
+                  <FileSearch className="w-4 h-4" />
+                  Scrape URL
+                </Button>
               )}
-            </Button>
+              <Button
+                onClick={handleSubmit}
+                disabled={!searchQuery.trim() || isSearching}
+                variant="hero"
+                size="default"
+                className="gap-2"
+              >
+                {isSearching ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Researching...
+                  </>
+                ) : (
+                  <>
+                    <Search className="w-4 h-4" />
+                    {detectedUrl ? 'Search About' : 'Research'}
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </div>
 
