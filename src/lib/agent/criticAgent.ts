@@ -153,14 +153,20 @@ export class CriticAgent {
         }
       });
 
-      if (data?.result) {
+      if (data?.result && typeof data.result === 'string') {
         const jsonMatch = data.result.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]);
-          return { 
-            level: parsed.support || (matchRatio > 0.5 ? 'moderate' : 'weak'), 
-            excerpt 
-          };
+          try {
+            const parsed = JSON.parse(jsonMatch[0]);
+            if (parsed && typeof parsed.support === 'string') {
+              return { 
+                level: parsed.support || (matchRatio > 0.5 ? 'moderate' : 'weak'), 
+                excerpt: String(excerpt) 
+              };
+            }
+          } catch {
+            // JSON parse failed, use heuristic
+          }
         }
       }
     } catch {
