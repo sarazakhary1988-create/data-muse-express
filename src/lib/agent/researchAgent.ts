@@ -239,33 +239,49 @@ export class ResearchAgent {
   // Perform web search using the AI-powered search
   private async performWebSearch(query: string): Promise<AgentResearchResult[]> {
     try {
-      console.log('[ResearchAgent] Performing AI-powered web search for:', query);
+      console.log('[ResearchAgent] Performing REAL web search for:', query);
       
-      const searchResult = await researchApi.search(query, 10, false);
+      // Use strict mode to ensure real data only
+      const searchResult = await researchApi.search(query, 10, false, {
+        strictMode: true,
+        minSources: 2,
+        country: 'sa' // Saudi Arabia
+      });
+      
+      // Handle strict mode failure
+      if (searchResult.strictModeFailure) {
+        console.error('[ResearchAgent] STRICT MODE FAILURE:', searchResult.error);
+        console.error('[ResearchAgent] Unreachable sources:', searchResult.unreachableSources);
+        throw new Error(`Research failed: ${searchResult.error}. Unreachable sources: ${searchResult.unreachableSources?.map(s => s.name).join(', ')}`);
+      }
       
       if (!searchResult.success || !searchResult.data || searchResult.data.length === 0) {
         console.log('[ResearchAgent] No web search results found');
         return [];
       }
 
-      console.log('[ResearchAgent] Web search returned', searchResult.data.length, 'results');
+      console.log('[ResearchAgent] Web search returned', searchResult.data.length, 'REAL results from sources');
+      if (searchResult.summary) {
+        console.log('[ResearchAgent] Sources:', searchResult.summary.sourcesReachable, 'reachable,', searchResult.summary.sourcesUnreachable, 'unreachable');
+      }
 
       return searchResult.data.map((item, index) => ({
         id: `web-search-${Date.now()}-${index}`,
         title: item.title || `Search Result ${index + 1}`,
-        url: item.url || `https://search-result-${index + 1}.com`,
+        url: item.url,
         content: item.markdown || item.description || '',
         summary: item.description || '',
-        relevanceScore: 0.85 - (index * 0.05), // Decreasing relevance
+        relevanceScore: 0.85 - (index * 0.05),
         extractedAt: new Date(),
         metadata: {
-          domain: new URL(item.url || 'https://example.com').hostname.replace('www.', ''),
-          wordCount: (item.markdown || item.description || '').split(/\s+/).length
+          domain: new URL(item.url).hostname.replace('www.', ''),
+          wordCount: (item.markdown || item.description || '').split(/\s+/).length,
+          fetchedAt: item.fetchedAt
         }
       }));
     } catch (error) {
       console.error('[ResearchAgent] Web search error:', error);
-      return [];
+      throw error; // Re-throw to show the user what went wrong
     }
   }
 

@@ -17,6 +17,23 @@ export interface ScrapeResult {
   error?: string;
 }
 
+export interface SourceStatus {
+  name: string;
+  baseUrl: string;
+  status: 'success' | 'failed' | 'timeout' | 'blocked' | 'no_content';
+  pagesFound: number;
+  pagesExtracted: number;
+  error?: string;
+  responseTime?: number;
+}
+
+export interface UnreachableSource {
+  name: string;
+  url: string;
+  reason: string;
+  responseTime?: number;
+}
+
 export interface SearchResult {
   success: boolean;
   data?: Array<{
@@ -24,9 +41,22 @@ export interface SearchResult {
     title: string;
     description?: string;
     markdown?: string;
+    fetchedAt?: string;
+    sourceStatus?: string;
   }>;
   error?: string;
   searchMethod?: string;
+  strictModeFailure?: boolean;
+  sourceStatuses?: SourceStatus[];
+  unreachableSources?: UnreachableSource[];
+  recommendations?: string[];
+  summary?: {
+    sourcesChecked: number;
+    sourcesReachable: number;
+    sourcesUnreachable: number;
+    totalPagesFound: number;
+    totalPagesExtracted: number;
+  };
 }
 
 export interface AnalyzeResult {
@@ -74,7 +104,7 @@ export interface MapResult {
 }
 
 export const researchApi = {
-  // Scrape a single URL using AI-powered analysis
+  // Scrape a single URL using direct fetch + extraction
   async scrape(
     url: string,
     formats: string[] = ['markdown', 'links'],
@@ -92,7 +122,7 @@ export const researchApi = {
       }
 
       if (!data?.success) {
-        console.warn('Scrape failed');
+        console.warn('Scrape failed:', data?.error);
         return this.fallbackScrape(url);
       }
 
@@ -107,9 +137,10 @@ export const researchApi = {
   fallbackScrape(url: string): ScrapeResult {
     const domain = new URL(url).hostname.replace('www.', '');
     return {
-      success: true,
+      success: false,
+      error: `Could not fetch content from ${domain}`,
       data: {
-        markdown: `[Content from ${domain}]\n\nURL: ${url}\n\n*AI-powered content analysis mode.*`,
+        markdown: `[Content unavailable from ${domain}]\n\nURL: ${url}\n\n*Direct fetch failed - source may be blocked or unavailable.*`,
         metadata: {
           title: `Page from ${domain}`,
           sourceURL: url,
@@ -118,36 +149,83 @@ export const researchApi = {
     };
   },
 
-  // Search using AI-powered research (no external dependencies)
-  async search(query: string, limit: number = 12, scrapeContent: boolean = false): Promise<SearchResult> {
+  // Search with strict mode support
+  async search(
+    query: string, 
+    limit: number = 12, 
+    scrapeContent: boolean = false,
+    options?: {
+      strictMode?: boolean;
+      minSources?: number;
+      country?: string;
+    }
+  ): Promise<SearchResult> {
     try {
       const { data, error } = await supabase.functions.invoke('research-search', {
-        body: { query, limit, scrapeContent, lang: 'en' },
+        body: { 
+          query, 
+          limit, 
+          scrapeContent, 
+          lang: 'en',
+          strictMode: options?.strictMode ?? false,
+          minSources: options?.minSources ?? 2,
+          country: options?.country,
+        },
       });
 
       if (error) {
-        console.warn('Search function error:', error);
-        return { success: true, data: [], error: 'Search temporarily unavailable' };
+        console.error('Search function error:', error);
+        return { 
+          success: false, 
+          data: [], 
+          error: error.message || 'Search temporarily unavailable' 
+        };
       }
 
-      if (!data?.success || !data?.data?.length) {
-        console.warn('Search returned no results');
-        return { success: true, data: [], searchMethod: 'ai-powered' };
+      // Handle strict mode failure
+      if (data?.strictModeFailure) {
+        console.warn('Strict mode failure:', data.error);
+        return {
+          success: false,
+          error: data.error,
+          strictModeFailure: true,
+          sourceStatuses: data.sourceStatuses,
+          unreachableSources: data.unreachableSources,
+          recommendations: data.recommendations,
+          data: [],
+        };
+      }
+
+      if (!data?.success) {
+        console.warn('Search returned no results:', data?.error);
+        return { 
+          success: false, 
+          data: [], 
+          error: data?.error || 'No results found',
+          sourceStatuses: data?.sourceStatuses,
+        };
       }
 
       return {
         success: true,
-        data: data.data.map((item: { url: string; title: string; description?: string; markdown?: string }) => ({
+        data: data.data.map((item: { url: string; title: string; description?: string; markdown?: string; fetchedAt?: string }) => ({
           url: item.url,
           title: item.title,
           description: item.description || '',
           markdown: item.markdown || item.description || '',
+          fetchedAt: item.fetchedAt,
         })),
-        searchMethod: data.searchMethod || 'ai-powered'
+        searchMethod: data.searchMethod || 'internal_fetch',
+        sourceStatuses: data.sourceStatuses,
+        summary: data.summary,
       };
     } catch (err) {
-      console.warn('Search error:', err);
-      return { success: true, data: [], error: 'Search failed' };
+      console.error('Search error:', err);
+      return { 
+        success: false, 
+        data: [], 
+        error: err instanceof Error ? err.message : 'Search failed' 
+      };
     }
   },
 
@@ -198,7 +276,7 @@ export const researchApi = {
     }
   },
 
-  // Map a website to discover URLs using AI
+  // Map a website to discover URLs
   async map(url: string, search?: string, limit: number = 100): Promise<MapResult> {
     try {
       const { data, error } = await supabase.functions.invoke('research-map', {

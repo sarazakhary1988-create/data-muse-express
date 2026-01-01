@@ -10,8 +10,10 @@ interface SearchRequest {
   query: string;
   limit?: number;
   lang?: string;
-  country?: string; // 'sa', 'ae', ...
+  country?: string;
   timeFrame?: string;
+  strictMode?: boolean; // If true, fail if not enough sources
+  minSources?: number;  // Minimum sources required in strict mode
 }
 
 type SearchItem = {
@@ -19,14 +21,26 @@ type SearchItem = {
   title: string;
   description?: string;
   markdown?: string;
+  fetchedAt: string;
+  sourceStatus: 'success' | 'partial';
+};
+
+type SourceStatus = {
+  name: string;
+  baseUrl: string;
+  status: 'success' | 'failed' | 'timeout' | 'blocked' | 'no_content';
+  pagesFound: number;
+  pagesExtracted: number;
+  error?: string;
+  responseTime?: number;
 };
 
 const MAX_QUERY_LENGTH = 2000;
 const MAX_LIMIT = 20;
 const MIN_LIMIT = 1;
 
-const REQUEST_TIMEOUT_MS = 12_000;
-const MAX_HTML_BYTES = 900_000; // safety
+const REQUEST_TIMEOUT_MS = 15_000;
+const MAX_HTML_BYTES = 900_000;
 
 const BLOCKED_HOSTS = ["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"];
 const BLOCKED_IP_PATTERNS = [
@@ -34,6 +48,15 @@ const BLOCKED_IP_PATTERNS = [
   /^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/,
   /^192\.168\.\d{1,3}\.\d{1,3}$/,
   /^169\.254\.\d{1,3}\.\d{1,3}$/,
+];
+
+// Saudi market sources with metadata
+const SAUDI_SOURCES = [
+  { name: 'Saudi Exchange', baseUrl: 'https://www.saudiexchange.sa', category: 'official' },
+  { name: 'Tadawul', baseUrl: 'https://www.tadawul.com.sa', category: 'official' },
+  { name: 'Capital Market Authority', baseUrl: 'https://cma.org.sa', category: 'regulator' },
+  { name: 'Argaam', baseUrl: 'https://www.argaam.com', category: 'news' },
+  { name: 'Mubasher', baseUrl: 'https://english.mubasher.info', category: 'news' },
 ];
 
 function validateUrlOrThrow(url: string): string {
@@ -85,34 +108,49 @@ function keywordsFromQuery(query: string): string[] {
     .filter(Boolean)
     .filter(w => w.length >= 3)
     .filter(w => !stop.has(w));
-  // unique + cap
   return Array.from(new Set(words)).slice(0, 12);
 }
 
-async function fetchText(url: string, timeoutMs = REQUEST_TIMEOUT_MS): Promise<{ ok: boolean; status: number; text: string }> {
+async function fetchText(url: string, timeoutMs = REQUEST_TIMEOUT_MS): Promise<{ ok: boolean; status: number; text: string; responseTime: number; error?: string }> {
+  const startTime = Date.now();
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), timeoutMs);
+  
   try {
     const resp = await fetch(url, {
       method: 'GET',
       redirect: 'follow',
       signal: controller.signal,
       headers: {
-        'User-Agent': 'LovableResearchBot/1.0',
+        'User-Agent': 'LovableResearchBot/1.0 (Research Engine)',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.5',
+        'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
       }
     });
 
+    const responseTime = Date.now() - startTime;
     const status = resp.status;
-    if (!resp.ok) return { ok: false, status, text: '' };
+    
+    if (!resp.ok) {
+      return { ok: false, status, text: '', responseTime, error: `HTTP ${status}` };
+    }
 
     const buf = new Uint8Array(await resp.arrayBuffer());
     const sliced = buf.byteLength > MAX_HTML_BYTES ? buf.slice(0, MAX_HTML_BYTES) : buf;
     const text = new TextDecoder('utf-8').decode(sliced);
 
-    return { ok: true, status, text };
-  } catch {
-    return { ok: false, status: 0, text: '' };
+    return { ok: true, status, text, responseTime };
+  } catch (e) {
+    const responseTime = Date.now() - startTime;
+    const errorMsg = e instanceof Error ? e.message : 'Unknown error';
+    const isTimeout = errorMsg.includes('abort') || responseTime >= timeoutMs - 100;
+    return { 
+      ok: false, 
+      status: 0, 
+      text: '', 
+      responseTime,
+      error: isTimeout ? 'Timeout' : errorMsg 
+    };
   } finally {
     clearTimeout(t);
   }
@@ -125,7 +163,6 @@ function extractReadableText(html: string): { title: string; description: string
   const title = normalizeText(doc.querySelector('title')?.textContent ?? '');
   const description = normalizeText(doc.querySelector('meta[name="description"]')?.getAttribute('content') ?? '');
 
-  // crude readability: prefer article/main; drop obvious chrome
   const candidates = [
     doc.querySelector('article'),
     doc.querySelector('main'),
@@ -136,7 +173,6 @@ function extractReadableText(html: string): { title: string; description: string
   const root = candidates[0];
   if (!root) return { title, description, text: '' };
 
-  // remove script/style/nav/footer/aside
   for (const sel of ['script','style','noscript','nav','footer','aside','header']) {
     root.querySelectorAll(sel).forEach((n: any) => n.remove());
   }
@@ -146,7 +182,6 @@ function extractReadableText(html: string): { title: string; description: string
 }
 
 function parseSitemapUrls(xml: string): string[] {
-  // Very lightweight: grab <loc>...</loc>
   const urls: string[] = [];
   const re = /<loc>([^<]+)<\/loc>/gim;
   let m: RegExpExecArray | null;
@@ -168,25 +203,24 @@ async function discoverSitemaps(baseUrl: string): Promise<string[]> {
         if (m?.[1]) out.add(m[1].trim());
       }
     }
-  } catch {
-    // ignore
-  }
+  } catch { /* ignore */ }
 
-  // common fallbacks
   try { out.add(new URL('/sitemap.xml', baseUrl).toString()); } catch {}
   try { out.add(new URL('/sitemap_index.xml', baseUrl).toString()); } catch {}
 
   return Array.from(out);
 }
 
-async function collectCandidateUrls(baseUrl: string, maxUrls: number): Promise<string[]> {
+async function collectCandidateUrls(baseUrl: string, maxUrls: number): Promise<{ urls: string[]; sitemapFound: boolean }> {
   const sitemaps = await discoverSitemaps(baseUrl);
   const urls: string[] = [];
+  let sitemapFound = false;
 
   for (const sm of sitemaps.slice(0, 3)) {
     const res = await fetchText(sm, 10_000);
     if (!res.ok || !res.text) continue;
 
+    sitemapFound = true;
     const found = parseSitemapUrls(res.text);
     for (const u of found) {
       if (urls.length >= maxUrls) break;
@@ -195,7 +229,7 @@ async function collectCandidateUrls(baseUrl: string, maxUrls: number): Promise<s
     if (urls.length >= maxUrls) break;
   }
 
-  return urls;
+  return { urls, sitemapFound };
 }
 
 function scoreUrl(url: string, keywords: string[]): number {
@@ -204,16 +238,9 @@ function scoreUrl(url: string, keywords: string[]): number {
   for (const k of keywords) if (u.includes(k)) s += 2;
   if (u.includes('ipo')) s += 2;
   if (u.includes('news') || u.includes('press') || u.includes('announcement')) s += 1;
+  if (u.includes('2024') || u.includes('2025')) s += 1;
   return s;
 }
-
-const SAUDI_SEEDS = [
-  'https://www.saudiexchange.sa',
-  'https://www.tadawul.com.sa',
-  'https://cma.org.sa',
-  'https://www.argaam.com',
-  'https://english.mubasher.info',
-];
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
@@ -222,40 +249,108 @@ serve(async (req) => {
     const body = await req.json() as SearchRequest;
     const query = validateQuery(body.query);
     const limit = validateLimit(body.limit);
+    const strictMode = body.strictMode === true;
+    const minSources = typeof body.minSources === 'number' ? Math.max(1, body.minSources) : 2;
 
     const kw = keywordsFromQuery(query);
-
-    // Determine seed set from query/country
     const country = (typeof body.country === 'string' ? body.country.toLowerCase().trim() : undefined);
     const isSaudi = country === 'sa' || /\b(saudi|tasi|tadawul|nomu|riyadh)\b/i.test(query);
 
-    const seeds = isSaudi ? SAUDI_SEEDS : SAUDI_SEEDS; // keep minimal and deterministic
+    const sources = isSaudi ? SAUDI_SOURCES : SAUDI_SOURCES;
 
-    console.log('[research-search] mode=internal_fetch', { isSaudi, limit, keywords: kw });
+    console.log('[research-search] mode=internal_fetch strictMode=' + strictMode, { isSaudi, limit, keywords: kw });
 
-    // 1) Discover URLs from sitemaps
+    // Track source status
+    const sourceStatuses: SourceStatus[] = [];
     const candidateSet = new Set<string>();
-    for (const seed of seeds) {
+
+    // Process each source
+    for (const source of sources) {
+      const status: SourceStatus = {
+        name: source.name,
+        baseUrl: source.baseUrl,
+        status: 'failed',
+        pagesFound: 0,
+        pagesExtracted: 0,
+      };
+
       let safeSeed: string;
       try {
-        safeSeed = validateUrlOrThrow(seed);
-      } catch {
+        safeSeed = validateUrlOrThrow(source.baseUrl);
+      } catch (e) {
+        status.status = 'blocked';
+        status.error = 'Invalid URL';
+        sourceStatuses.push(status);
         continue;
       }
 
-      const urls = await collectCandidateUrls(safeSeed, 80);
-      urls.forEach(u => candidateSet.add(u));
+      // Test connectivity first
+      const connectTest = await fetchText(safeSeed, 8000);
+      status.responseTime = connectTest.responseTime;
 
-      // always include homepage as a candidate
+      if (!connectTest.ok) {
+        status.status = connectTest.error?.includes('Timeout') ? 'timeout' : 'failed';
+        status.error = connectTest.error || `HTTP ${connectTest.status}`;
+        sourceStatuses.push(status);
+        continue;
+      }
+
+      // Discover URLs from sitemaps
+      const { urls, sitemapFound } = await collectCandidateUrls(safeSeed, 80);
+      
+      if (urls.length === 0 && !sitemapFound) {
+        // No sitemap, just use homepage
+        urls.push(safeSeed);
+      }
+
+      status.pagesFound = urls.length;
+      urls.forEach(u => candidateSet.add(u));
+      
+      // Always include homepage as a candidate
       candidateSet.add(safeSeed);
+      
+      status.status = urls.length > 0 ? 'success' : 'no_content';
+      sourceStatuses.push(status);
+    }
+
+    // Check strict mode requirements
+    const successfulSources = sourceStatuses.filter(s => s.status === 'success').length;
+    
+    if (strictMode && successfulSources < minSources) {
+      console.log('[research-search] STRICT MODE FAILURE - not enough sources');
+      
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `Strict Mode: Only ${successfulSources}/${minSources} required sources were accessible`,
+          strictModeFailure: true,
+          sourceStatuses,
+          unreachableSources: sourceStatuses.filter(s => s.status !== 'success').map(s => ({
+            name: s.name,
+            url: s.baseUrl,
+            reason: s.error || s.status,
+            responseTime: s.responseTime
+          })),
+          reachableSources: sourceStatuses.filter(s => s.status === 'success').map(s => ({
+            name: s.name,
+            url: s.baseUrl,
+            pagesFound: s.pagesFound
+          })),
+          recommendations: [
+            'Try again later - some sources may be temporarily unavailable',
+            'Check if the sources are accessible from your region',
+            'Disable strict mode to get partial results'
+          ]
+        }),
+        { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     const candidates = Array.from(candidateSet);
     candidates.sort((a, b) => scoreUrl(b, kw) - scoreUrl(a, kw));
 
-    // 2) Fetch + extract top pages
+    // Fetch + extract top pages
     const chosen = candidates.slice(0, Math.max(limit * 2, 12));
-
     const items: SearchItem[] = [];
 
     for (const url of chosen) {
@@ -273,9 +368,16 @@ serve(async (req) => {
 
       const extracted = extractReadableText(res.text);
       const text = extracted.text;
-      if (!text || text.length < 300) continue;
+      if (!text || text.length < 200) continue;
 
-      // simple relevance filter
+      // Update source status with extracted count
+      const domain = new URL(safeUrl).hostname;
+      const sourceStatus = sourceStatuses.find(s => safeUrl.includes(new URL(s.baseUrl).hostname));
+      if (sourceStatus) {
+        sourceStatus.pagesExtracted++;
+      }
+
+      // Simple relevance filter
       const low = text.toLowerCase();
       const hitCount = kw.reduce((acc, k) => acc + (low.includes(k) ? 1 : 0), 0);
       if (kw.length > 0 && hitCount === 0 && !/\bipo\b/i.test(query)) continue;
@@ -287,8 +389,41 @@ serve(async (req) => {
         title: extracted.title || new URL(safeUrl).hostname.replace('www.', ''),
         description: extracted.description || snippet.slice(0, 180),
         markdown: `# ${extracted.title || 'Source'}\n\n${snippet}\n\n---\n\nSource: ${safeUrl}`,
+        fetchedAt: new Date().toISOString(),
+        sourceStatus: 'success',
       });
     }
+
+    // Final strict mode check - must have actual extracted content
+    if (strictMode && items.length < Math.min(minSources, limit)) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `Strict Mode: Only ${items.length} pages with relevant content found (minimum ${Math.min(minSources, limit)} required)`,
+          strictModeFailure: true,
+          sourceStatuses,
+          extractedCount: items.length,
+          unreachableSources: sourceStatuses.filter(s => s.status !== 'success').map(s => ({
+            name: s.name,
+            url: s.baseUrl,
+            reason: s.error || s.status,
+            responseTime: s.responseTime
+          })),
+          recommendations: [
+            'The query may be too specific - try broader search terms',
+            'Some sources may not have content matching your query',
+            'Disable strict mode to get partial results'
+          ]
+        }),
+        { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log('[research-search] SUCCESS', { 
+      itemsFound: items.length, 
+      sourcesReached: successfulSources,
+      strictMode 
+    });
 
     return new Response(
       JSON.stringify({
@@ -297,6 +432,15 @@ serve(async (req) => {
         totalResults: items.length,
         searchMethod: 'internal_fetch',
         country: country || null,
+        strictMode,
+        sourceStatuses,
+        summary: {
+          sourcesChecked: sourceStatuses.length,
+          sourcesReachable: successfulSources,
+          sourcesUnreachable: sourceStatuses.length - successfulSources,
+          totalPagesFound: sourceStatuses.reduce((acc, s) => acc + s.pagesFound, 0),
+          totalPagesExtracted: items.length
+        }
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
