@@ -401,47 +401,87 @@ async function batchScrape(results: SearchResult[], concurrency: number): Promis
 // ============ MAIN HANDLER ============
 // Extract clean search query from potentially enhanced prompts
 function extractCleanQuery(rawQuery: string): string {
-  // If the query looks like an enhanced prompt, extract the core topic
-  if (rawQuery.includes('Enhanced Research Prompt') || 
-      rawQuery.includes('Provide a detailed') ||
-      rawQuery.includes('comprehensive report on') ||
-      rawQuery.length > 300) {
+  console.log('[web-search] Raw query length:', rawQuery.length);
+  
+  // IMPORTANT: Keep the FULL semantic query, only strip obvious formatting
+  // Enhanced prompts often contain valuable context we should preserve
+  
+  // Remove common instruction prefixes/suffixes but keep core content
+  let cleaned = rawQuery
+    .replace(/Enhanced Research Prompt[:\s]*/gi, '')
+    .replace(/YOUR TASK[:\s]*/gi, '')
+    .replace(/CRITICAL INSTRUCTIONS[:\s]*/gi, '')
+    .replace(/OUTPUT FORMAT[:\s\(\)Markdown]*/gi, '')
+    .replace(/##\s+(Executive Summary|Key Findings|Analysis|Recommendations).*$/gim, '')
+    .replace(/\*\*[A-Z\s]+:\*\*/g, '') // Remove bold headers like **IMPORTANT:**
+    .replace(/^[-*]\s+/gm, '') // Remove bullet points at start of lines
+    .replace(/\n{3,}/g, '\n\n') // Collapse multiple newlines
+    .trim();
+  
+  // If query still looks like an enhanced prompt with instructions, extract the core query
+  if (cleaned.length > 400 || cleaned.includes('Include complete') || cleaned.includes('Focus on')) {
     
-    // Try to extract the main topic from enhanced prompts
-    const patterns = [
-      /comprehensive report on\s+([^,\.\n]+)/i,
-      /detailed.*?report on\s+([^,\.\n]+)/i,
-      /research.*?on\s+([^,\.\n]+)/i,
-      /analyze\s+([^,\.\n]+)/i,
-      /information about\s+([^,\.\n]+)/i,
+    // Extract the FIRST substantive part (the actual research topic)
+    const topicPatterns = [
+      // Person/profile patterns
+      /(?:Professional profile of|LinkedIn profile analysis:|Profile of)\s+([A-Z][a-zA-Z\s'-]+(?:\s+at\s+[A-Za-z\s]+)?(?:\s+in\s+[A-Za-z\s]+)?)/i,
+      // Company patterns
+      /(?:Company analysis:|Company profile for|Analyze|Research)\s+([A-Z][a-zA-Z0-9\s&.,'-]+?)(?:\s+in\s+[a-z]+\s+industry)?(?:\s+based\s+in|\.|,|\n)/i,
+      // Topic patterns
+      /comprehensive report on\s+([^.\n]+)/i,
+      /detailed.*?report on\s+([^.\n]+)/i,
+      /research(?:\s+on|\s+about)?\s+([^.\n]+?)(?:\s+include|\s+focus|\.|$)/i,
+      /information about\s+([^.\n]+)/i,
+      // Lead enrichment patterns
+      /^([A-Z][a-zA-Z\s'-]+)(?:\s+at\s+)([A-Za-z\s&]+)/m,
     ];
     
-    for (const pattern of patterns) {
-      const match = rawQuery.match(pattern);
+    for (const pattern of topicPatterns) {
+      const match = cleaned.match(pattern);
       if (match && match[1]) {
-        const extracted = match[1].trim().slice(0, 150);
-        console.log('[web-search] Extracted clean query:', extracted);
-        return extracted;
+        // Include more context: company if present
+        let extracted = match[1].trim();
+        if (match[2]) extracted += ' ' + match[2].trim();
+        
+        // Add key contextual terms from original query
+        const contextTerms: string[] = [];
+        if (/\b(CEO|founder|executive|board|leadership)\b/i.test(rawQuery)) contextTerms.push('leadership');
+        if (/\b(financials?|revenue|funding|valuation)\b/i.test(rawQuery)) contextTerms.push('financials');
+        if (/\b(overview|profile|about)\b/i.test(rawQuery)) contextTerms.push('company overview');
+        if (/\b(Saudi|KSA|Riyadh)\b/i.test(rawQuery)) contextTerms.push('Saudi Arabia');
+        if (/\b(UAE|Dubai|Abu Dhabi)\b/i.test(rawQuery)) contextTerms.push('UAE');
+        
+        if (contextTerms.length > 0) {
+          extracted += ' ' + contextTerms.join(' ');
+        }
+        
+        console.log('[web-search] Extracted query with context:', extracted);
+        return extracted.slice(0, 200);
       }
     }
     
-    // Fallback: take the first meaningful line
-    const lines = rawQuery.split('\n').filter(l => l.trim().length > 5);
+    // Fallback: Take first line that looks like a topic (not instructions)
+    const lines = cleaned.split('\n').filter(l => l.trim().length > 10);
     for (const line of lines) {
+      const trimmed = line.trim();
       // Skip lines that look like instructions
-      if (line.includes('**') || line.includes('*') || line.startsWith('-') || line.startsWith('#')) {
+      if (/^(include|focus|provide|ensure|do not|must|should|critical|important|note:|instructions)/i.test(trimmed)) {
         continue;
       }
-      const cleanLine = line.trim().slice(0, 150);
-      if (cleanLine.length > 10) {
-        console.log('[web-search] Using first clean line:', cleanLine);
-        return cleanLine;
+      // Skip markdown formatting
+      if (trimmed.startsWith('#') || trimmed.startsWith('|')) continue;
+      
+      // This looks like a topic
+      if (/^[A-Z]/.test(trimmed) && trimmed.length > 15 && trimmed.length < 200) {
+        console.log('[web-search] Using first topic line:', trimmed);
+        return trimmed;
       }
     }
   }
   
-  // Return trimmed query for normal queries
-  return rawQuery.trim().slice(0, 200);
+  // For shorter queries, return as-is but limit length
+  console.log('[web-search] Using cleaned query:', cleaned.slice(0, 200));
+  return cleaned.slice(0, 200);
 }
 
 serve(async (req) => {

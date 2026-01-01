@@ -70,3 +70,6 @@ verify_jwt = false
 
 [functions.ai-scrape-command]
 verify_jwt = false
+
+[functions.lead-enrichment]
+verify_jwt = false
