@@ -21,11 +21,26 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   static getDerivedStateFromError(error: Error): Partial<State> {
+    // DEBUG: Log error details immediately
+    console.error('[ErrorBoundary] getDerivedStateFromError:', error.message);
+    console.error('[ErrorBoundary] Error stack:', error.stack);
+    
+    // Check for React #418 specifically
+    if (error.message.includes('418') || error.message.includes('Objects are not valid')) {
+      console.error('[ErrorBoundary] DETECTED React #418 - Objects rendered as React child!');
+      console.error('[ErrorBoundary] Check console for [ReportViewer], [ResultsView], [ResultCard], [ResearchTrace] debug output');
+    }
+    
     return { hasError: true, error };
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('[ErrorBoundary] Caught error:', error, errorInfo);
+    console.error('[ErrorBoundary] componentDidCatch:', {
+      message: error.message,
+      name: error.name,
+      stack: error.stack,
+    });
+    console.error('[ErrorBoundary] Component stack:', errorInfo.componentStack);
     this.setState({ errorInfo });
   }
 

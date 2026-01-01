@@ -75,20 +75,35 @@ const TraceStep = ({ icon, title, status, children, defaultOpen = false }: Trace
 };
 
 export const ResearchTrace = ({ task }: ResearchTraceProps) => {
+  // DEBUG: Log to identify React #418 source
+  console.log('[ResearchTrace] Rendering with task:', {
+    id: task?.id,
+    query: typeof task?.query === 'string' ? task.query.slice(0, 50) : typeof task?.query,
+    status: task?.status,
+    resultsCount: task?.results?.length,
+  });
+
   const { agentState } = useResearchStore();
   const { plan, verifications, quality } = agentState;
+  
+  // DEBUG: Log agent state
+  console.log('[ResearchTrace] Agent state:', {
+    planExists: !!plan,
+    verificationsCount: verifications?.length,
+    qualityExists: !!quality,
+  });
   
   const isCompleted = task.status === 'completed';
   const isFailed = task.status === 'failed';
 
   // Extract unique domains from results
-  const domains = [...new Set(task.results.map(r => r.metadata.domain).filter(Boolean))];
+  const domains = [...new Set(task.results.map(r => r.metadata?.domain).filter(Boolean))];
   
   // Group verifications by status
-  const verifiedClaims = verifications.filter(v => v.status === 'verified');
-  const partialClaims = verifications.filter(v => v.status === 'partially_verified');
-  const contradictedClaims = verifications.filter(v => v.status === 'contradicted');
-  const unverifiedClaims = verifications.filter(v => v.status === 'unverified');
+  const verifiedClaims = (verifications || []).filter(v => v.status === 'verified');
+  const partialClaims = (verifications || []).filter(v => v.status === 'partially_verified');
+  const contradictedClaims = (verifications || []).filter(v => v.status === 'contradicted');
+  const unverifiedClaims = (verifications || []).filter(v => v.status === 'unverified');
 
   return (
     <ScrollArea className="h-full pr-4">
