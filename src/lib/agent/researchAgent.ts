@@ -416,8 +416,32 @@ export class ResearchAgent {
     const cleanQuery = query.trim().replace(/[?!.]+$/, '');
     queries.push(cleanQuery);
     
-    // Extract key phrases for additional searches
+    // Extract key terms for focused searches
     const queryLower = query.toLowerCase();
+    
+    // For management/leadership/executive changes
+    if (/\b(management|executive|ceo|cfo|coo|chairman|director|board|leadership|appointment|resignation)\b/i.test(query)) {
+      // Add specific executive change searches
+      const contextMatch = query.match(/in\s+(.+?)(?:\s+(?:which|that|in|during)\s+|\s*$)/i);
+      const context = contextMatch ? contextMatch[1].trim() : '';
+      
+      if (context) {
+        queries.push(`${context} CEO appointment 2025`);
+        queries.push(`${context} executive changes 2025`);
+        queries.push(`${context} board of directors changes`);
+        queries.push(`${context} management resignation appointment`);
+      }
+      
+      // Extract year if mentioned
+      const yearMatch = query.match(/\b(202[0-9])\b/);
+      const year = yearMatch ? yearMatch[1] : '2025';
+      
+      if (/\bTASI\b/i.test(query) || /\bNOMU\b/i.test(query)) {
+        queries.push(`Saudi listed companies CEO changes ${year}`);
+        queries.push(`TASI NOMU executive appointments ${year}`);
+        queries.push(`Saudi stock exchange management changes`);
+      }
+    }
     
     // If it's a "list" or "what are" query, create a more direct search
     if (/\b(list|what are|which|who are|names? of)\b/i.test(query)) {
