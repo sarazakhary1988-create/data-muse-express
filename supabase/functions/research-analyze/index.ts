@@ -170,7 +170,13 @@ Additional tables for related data categories.
       return `You are an expert research analyst writing a comprehensive, substantive research report.
 
 YOUR PRIMARY TASK:
-Write a DETAILED, CONTENT-RICH report that thoroughly answers the user's research query. The report should read like a professional research document, NOT a list of links.
+Write a DETAILED, CONTENT-RICH report that DIRECTLY ANSWERS the user's research query. 
+
+CRITICAL RULES:
+1. STAY ON TOPIC: Only include information that is DIRECTLY relevant to what the user asked.
+2. FILTER IRRELEVANT CONTENT: If source content doesn't address the query, acknowledge gaps instead of including unrelated information.
+3. ANSWER THE QUESTION: The report must specifically address what was asked, not just summarize whatever sources were found.
+4. ADMIT GAPS: If the sources don't contain relevant information, clearly state "The available sources did not contain information about [specific aspect]" rather than padding with unrelated content.
 
 CRITICAL WRITING RULES:
 1. WRITE SUBSTANTIVE CONTENT: Each section should have multiple paragraphs of detailed analysis.
@@ -181,31 +187,28 @@ CRITICAL WRITING RULES:
 
 OUTPUT FORMAT (Markdown):
 
-# [Clear Report Title]
+# [Clear Report Title - Must reflect the ACTUAL query]
 
 ## Executive Summary
-3-4 paragraphs with comprehensive overview. Use citations [1], [2].
+3-4 paragraphs with comprehensive overview of findings RELEVANT TO THE QUERY. Use citations [1], [2].
 
-## Background & Context
-Relevant background information to understand the topic.
+## Relevant Findings
 
-## Detailed Findings
-
-### [Subtopic 1]
+### [Subtopic 1 - directly addressing the query]
 2-3 detailed paragraphs with specific data and insights [1].
 
-### [Subtopic 2]
+### [Subtopic 2 - if sources support it]
 Continue with substantive analysis [2].
 
-## Data Summary
+## Data Summary (if applicable)
 | Item | Details | Value | Notes |
 |------|---------|-------|-------|
 
+## Information Gaps
+List what was asked but NOT found in sources.
+
 ## Analysis & Insights
 Analytical synthesis of findings. Patterns and conclusions.
-
-## Limitations
-Gaps in data or caveats.
 
 ## References
 [1] Source Title - URL
@@ -229,15 +232,17 @@ Return ONLY a JSON object (no markdown): { "support": "strong|moderate|weak|cont
     } else if (validatedType === 'report') {
       userContent = `RESEARCH QUERY: "${validatedQuery}"
 
-YOUR TASK: Write a comprehensive, content-rich research report that thoroughly answers this query. 
+YOUR TASK: Write a comprehensive research report that DIRECTLY ANSWERS this specific query. 
+
+CRITICAL: Only use information from the sources that is RELEVANT to the query. If the sources contain unrelated information, DO NOT include it. Instead, note that the sources lacked relevant information.
 
 IMPORTANT INSTRUCTIONS:
+- STAY ON TOPIC: Only include information that directly answers "${validatedQuery}"
+- If sources discuss other topics (like IPOs when asked about management changes), DO NOT report on those other topics
 - Write detailed paragraphs, not just bullet points or links
-- Synthesize information into coherent analysis
 - Use numbered citations [1], [2], [3] in the text
 - List all references with URLs at the END of the report under "## References"
-- Include specific facts, data, names, dates, and statistics
-- Provide context, analysis, and insights
+- If sources don't contain relevant information, state: "The available sources did not contain specific information about [topic]"
 
 === SOURCE MATERIALS ===
 
@@ -245,9 +250,9 @@ ${truncatedContent}
 
 === END SOURCE MATERIALS ===
 
-Now write a detailed, substantive research report answering: "${validatedQuery}"
+Now write a detailed research report that SPECIFICALLY answers: "${validatedQuery}"
 
-Remember: Write like a professional analyst. Substantive content first, all source URLs listed at the end under References.`;
+If the sources above do not contain information directly relevant to this query, acknowledge that gap clearly rather than reporting on unrelated content.`;
     } else {
       userContent = `Research Query: "${validatedQuery}"
 
