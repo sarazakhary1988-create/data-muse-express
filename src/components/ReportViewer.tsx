@@ -48,27 +48,6 @@ interface ReportViewerProps {
 type ExportFormat = 'markdown' | 'html' | 'json' | 'csv' | 'txt' | 'pdf';
 
 export const ReportViewer = ({ report, validationData }: ReportViewerProps) => {
-  // DEBUG: Log report prop to identify React #418 source
-  console.log('[ReportViewer] Rendering with report:', {
-    id: report?.id,
-    title: typeof report?.title,
-    titleValue: report?.title,
-    content: typeof report?.content,
-    contentLength: report?.content?.length,
-    contentIsObject: typeof report?.content === 'object',
-    sections: Array.isArray(report?.sections),
-    sectionsLength: report?.sections?.length,
-    rawReport: report,
-  });
-  
-  // Validate report content is a string
-  if (typeof report?.content !== 'string') {
-    console.error('[ReportViewer] ERROR: report.content is not a string!', {
-      type: typeof report?.content,
-      value: report?.content,
-    });
-  }
-
   const [copied, setCopied] = useState(false);
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
@@ -77,7 +56,6 @@ export const ReportViewer = ({ report, validationData }: ReportViewerProps) => {
 
   // Generate confidence data based on the report query
   const confidenceData = useMemo(() => {
-    // Extract query from report title (remove "Research Report: " prefix if present)
     const query = String(report?.title || '').replace(/^Research Report:\s*/i, '').replace(/^Report:\s*/i, '');
     return generateConfidenceCategories(query, 'ai-powered');
   }, [report?.title]);

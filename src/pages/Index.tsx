@@ -17,9 +17,6 @@ import { useResearchStore, ResearchTask } from '@/store/researchStore';
 import { useResearchEngine } from '@/hooks/useResearchEngine';
 
 const Index = () => {
-  // DEBUG: Component mount
-  console.log('[Index] Component rendering');
-
   const [activeView, setActiveView] = useState<ViewType>('search');
   const [researchSteps, setResearchSteps] = useState(defaultResearchSteps);
   
@@ -34,29 +31,9 @@ const Index = () => {
     setSearchQuery
   } = useResearchStore();
   
-  // DEBUG: Log store state
-  console.log('[Index] Store state:', {
-    isSearching,
-    currentTaskId: currentTask?.id,
-    currentTaskStatus: currentTask?.status,
-    reportsCount: reports?.length,
-    deepVerifyMode,
-    agentStateType: typeof agentState,
-  });
-  
   const { startResearch, deepScrape } = useResearchEngine();
 
   const currentReport = reports.find(r => r.taskId === currentTask?.id);
-  
-  // DEBUG: Log current report
-  if (currentReport) {
-    console.log('[Index] Current report:', {
-      id: currentReport.id,
-      title: typeof currentReport.title,
-      contentType: typeof currentReport.content,
-      contentIsString: typeof currentReport.content === 'string',
-    });
-  }
 
   // Update research steps based on mode and progress
   useEffect(() => {

@@ -16,30 +16,6 @@ interface ResultsViewProps {
 }
 
 export const ResultsView = ({ task, onBack, onViewReport }: ResultsViewProps) => {
-  // DEBUG: Log task to identify React #418 source
-  console.log('[ResultsView] Rendering with task:', {
-    id: task?.id,
-    query: typeof task?.query,
-    queryValue: task?.query,
-    status: task?.status,
-    resultsCount: task?.results?.length,
-    resultsIsArray: Array.isArray(task?.results),
-  });
-  
-  // Validate task.results items
-  if (task?.results) {
-    task.results.forEach((result, i) => {
-      if (typeof result?.title !== 'string' || typeof result?.content !== 'string') {
-        console.error(`[ResultsView] ERROR: result[${i}] has non-string fields!`, {
-          titleType: typeof result?.title,
-          contentType: typeof result?.content,
-          summaryType: typeof result?.summary,
-          result,
-        });
-      }
-    });
-  }
-
   const { reports, agentState } = useResearchStore();
   const taskReport = reports.find(r => r.taskId === task.id);
   const consolidation = agentState.consolidation;
