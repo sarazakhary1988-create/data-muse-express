@@ -16,6 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useTheme } from '@/hooks/useTheme';
 import { useResearchStore } from '@/store/researchStore';
 import { cn } from '@/lib/utils';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 interface SettingsDialogProps {
   collapsed?: boolean;
@@ -26,20 +27,21 @@ export const SettingsDialog = ({ collapsed = false }: SettingsDialogProps) => {
   const { theme, toggleTheme } = useTheme();
   const { clearTasks, resetSourceConfigs, strictMode, setStrictMode } = useResearchStore();
   const { toast } = useToast();
+  const { t } = useLanguage();
 
   const handleClearHistory = () => {
     clearTasks();
     toast({
-      title: "History Cleared",
-      description: "All research history has been deleted.",
+      title: t.settings.historyCleared,
+      description: t.settings.historyDesc,
     });
   };
 
   const handleResetSources = () => {
     resetSourceConfigs();
     toast({
-      title: "Sources Reset",
-      description: "Deep Verify sources have been reset to defaults.",
+      title: t.settings.sourcesReset,
+      description: t.settings.sourcesResetDesc,
     });
   };
 
@@ -54,24 +56,24 @@ export const SettingsDialog = ({ collapsed = false }: SettingsDialogProps) => {
           )}
         >
           <Settings className="w-5 h-5" />
-          {!collapsed && <span>Settings</span>}
+          {!collapsed && <span>{t.common.settings}</span>}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Settings className="w-5 h-5" />
-            Settings
+            {t.settings.title}
           </DialogTitle>
           <DialogDescription>
-            Configure your research engine preferences
+            {t.settings.subtitle}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6 py-4">
           {/* Appearance */}
           <div className="space-y-4">
-            <h4 className="text-sm font-medium text-foreground">Appearance</h4>
+            <h4 className="text-sm font-medium text-foreground">{t.settings.appearance}</h4>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 {theme === 'dark' ? (
@@ -79,7 +81,7 @@ export const SettingsDialog = ({ collapsed = false }: SettingsDialogProps) => {
                 ) : (
                   <Sun className="w-4 h-4 text-muted-foreground" />
                 )}
-                <Label htmlFor="theme-toggle">Dark Mode</Label>
+                <Label htmlFor="theme-toggle">{t.settings.darkMode}</Label>
               </div>
               <Switch
                 id="theme-toggle"
@@ -93,12 +95,12 @@ export const SettingsDialog = ({ collapsed = false }: SettingsDialogProps) => {
 
           {/* Research Settings */}
           <div className="space-y-4">
-            <h4 className="text-sm font-medium text-foreground">Research</h4>
+            <h4 className="text-sm font-medium text-foreground">{t.settings.research}</h4>
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
-                <Label htmlFor="strict-mode">Strict Verification</Label>
+                <Label htmlFor="strict-mode">{t.settings.strictVerification}</Label>
                 <p className="text-xs text-muted-foreground">
-                  Require minimum {strictMode.minSources} sources
+                  {t.settings.requireMinSources} {strictMode.minSources}
                 </p>
               </div>
               <Switch
@@ -113,7 +115,7 @@ export const SettingsDialog = ({ collapsed = false }: SettingsDialogProps) => {
 
           {/* Data Management */}
           <div className="space-y-4">
-            <h4 className="text-sm font-medium text-foreground">Data Management</h4>
+            <h4 className="text-sm font-medium text-foreground">{t.settings.dataManagement}</h4>
             <div className="space-y-3">
               <Button
                 variant="outline"
@@ -122,7 +124,7 @@ export const SettingsDialog = ({ collapsed = false }: SettingsDialogProps) => {
                 onClick={handleResetSources}
               >
                 <RefreshCw className="w-4 h-4" />
-                Reset Source Configurations
+                {t.settings.resetSourceConfigs}
               </Button>
               <Button
                 variant="outline"
@@ -131,7 +133,7 @@ export const SettingsDialog = ({ collapsed = false }: SettingsDialogProps) => {
                 onClick={handleClearHistory}
               >
                 <Trash2 className="w-4 h-4" />
-                Clear Research History
+                {t.settings.clearResearchHistory}
               </Button>
             </div>
           </div>
@@ -140,13 +142,13 @@ export const SettingsDialog = ({ collapsed = false }: SettingsDialogProps) => {
 
           {/* Info */}
           <div className="space-y-2">
-            <h4 className="text-sm font-medium text-foreground">About</h4>
+            <h4 className="text-sm font-medium text-foreground">{t.settings.about}</h4>
             <div className="text-xs text-muted-foreground space-y-1">
-              <p>MANUS 1.6 MAX Research Engine</p>
-              <p>Embedded Web Search (Zero Dependencies)</p>
+              <p>{t.settings.version}</p>
+              <p>{t.settings.embeddedSearch}</p>
               <p className="flex items-center gap-1">
                 <Database className="w-3 h-3" />
-                Search engines: DuckDuckGo, Google, Bing
+                {t.settings.searchEngines}
               </p>
             </div>
           </div>

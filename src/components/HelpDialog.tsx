@@ -23,64 +23,66 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 interface HelpDialogProps {
   collapsed?: boolean;
 }
 
-const features = [
-  {
-    icon: Search,
-    title: 'AI-Powered Research',
-    description: 'Enter any research query and our AI will search across multiple sources to find relevant information.',
-  },
-  {
-    icon: Globe,
-    title: 'Embedded Web Search',
-    description: 'Uses DuckDuckGo, Google, and Bing directly without external API dependencies.',
-  },
-  {
-    icon: Link,
-    title: 'URL Scraper',
-    description: 'Extract and analyze content from any website URL directly.',
-  },
-  {
-    icon: Calendar,
-    title: 'Scheduled Tasks',
-    description: 'Set up automated research tasks that run on a schedule (daily, weekly, monthly).',
-  },
-  {
-    icon: FileText,
-    title: 'Report Generation',
-    description: 'Generate comprehensive research reports in multiple formats.',
-  },
-  {
-    icon: Shield,
-    title: 'Verification System',
-    description: 'Cross-reference findings across sources to identify discrepancies.',
-  },
-];
-
-const tips = [
-  {
-    icon: Zap,
-    title: 'Be Specific',
-    tip: 'Include specific details like company names, dates, or regions for better results.',
-  },
-  {
-    icon: CheckCircle,
-    title: 'Use AI Enhancer',
-    tip: 'Enable the AI Enhancer toggle to optimize your research queries automatically.',
-  },
-  {
-    icon: History,
-    title: 'Check History',
-    tip: 'Access previous research from the History tab to avoid duplicate work.',
-  },
-];
-
 export const HelpDialog = ({ collapsed = false }: HelpDialogProps) => {
   const [open, setOpen] = useState(false);
+  const { t } = useLanguage();
+
+  const features = [
+    {
+      icon: Search,
+      title: t.help.featuresList.aiResearch,
+      description: t.help.featuresList.aiResearchDesc,
+    },
+    {
+      icon: Globe,
+      title: t.help.featuresList.embeddedSearch,
+      description: t.help.featuresList.embeddedSearchDesc,
+    },
+    {
+      icon: Link,
+      title: t.help.featuresList.urlScraper,
+      description: t.help.featuresList.urlScraperDesc,
+    },
+    {
+      icon: Calendar,
+      title: t.help.featuresList.scheduledTasks,
+      description: t.help.featuresList.scheduledTasksDesc,
+    },
+    {
+      icon: FileText,
+      title: t.help.featuresList.reportGeneration,
+      description: t.help.featuresList.reportGenerationDesc,
+    },
+    {
+      icon: Shield,
+      title: t.help.featuresList.verification,
+      description: t.help.featuresList.verificationDesc,
+    },
+  ];
+
+  const tips = [
+    {
+      icon: Zap,
+      title: t.help.tipsList.beSpecific,
+      tip: t.help.tipsList.beSpecificDesc,
+    },
+    {
+      icon: CheckCircle,
+      title: t.help.tipsList.useEnhancer,
+      tip: t.help.tipsList.useEnhancerDesc,
+    },
+    {
+      icon: History,
+      title: t.help.tipsList.checkHistory,
+      tip: t.help.tipsList.checkHistoryDesc,
+    },
+  ];
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -93,24 +95,24 @@ export const HelpDialog = ({ collapsed = false }: HelpDialogProps) => {
           )}
         >
           <HelpCircle className="w-5 h-5" />
-          {!collapsed && <span>Help</span>}
+          {!collapsed && <span>{t.common.help}</span>}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <HelpCircle className="w-5 h-5" />
-            Help & Documentation
+            {t.help.title}
           </DialogTitle>
           <DialogDescription>
-            Learn how to use the MANUS Research Engine
+            {t.help.subtitle}
           </DialogDescription>
         </DialogHeader>
 
         <Tabs defaultValue="features" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="features">Features</TabsTrigger>
-            <TabsTrigger value="tips">Tips</TabsTrigger>
+            <TabsTrigger value="features">{t.help.features}</TabsTrigger>
+            <TabsTrigger value="tips">{t.help.tips}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="features">
@@ -140,12 +142,12 @@ export const HelpDialog = ({ collapsed = false }: HelpDialogProps) => {
             <ScrollArea className="h-[350px] pr-4">
               <div className="space-y-4 py-2">
                 <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
-                  <h4 className="text-sm font-medium text-primary mb-2">Getting Started</h4>
+                  <h4 className="text-sm font-medium text-primary mb-2">{t.help.gettingStarted}</h4>
                   <ol className="text-xs text-muted-foreground space-y-2 list-decimal list-inside">
-                    <li>Enter your research query in the search box</li>
-                    <li>Optionally enable AI Enhancement for better results</li>
-                    <li>Wait for the research to complete</li>
-                    <li>Review sources and generate a report</li>
+                    <li>{t.help.steps.step1}</li>
+                    <li>{t.help.steps.step2}</li>
+                    <li>{t.help.steps.step3}</li>
+                    <li>{t.help.steps.step4}</li>
                   </ol>
                 </div>
 
@@ -167,10 +169,10 @@ export const HelpDialog = ({ collapsed = false }: HelpDialogProps) => {
                 ))}
 
                 <div className="p-4 rounded-lg border border-border">
-                  <h4 className="text-sm font-medium mb-2">Keyboard Shortcuts</h4>
+                  <h4 className="text-sm font-medium mb-2">{t.help.keyboardShortcuts}</h4>
                   <div className="text-xs text-muted-foreground space-y-1">
-                    <p><kbd className="px-1.5 py-0.5 bg-muted rounded text-[10px]">Enter</kbd> - Start research</p>
-                    <p><kbd className="px-1.5 py-0.5 bg-muted rounded text-[10px]">Esc</kbd> - Close dialogs</p>
+                    <p><kbd className="px-1.5 py-0.5 bg-muted rounded text-[10px]">Enter</kbd> - {t.help.enterToSearch}</p>
+                    <p><kbd className="px-1.5 py-0.5 bg-muted rounded text-[10px]">Esc</kbd> - {t.help.escToClose}</p>
                   </div>
                 </div>
               </div>

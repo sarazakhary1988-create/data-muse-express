@@ -23,6 +23,7 @@ import { useResearchEngine } from '@/hooks/useResearchEngine';
 import { supabase } from '@/integrations/supabase/client';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 interface UrlScraperProps {
   onBack?: () => void;
@@ -64,6 +65,7 @@ const aiCommandExamples = [
 ];
 
 export const UrlScraper = ({ onBack }: UrlScraperProps) => {
+  const { t, isRTL } = useLanguage();
   const [url, setUrl] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -83,7 +85,7 @@ export const UrlScraper = ({ onBack }: UrlScraperProps) => {
     {
       id: 'welcome',
       role: 'assistant',
-      content: "Hello! I'm your AI scraping assistant. Tell me what you want to extract from a website, and I'll help you configure the scraping settings and format the output.\n\n**Examples:**\n- \"Scrape this URL and extract all prices\"\n- \"Get the main content as bullet points\"\n- \"Find all contact information on this page\"",
+      content: t.scraper.aiChatWelcome + "\n\n**" + t.scraper.aiChatExamples + "**\n- \"Scrape this URL and extract all prices\"\n- \"Get the main content as bullet points\"\n- \"Find all contact information on this page\"",
       timestamp: new Date(),
     }
   ]);
@@ -100,13 +102,22 @@ export const UrlScraper = ({ onBack }: UrlScraperProps) => {
   
   const { deepScrape, mapWebsite, startResearch } = useResearchEngine();
 
+  const timeFrameOptions = [
+    { value: 'now', label: t.time.now, icon: Zap },
+    { value: '1hour', label: t.time.in1Hour, icon: Clock },
+    { value: '6hours', label: t.time.in6Hours, icon: Clock },
+    { value: '12hours', label: t.time.in12Hours, icon: Clock },
+    { value: '24hours', label: t.time.in24Hours, icon: Clock },
+    { value: 'custom', label: t.time.customSchedule, icon: Calendar },
+  ];
+
   const formatOptions: { id: ScrapeFormat; label: string; icon: React.ElementType; description: string }[] = [
-    { id: 'markdown', label: 'Markdown', icon: FileText, description: 'Clean LLM-ready text' },
-    { id: 'html', label: 'HTML', icon: Code, description: 'Processed HTML' },
-    { id: 'links', label: 'Links', icon: Link2, description: 'All URLs on page' },
-    { id: 'screenshot', label: 'Screenshot', icon: Camera, description: 'Page image capture' },
-    { id: 'branding', label: 'Branding', icon: Palette, description: 'Colors, fonts, logos' },
-    { id: 'summary', label: 'AI Summary', icon: Sparkles, description: 'AI-generated summary' },
+    { id: 'markdown', label: t.scraper.formats.markdown, icon: FileText, description: 'Clean LLM-ready text' },
+    { id: 'html', label: t.scraper.formats.html, icon: Code, description: 'Processed HTML' },
+    { id: 'links', label: t.scraper.formats.links, icon: Link2, description: 'All URLs on page' },
+    { id: 'screenshot', label: t.scraper.formats.screenshot, icon: Camera, description: 'Page image capture' },
+    { id: 'branding', label: t.scraper.formats.branding, icon: Palette, description: 'Colors, fonts, logos' },
+    { id: 'summary', label: t.scraper.formats.summary, icon: Sparkles, description: 'AI-generated summary' },
   ];
 
   const toggleFormat = (format: ScrapeFormat) => {
@@ -309,18 +320,18 @@ export const UrlScraper = ({ onBack }: UrlScraperProps) => {
 
         if (error) throw error;
         setResult(data);
-        toast({ title: "Scraped with Firecrawl", description: "Content extracted successfully" });
+        toast({ title: t.scraper.scrapeComplete, description: t.toasts.contentExtracted });
       } else {
         const scrapeResult = await deepScrape(url);
         if (scrapeResult) {
           setResult(scrapeResult);
-          toast({ title: "Scraped with Embedded Engine", description: "Content extracted successfully" });
+          toast({ title: t.scraper.scrapeComplete, description: t.toasts.contentExtracted });
         }
       }
     } catch (error: any) {
       console.error('Scrape error:', error);
       toast({ 
-        title: "Scrape Failed", 
+        title: t.scraper.scrapeFailed, 
         description: error.message || "Failed to scrape URL",
         variant: "destructive"
       });
@@ -472,8 +483,8 @@ export const UrlScraper = ({ onBack }: UrlScraperProps) => {
               <Globe className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <h2 className="text-xl font-semibold">AI Web Scraper</h2>
-              <p className="text-sm text-muted-foreground">Command AI to extract and format web content</p>
+              <h2 className="text-xl font-semibold">{t.scraper.title}</h2>
+              <p className="text-sm text-muted-foreground">{t.scraper.subtitle}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -485,13 +496,13 @@ export const UrlScraper = ({ onBack }: UrlScraperProps) => {
                 <SelectItem value="embedded">
                   <div className="flex items-center gap-2">
                     <Zap className="w-4 h-4" />
-                    Embedded Engine
+                    {t.scraper.embedded}
                   </div>
                 </SelectItem>
                 <SelectItem value="firecrawl">
                   <div className="flex items-center gap-2">
                     <Database className="w-4 h-4" />
-                    Firecrawl API
+                    {t.scraper.firecrawl}
                   </div>
                 </SelectItem>
               </SelectContent>
@@ -537,19 +548,19 @@ export const UrlScraper = ({ onBack }: UrlScraperProps) => {
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="ai" className="gap-2">
               <Bot className="w-4 h-4" />
-              AI Command
+              {t.scraper.modes.ai}
             </TabsTrigger>
             <TabsTrigger value="scrape" className="gap-2">
               <FileText className="w-4 h-4" />
-              Scrape URL
+              {t.scraper.modes.scrape}
             </TabsTrigger>
             <TabsTrigger value="search" className="gap-2">
               <Search className="w-4 h-4" />
-              Web Search
+              {t.scraper.modes.search}
             </TabsTrigger>
             <TabsTrigger value="map" className="gap-2">
               <List className="w-4 h-4" />
-              Map Site
+              {t.scraper.modes.map}
             </TabsTrigger>
           </TabsList>
 
@@ -650,7 +661,7 @@ export const UrlScraper = ({ onBack }: UrlScraperProps) => {
               <CollapsibleTrigger asChild>
                 <Button variant="ghost" size="sm" className="gap-2">
                   <Settings2 className="w-4 h-4" />
-                  Advanced Options
+                  {t.scraper.advancedOptions}
                   <ChevronDown className={`w-4 h-4 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
                 </Button>
               </CollapsibleTrigger>
@@ -686,10 +697,10 @@ export const UrlScraper = ({ onBack }: UrlScraperProps) => {
                       checked={options.onlyMainContent}
                       onCheckedChange={(checked) => setOptions(prev => ({ ...prev, onlyMainContent: checked }))}
                     />
-                    <Label>Main content only</Label>
+                    <Label>{t.scraper.mainContentOnly}</Label>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Label>Wait time (ms):</Label>
+                    <Label>{t.scraper.waitForPage}:</Label>
                     <Input
                       type="number"
                       value={options.waitFor}
