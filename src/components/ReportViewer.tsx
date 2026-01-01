@@ -28,14 +28,23 @@ import { toast } from '@/hooks/use-toast';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import jsPDF from 'jspdf';
+import { Discrepancy, QualityMetrics, SourceCoverage } from '@/lib/agent/dataConsolidator';
+
+export interface ValidationData {
+  discrepancies: Discrepancy[];
+  qualityMetrics: QualityMetrics;
+  sourceCoverage: SourceCoverage;
+  consolidatedData: Record<string, any>;
+}
 
 interface ReportViewerProps {
   report: Report;
+  validationData?: ValidationData;
 }
 
 type ExportFormat = 'markdown' | 'html' | 'json' | 'csv' | 'txt' | 'pdf';
 
-export const ReportViewer = ({ report }: ReportViewerProps) => {
+export const ReportViewer = ({ report, validationData }: ReportViewerProps) => {
   const [copied, setCopied] = useState(false);
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
@@ -172,6 +181,55 @@ export const ReportViewer = ({ report }: ReportViewerProps) => {
         }
       }
 
+      // Add validation section if available
+      if (validationData && validationData.discrepancies.length > 0) {
+        pdf.addPage();
+        yPosition = margin;
+        
+        addText('Validation Report', 18, true, '#1a1a2e');
+        yPosition += 5;
+        
+        // Quality metrics
+        addText('Data Quality Metrics', 14, true);
+        const metrics = validationData.qualityMetrics;
+        addText(`• Overall Score: ${Math.round(metrics.overallScore * 100)}%`, 10);
+        addText(`• Completeness: ${Math.round(metrics.completeness * 100)}%`, 10);
+        addText(`• Consistency: ${Math.round(metrics.consistency * 100)}%`, 10);
+        addText(`• Source Authority: ${Math.round(metrics.sourceAuthority * 100)}%`, 10);
+        addText(`• Cross-Validation: ${Math.round(metrics.crossValidation * 100)}%`, 10);
+        yPosition += 5;
+        
+        // Source coverage
+        addText('Source Coverage', 14, true);
+        addText(`• Total Sources: ${validationData.sourceCoverage.totalSources}`, 10);
+        addText(`• High Authority: ${validationData.sourceCoverage.authorityDistribution.high}`, 10);
+        addText(`• Medium Authority: ${validationData.sourceCoverage.authorityDistribution.medium}`, 10);
+        addText(`• Low Authority: ${validationData.sourceCoverage.authorityDistribution.low}`, 10);
+        yPosition += 5;
+        
+        // Discrepancies
+        addText(`Data Conflicts & Resolutions (${validationData.discrepancies.length})`, 14, true);
+        yPosition += 3;
+        
+        for (const discrepancy of validationData.discrepancies) {
+          if (yPosition > pageHeight - 40) {
+            pdf.addPage();
+            yPosition = margin;
+          }
+          
+          addText(`Field: ${discrepancy.field}`, 11, true);
+          addText(`Resolved Value: ${String(discrepancy.resolution.selectedValue)}`, 10);
+          addText(`Selected Source: ${discrepancy.resolution.selectedSource}`, 10, false, '#666666');
+          addText(`Reason: ${discrepancy.resolution.reason}`, 10, false, '#666666');
+          
+          addText('Conflicting Values:', 10, true);
+          for (const val of discrepancy.values) {
+            addText(`  • ${val.source}: ${String(val.value)} (Authority: ${Math.round(val.authority * 100)}%)`, 9, false, '#666666');
+          }
+          yPosition += 3;
+        }
+      }
+
       // Add footer
       yPosition = pageHeight - margin;
       pdf.setFontSize(8);
@@ -245,6 +303,26 @@ export const ReportViewer = ({ report }: ReportViewerProps) => {
           createdAt: report.createdAt,
           sections: report.sections,
           content: report.content,
+          ...(validationData && {
+            validation: {
+              qualityMetrics: validationData.qualityMetrics,
+              sourceCoverage: validationData.sourceCoverage,
+              discrepancies: validationData.discrepancies.map(d => ({
+                field: d.field,
+                conflictingValues: d.values.map(v => ({
+                  source: v.source,
+                  value: v.value,
+                  authority: v.authority,
+                })),
+                resolution: {
+                  selectedValue: d.resolution.selectedValue,
+                  selectedSource: d.resolution.selectedSource,
+                  reason: d.resolution.reason,
+                },
+              })),
+              consolidatedData: validationData.consolidatedData,
+            },
+          }),
         }, null, 2);
         filename += '.json';
         mimeType = 'application/json';
