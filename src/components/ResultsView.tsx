@@ -1,9 +1,11 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { FileText, ArrowLeft, Filter, SortDesc } from 'lucide-react';
+import { FileText, ArrowLeft, Filter, SortDesc, Activity, LayoutList } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ResultCard } from '@/components/ResultCard';
+import { ResearchTrace } from '@/components/ResearchTrace';
 import { ResearchTask, useResearchStore } from '@/store/researchStore';
 
 interface ResultsViewProps {
@@ -67,14 +69,6 @@ export const ResultsView = ({ task, onBack, onViewReport }: ResultsViewProps) =>
           </div>
           
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" className="gap-2">
-              <Filter className="w-4 h-4" />
-              Filter
-            </Button>
-            <Button variant="outline" size="sm" className="gap-2">
-              <SortDesc className="w-4 h-4" />
-              Sort
-            </Button>
             {taskReport && (
               <Button variant="hero" size="sm" onClick={onViewReport} className="gap-2">
                 <FileText className="w-4 h-4" />
@@ -85,45 +79,65 @@ export const ResultsView = ({ task, onBack, onViewReport }: ResultsViewProps) =>
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <Card variant="glass" className="p-4">
-          <p className="text-sm text-muted-foreground">Total Sources</p>
-          <p className="text-2xl font-bold">{task.results.length}</p>
-        </Card>
-        <Card variant="glass" className="p-4">
-          <p className="text-sm text-muted-foreground">Avg. Relevance</p>
-          <p className="text-2xl font-bold text-primary">
-            {Math.round(task.results.reduce((acc, r) => acc + r.relevanceScore, 0) / task.results.length * 100)}%
-          </p>
-        </Card>
-        <Card variant="glass" className="p-4">
-          <p className="text-sm text-muted-foreground">Unique Domains</p>
-          <p className="text-2xl font-bold">
-            {new Set(task.results.map(r => r.metadata.domain)).size}
-          </p>
-        </Card>
-        <Card variant="glass" className="p-4">
-          <p className="text-sm text-muted-foreground">Research Time</p>
-          <p className="text-2xl font-bold">
-            {task.completedAt 
-              ? `${Math.round((new Date(task.completedAt).getTime() - new Date(task.createdAt).getTime()) / 1000)}s`
-              : '--'
-            }
-          </p>
-        </Card>
-      </div>
+      {/* Tabs: Sources vs Trace */}
+      <Tabs defaultValue="sources" className="w-full">
+        <TabsList className="mb-4">
+          <TabsTrigger value="sources" className="gap-2">
+            <LayoutList className="w-4 h-4" />
+            Sources
+          </TabsTrigger>
+          <TabsTrigger value="trace" className="gap-2">
+            <Activity className="w-4 h-4" />
+            Research Trace
+          </TabsTrigger>
+        </TabsList>
 
-      {/* Results Grid */}
-      <div className="grid gap-4">
-        <AnimatePresence>
-          {task.results
-            .sort((a, b) => b.relevanceScore - a.relevanceScore)
-            .map((result, index) => (
-              <ResultCard key={result.id} result={result} index={index} />
-            ))}
-        </AnimatePresence>
-      </div>
+        <TabsContent value="sources">
+          {/* Stats */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <Card variant="glass" className="p-4">
+              <p className="text-sm text-muted-foreground">Total Sources</p>
+              <p className="text-2xl font-bold">{task.results.length}</p>
+            </Card>
+            <Card variant="glass" className="p-4">
+              <p className="text-sm text-muted-foreground">Avg. Relevance</p>
+              <p className="text-2xl font-bold text-primary">
+                {Math.round(task.results.reduce((acc, r) => acc + r.relevanceScore, 0) / task.results.length * 100)}%
+              </p>
+            </Card>
+            <Card variant="glass" className="p-4">
+              <p className="text-sm text-muted-foreground">Unique Domains</p>
+              <p className="text-2xl font-bold">
+                {new Set(task.results.map(r => r.metadata.domain)).size}
+              </p>
+            </Card>
+            <Card variant="glass" className="p-4">
+              <p className="text-sm text-muted-foreground">Research Time</p>
+              <p className="text-2xl font-bold">
+                {task.completedAt 
+                  ? `${Math.round((new Date(task.completedAt).getTime() - new Date(task.createdAt).getTime()) / 1000)}s`
+                  : '--'
+                }
+              </p>
+            </Card>
+          </div>
+
+          {/* Results Grid */}
+          <div className="grid gap-4">
+            <AnimatePresence>
+              {task.results
+                .sort((a, b) => b.relevanceScore - a.relevanceScore)
+                .map((result, index) => (
+                  <ResultCard key={result.id} result={result} index={index} />
+                ))}
+            </AnimatePresence>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="trace">
+          <ResearchTrace task={task} />
+        </TabsContent>
+      </Tabs>
     </motion.div>
   );
 };
