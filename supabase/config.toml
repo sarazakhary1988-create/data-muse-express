@@ -79,3 +79,6 @@ verify_jwt = false
 
 [functions.web-crawl]
 verify_jwt = false
+
+[functions.generate-icon]
+verify_jwt = false
