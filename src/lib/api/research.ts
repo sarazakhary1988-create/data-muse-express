@@ -604,4 +604,188 @@ export const researchApi = {
       };
     }
   },
+
+  // WEB CRAWL: Advanced recursive site crawling with deduplication
+  async webCrawl(
+    url: string,
+    options?: {
+      query?: string;
+      maxDepth?: number;
+      maxPages?: number;
+      followLinks?: boolean;
+      includePatterns?: string[];
+      excludePatterns?: string[];
+      scrapeContent?: boolean;
+      timeout?: number;
+    }
+  ): Promise<{
+    success: boolean;
+    pages: Array<{
+      url: string;
+      title: string;
+      description: string;
+      markdown: string;
+      links: string[];
+      depth: number;
+      status: 'success' | 'failed' | 'timeout' | 'blocked';
+      error?: string;
+      responseTime: number;
+      wordCount: number;
+      metadata: {
+        author?: string;
+        publishDate?: string;
+        language?: string;
+        contentType?: string;
+      };
+    }>;
+    discoveredUrls: string[];
+    crawledCount: number;
+    failedCount: number;
+    totalTime: number;
+    rootDomain: string;
+    error?: string;
+  }> {
+    try {
+      console.log('[researchApi] Web Crawl:', url);
+      
+      const { data, error } = await supabase.functions.invoke('web-crawl', {
+        body: { 
+          url,
+          query: options?.query,
+          maxDepth: options?.maxDepth ?? 3,
+          maxPages: options?.maxPages ?? 20,
+          followLinks: options?.followLinks ?? true,
+          includePatterns: options?.includePatterns,
+          excludePatterns: options?.excludePatterns,
+          scrapeContent: options?.scrapeContent ?? true,
+          timeout: options?.timeout,
+        },
+      });
+
+      if (error) {
+        console.error('[researchApi] Web Crawl error:', error);
+        return { 
+          success: false, 
+          pages: [],
+          discoveredUrls: [],
+          crawledCount: 0,
+          failedCount: 0,
+          totalTime: 0,
+          rootDomain: '',
+          error: error.message,
+        };
+      }
+
+      console.log('[researchApi] Web Crawl success:', data.crawledCount, 'pages');
+      return data;
+    } catch (err) {
+      console.error('[researchApi] Web Crawl error:', err);
+      return { 
+        success: false, 
+        pages: [],
+        discoveredUrls: [],
+        crawledCount: 0,
+        failedCount: 0,
+        totalTime: 0,
+        rootDomain: '',
+        error: err instanceof Error ? err.message : 'Web crawl failed',
+      };
+    }
+  },
+
+  // DEEP CRAWL: Combines web crawl + content extraction for thorough research
+  async deepCrawl(
+    url: string,
+    query: string,
+    options?: {
+      maxPages?: number;
+      extractData?: boolean;
+    }
+  ): Promise<{
+    success: boolean;
+    pages: Array<{
+      url: string;
+      title: string;
+      markdown: string;
+      wordCount: number;
+      relevanceScore: number;
+    }>;
+    combinedContent: string;
+    totalPages: number;
+    totalWords: number;
+    error?: string;
+  }> {
+    try {
+      console.log('[researchApi] Deep Crawl:', url, 'for query:', query);
+      
+      // First, crawl the website
+      const crawlResult = await this.webCrawl(url, {
+        query,
+        maxPages: options?.maxPages ?? 15,
+        maxDepth: 2,
+        followLinks: true,
+        scrapeContent: true,
+      });
+      
+      if (!crawlResult.success || crawlResult.pages.length === 0) {
+        return {
+          success: false,
+          pages: [],
+          combinedContent: '',
+          totalPages: 0,
+          totalWords: 0,
+          error: crawlResult.error || 'No pages found',
+        };
+      }
+      
+      // Score pages by query relevance
+      const queryTerms = query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
+      
+      const scoredPages = crawlResult.pages
+        .filter(p => p.status === 'success' && p.wordCount > 50)
+        .map(page => {
+          let score = 0;
+          const content = (page.title + ' ' + page.markdown).toLowerCase();
+          
+          for (const term of queryTerms) {
+            const matches = (content.match(new RegExp(term, 'gi')) || []).length;
+            score += matches;
+            if (page.title.toLowerCase().includes(term)) score += 5;
+          }
+          
+          return {
+            url: page.url,
+            title: page.title,
+            markdown: page.markdown,
+            wordCount: page.wordCount,
+            relevanceScore: Math.min(1, score / (queryTerms.length * 5)),
+          };
+        })
+        .sort((a, b) => b.relevanceScore - a.relevanceScore);
+      
+      // Combine content from top pages
+      const topPages = scoredPages.slice(0, 10);
+      const combinedContent = topPages
+        .map(p => `## ${p.title}\nSource: ${p.url}\n\n${p.markdown.slice(0, 3000)}`)
+        .join('\n\n---\n\n');
+      
+      return {
+        success: true,
+        pages: topPages,
+        combinedContent,
+        totalPages: scoredPages.length,
+        totalWords: topPages.reduce((sum, p) => sum + p.wordCount, 0),
+      };
+    } catch (err) {
+      console.error('[researchApi] Deep Crawl error:', err);
+      return {
+        success: false,
+        pages: [],
+        combinedContent: '',
+        totalPages: 0,
+        totalWords: 0,
+        error: err instanceof Error ? err.message : 'Deep crawl failed',
+      };
+    }
+  },
 };

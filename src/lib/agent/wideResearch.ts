@@ -201,15 +201,18 @@ async function executeSubAgent(
     });
     
     if (!searchResult.success || !searchResult.data || searchResult.data.length === 0) {
-      // Try sitemap-based search as fallback (still real scraping)
-      console.log(`[WideResearch] SubAgent ${index}: Web search empty, trying sitemap search`);
+      // Try hybrid search as fallback
+      console.log(`[WideResearch] SubAgent ${index}: Web search empty, trying hybrid search`);
       
-      const sitemapResult = await researchApi.internalSearch(subQuery, 8, {
-        country: config.country,
+      const hybridResult = await researchApi.hybridSearch(subQuery, {
+        useWebSearch: true,
+        useInternal: true,
+        webSearchOptions: { maxResults: 8, searchEngine: 'all', scrapeContent: true },
+        internalOptions: { limit: 8 },
       });
       
-      if (sitemapResult.success && sitemapResult.data && sitemapResult.data.length > 0) {
-        result.sources = sitemapResult.data.map((item, idx) => ({
+      if (hybridResult.success && hybridResult.data && hybridResult.data.length > 0) {
+        result.sources = hybridResult.data.map((item, idx) => ({
           url: item.url,
           title: item.title,
           domain: new URL(item.url).hostname.replace('www.', ''),
@@ -217,7 +220,7 @@ async function executeSubAgent(
           markdown: item.markdown || '',
           fetchedAt: item.fetchedAt || new Date().toISOString(),
           reliability: item.reliability || 0.7,
-          source: 'sitemap',
+          source: item.source || 'hybrid',
         }));
       }
     } else {
@@ -231,6 +234,44 @@ async function executeSubAgent(
         reliability: 0.8,
         source: item.source || 'web-search',
       }));
+    }
+    
+    // Step 1.5: If deep scrape mode, use web-crawl on discovered domains
+    if (config.scrapeDepth === 'deep' && result.sources.length > 0) {
+      const uniqueDomains = [...new Set(result.sources.map(s => {
+        try { return new URL(s.url).origin; } catch { return null; }
+      }).filter(Boolean))].slice(0, 3) as string[];
+      
+      console.log(`[WideResearch] SubAgent ${index}: Deep crawling ${uniqueDomains.length} domains`);
+      
+      for (const domainUrl of uniqueDomains) {
+        try {
+          const crawlResult = await researchApi.deepCrawl(domainUrl, subQuery, { maxPages: 5 });
+          
+          if (crawlResult.success && crawlResult.pages.length > 0) {
+            for (const page of crawlResult.pages) {
+              // Add crawled pages as additional sources
+              const existingUrls = new Set(result.sources.map(s => s.url));
+              if (!existingUrls.has(page.url)) {
+                result.sources.push({
+                  url: page.url,
+                  title: page.title,
+                  domain: new URL(page.url).hostname.replace('www.', ''),
+                  content: page.markdown.slice(0, 3000),
+                  markdown: page.markdown,
+                  fetchedAt: new Date().toISOString(),
+                  reliability: 0.75 + (page.relevanceScore * 0.15),
+                  source: 'web-crawl',
+                  relevanceScore: page.relevanceScore,
+                });
+                callbacks?.onSourceFound?.(result.sources[result.sources.length - 1]);
+              }
+            }
+          }
+        } catch (crawlError) {
+          console.warn(`[WideResearch] SubAgent ${index}: Crawl failed for ${domainUrl}:`, crawlError);
+        }
+      }
     }
     
     console.log(`[WideResearch] SubAgent ${index}: Found ${result.sources.length} sources`);

@@ -109,6 +109,58 @@ async function scrapeUrl(url: string, opts?: { onlyMainContent?: boolean }): Pro
   }
 }
 
+// Web crawl a website recursively (real-time)
+async function webCrawl(url: string, query: string, opts?: { maxPages?: number; maxDepth?: number }): Promise<{
+  pages: Array<{ url: string; title: string; markdown: string; wordCount: number }>;
+  combinedContent: string;
+  totalPages: number;
+}> {
+  try {
+    console.log(`[lead-enrichment] Web crawl: ${url} for "${query}"`);
+    const supabase = getSupabaseAdmin();
+
+    const { data, error } = await supabase.functions.invoke('web-crawl', {
+      body: {
+        url,
+        query,
+        maxPages: opts?.maxPages ?? 10,
+        maxDepth: opts?.maxDepth ?? 2,
+        followLinks: true,
+        scrapeContent: true,
+      },
+    });
+
+    if (error || !data?.success) {
+      console.error('[lead-enrichment] Web crawl failed:', error || data?.error);
+      return { pages: [], combinedContent: '', totalPages: 0 };
+    }
+
+    const successfulPages = (data.pages || [])
+      .filter((p: any) => p.status === 'success' && p.wordCount > 50)
+      .slice(0, opts?.maxPages ?? 10);
+
+    const combinedContent = successfulPages
+      .map((p: any) => `## ${p.title}\nSource: ${p.url}\n\n${p.markdown?.slice(0, 3000) || ''}`)
+      .join('\n\n---\n\n');
+
+    console.log(`[lead-enrichment] Web crawl found ${successfulPages.length} pages`);
+
+    return {
+      pages: successfulPages.map((p: any) => ({
+        url: p.url,
+        title: p.title,
+        markdown: p.markdown || '',
+        wordCount: p.wordCount || 0,
+      })),
+      combinedContent,
+      totalPages: successfulPages.length,
+    };
+  } catch (error) {
+    console.error('[lead-enrichment] Web crawl error:', error);
+    return { pages: [], combinedContent: '', totalPages: 0 };
+  }
+}
+
 // Build comprehensive search queries for person
 function buildPersonSearchQueries(request: PersonEnrichmentRequest): string[] {
   const queries: string[] = [];
@@ -756,21 +808,40 @@ serve(async (req) => {
         if (candidate) websiteUrl = candidate;
       }
 
-      // 3) Map & scrape the official site (crawl via sitemap) to find contact/leadership pages
+      // 3) Use web-crawl for deep site exploration
       let siteLinks: string[] = [];
       let homepageLinks: string[] = [];
 
       if (websiteUrl) {
-        // Scrape homepage with boilerplate to capture social links
+        // First, crawl the website recursively
+        const crawlResult = await webCrawl(websiteUrl, companyReq.companyName, { 
+          maxPages: 15, 
+          maxDepth: 2 
+        });
+        
+        if (crawlResult.totalPages > 0) {
+          console.log(`[lead-enrichment] Web crawl found ${crawlResult.totalPages} pages`);
+          additionalContent += crawlResult.combinedContent;
+          
+          // Add crawled pages to evidence
+          for (const page of crawlResult.pages.slice(0, 10)) {
+            if (page.wordCount > 100) {
+              evidenceSources.unshift({ url: page.url, title: page.title, content: page.markdown });
+            }
+          }
+        }
+
+        // Also scrape homepage with boilerplate to capture social links
         const home = await scrapeUrl(websiteUrl, { onlyMainContent: false });
         additionalContent += home.markdown ? `\n\n--- Official Website (Homepage) ---\n${home.markdown}` : '';
         homepageLinks = home.links || [];
 
+        // Map specific terms for targeted pages
         const mapTerms = ['about', 'contact', 'team', 'leadership', 'management', 'board', 'investor', 'press', 'news'];
         const mapCalls = mapTerms.map(async (term) => {
           try {
             const { data: mapData } = await supabase.functions.invoke('research-map', {
-              body: { url: websiteUrl, search: term, limit: 80 },
+              body: { url: websiteUrl, search: term, limit: 50 },
             });
             if (mapData?.success && Array.isArray(mapData.links)) return mapData.links as string[];
             return [];
@@ -787,10 +858,12 @@ serve(async (req) => {
           siteLinks.push(u);
         }
 
-        // Scrape a small set of best candidate pages
+        // Scrape any remaining key pages not already crawled
+        const alreadyCrawled = new Set(crawlResult.pages.map(p => p.url));
         const prioritized = siteLinks
           .filter(isLikelyOfficial)
-          .slice(0, 10);
+          .filter(u => !alreadyCrawled.has(u))
+          .slice(0, 5);
 
         const pageScrapes = await Promise.all(prioritized.map(u => scrapeUrl(u, { onlyMainContent: true })));
         pageScrapes.forEach((res, idx) => {
