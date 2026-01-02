@@ -165,7 +165,32 @@ export const ResultsView = ({ task, onBack, onViewReport }: ResultsViewProps) =>
             </p>
           </div>
           
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+            {/* Export Buttons */}
+            <ReportExportButton
+              report={{
+                title: researchTitle,
+                content: task.query,
+                summary: `Research completed with ${task.results.length} sources found.`,
+                sources: task.results.map(r => ({
+                  title: r.title,
+                  url: r.url,
+                })),
+                keyFacts: task.results.slice(0, 5).map(r => r.title),
+                metadata: {
+                  generatedAt: task.completedAt?.toString() || task.createdAt.toString(),
+                  totalSources: task.results.length,
+                  confidenceScore: Math.round(task.results.reduce((acc, r) => acc + r.relevanceScore, 0) / task.results.length * 100),
+                },
+                evidenceChain: consolidation?.discrepancies?.map(d => ({
+                  claim: `${d.field}: ${d.resolution.selectedValue}`,
+                  source: d.values[0]?.source || 'Unknown',
+                  confidence: 0.75,
+                })) || [],
+              }}
+              variant="compact"
+            />
+            
             {taskReport && (
               <Button variant="hero" size="sm" onClick={onViewReport} className="gap-2">
                 <FileText className="w-4 h-4" />

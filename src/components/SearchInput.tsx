@@ -49,6 +49,7 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [hoveredSuggestion, setHoveredSuggestion] = useState<number | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [customDomains, setCustomDomains] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const detectedUrl = isUrl(searchQuery);
@@ -65,9 +66,20 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
     if (searchQuery.trim() && !isSearching) {
       const timeContext = formatTimeFrameForQuery(timeFrameFilter);
       const countryContext = formatCountryForQuery(countryFilter);
-      const contextParts = [searchQuery.trim(), timeContext, countryContext].filter(Boolean);
+      
+      // Add domain constraints if specified
+      let domainContext = '';
+      if (customDomains.trim()) {
+        const domains = customDomains.split(',').map(d => d.trim()).filter(Boolean);
+        if (domains.length > 0) {
+          domainContext = `site:${domains.join(' OR site:')}`;
+        }
+      }
+      
+      const contextParts = [searchQuery.trim(), timeContext, countryContext, domainContext].filter(Boolean);
       const fullQuery = contextParts.join(' ');
       
+      console.log('[SearchInput] Full query with domain constraints:', fullQuery);
       onSearch(fullQuery);
       setShowSuggestions(false);
     }
@@ -342,6 +354,37 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
                         value={countryFilter}
                         onChange={setCountryFilter}
                       />
+                    </motion.div>
+                    
+                    {/* Custom Domain Filter */}
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.12 }}
+                      className="flex items-center gap-1.5"
+                    >
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="flex items-center gap-1.5">
+                              <Globe className="w-3.5 h-3.5 text-muted-foreground" />
+                              <input
+                                type="text"
+                                value={customDomains}
+                                onChange={(e) => setCustomDomains(e.target.value)}
+                                placeholder="Restrict to domains..."
+                                className="h-7 w-[160px] text-xs border border-muted bg-background/50 hover:bg-background transition-colors rounded-md px-2 placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/50"
+                              />
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-xs">
+                            <p className="font-medium">Domain Filter</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Comma-separated domains to restrict search (e.g., microsoft.com, sec.gov)
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     </motion.div>
                     
                     <motion.div

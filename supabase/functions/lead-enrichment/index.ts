@@ -196,12 +196,132 @@ function buildPersonSearchQueries(request: PersonEnrichmentRequest): string[] {
   return queries.slice(0, 6);
 }
 
+// Known company domain mappings for validation
+const KNOWN_COMPANY_DOMAINS: Record<string, string[]> = {
+  'microsoft': ['microsoft.com', 'azure.com', 'linkedin.com/company/microsoft'],
+  'apple': ['apple.com', 'linkedin.com/company/apple'],
+  'google': ['google.com', 'alphabet.com', 'linkedin.com/company/google'],
+  'amazon': ['amazon.com', 'aws.amazon.com', 'linkedin.com/company/amazon'],
+  'meta': ['meta.com', 'facebook.com', 'linkedin.com/company/meta'],
+  'netflix': ['netflix.com', 'linkedin.com/company/netflix'],
+  'tesla': ['tesla.com', 'linkedin.com/company/tesla'],
+  'nvidia': ['nvidia.com', 'linkedin.com/company/nvidia'],
+  'ibm': ['ibm.com', 'linkedin.com/company/ibm'],
+  'oracle': ['oracle.com', 'linkedin.com/company/oracle'],
+  'salesforce': ['salesforce.com', 'linkedin.com/company/salesforce'],
+  'adobe': ['adobe.com', 'linkedin.com/company/adobe'],
+  'intel': ['intel.com', 'linkedin.com/company/intel'],
+  'cisco': ['cisco.com', 'linkedin.com/company/cisco'],
+  'samsung': ['samsung.com', 'linkedin.com/company/samsung'],
+  'walmart': ['walmart.com', 'linkedin.com/company/walmart'],
+  'jpmorgan': ['jpmorgan.com', 'jpmorganchase.com', 'linkedin.com/company/jpmorgan'],
+  'goldman sachs': ['goldmansachs.com', 'linkedin.com/company/goldman-sachs'],
+  'berkshire hathaway': ['berkshirehathaway.com'],
+  'visa': ['visa.com', 'linkedin.com/company/visa'],
+  'mastercard': ['mastercard.com', 'linkedin.com/company/mastercard'],
+  'paypal': ['paypal.com', 'linkedin.com/company/paypal'],
+  'uber': ['uber.com', 'linkedin.com/company/uber'],
+  'airbnb': ['airbnb.com', 'linkedin.com/company/airbnb'],
+  'spotify': ['spotify.com', 'linkedin.com/company/spotify'],
+  'twitter': ['x.com', 'twitter.com', 'linkedin.com/company/twitter'],
+  'openai': ['openai.com', 'linkedin.com/company/openai'],
+  'anthropic': ['anthropic.com', 'linkedin.com/company/anthropic'],
+};
+
+// Validate company domain match
+function validateCompanyDomain(companyName: string, url: string): { isValid: boolean; confidence: number; expectedDomains: string[] } {
+  const normalizedCompany = companyName.toLowerCase().trim().replace(/[^\w\s]/g, '');
+  const urlLower = url.toLowerCase();
+  
+  // Check known mappings first
+  for (const [known, domains] of Object.entries(KNOWN_COMPANY_DOMAINS)) {
+    if (normalizedCompany.includes(known) || known.includes(normalizedCompany)) {
+      const matchesDomain = domains.some(d => urlLower.includes(d));
+      return {
+        isValid: matchesDomain,
+        confidence: matchesDomain ? 0.98 : 0.2,
+        expectedDomains: domains,
+      };
+    }
+  }
+  
+  // Fallback: check if domain contains company name words
+  const companyWords = normalizedCompany.split(/\s+/).filter(w => w.length > 2);
+  const matchCount = companyWords.filter(word => urlLower.includes(word)).length;
+  const confidence = matchCount / Math.max(companyWords.length, 1);
+  
+  return {
+    isValid: confidence > 0.5,
+    confidence: confidence,
+    expectedDomains: [`${normalizedCompany.replace(/\s+/g, '')}.com`],
+  };
+}
+
+// Entity extraction for query understanding
+function extractEntities(query: string): { companies: string[]; persons: string[]; keywords: string[] } {
+  const companies: string[] = [];
+  const persons: string[] = [];
+  const keywords: string[] = [];
+  
+  // Known company patterns
+  const companyPatterns = [
+    /\b(Microsoft|Apple|Google|Amazon|Meta|Netflix|Tesla|Nvidia|IBM|Oracle|Salesforce|Adobe|Intel|Cisco|Samsung|Walmart|JPMorgan|Goldman\s*Sachs|Visa|Mastercard|PayPal|Uber|Airbnb|Spotify|Twitter|OpenAI|Anthropic)\b/gi,
+    /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:Inc|Corp|Corporation|LLC|Ltd|Company|Co)\b/gi,
+  ];
+  
+  // Known person patterns (CEO, executives)
+  const personPatterns = [
+    /\b(Tim\s+Cook|Satya\s+Nadella|Elon\s+Musk|Mark\s+Zuckerberg|Jeff\s+Bezos|Sundar\s+Pichai|Jensen\s+Huang|Sam\s+Altman)\b/gi,
+    /CEO\s+([A-Z][a-z]+\s+[A-Z][a-z]+)/gi,
+    /([A-Z][a-z]+\s+[A-Z][a-z]+)\s+CEO/gi,
+  ];
+  
+  for (const pattern of companyPatterns) {
+    const matches = query.matchAll(pattern);
+    for (const match of matches) {
+      const company = (match[1] || match[0]).trim();
+      if (!companies.includes(company)) companies.push(company);
+    }
+  }
+  
+  for (const pattern of personPatterns) {
+    const matches = query.matchAll(pattern);
+    for (const match of matches) {
+      const person = (match[1] || match[0]).trim();
+      if (!persons.includes(person)) persons.push(person);
+    }
+  }
+  
+  // Extract keywords (important terms)
+  const keywordPatterns = [
+    /\b(quarterly\s+earnings|revenue|financials|annual\s+report|market\s+cap|stock|shares|IPO|acquisition|merger)\b/gi,
+    /\b(CEO|CFO|CTO|COO|executive|board|director|leadership)\b/gi,
+    /\b(headquarters|location|office|address)\b/gi,
+  ];
+  
+  for (const pattern of keywordPatterns) {
+    const matches = query.matchAll(pattern);
+    for (const match of matches) {
+      const keyword = match[0].trim().toLowerCase();
+      if (!keywords.includes(keyword)) keywords.push(keyword);
+    }
+  }
+  
+  return { companies, persons, keywords };
+}
+
 // Build comprehensive search queries for company
 function buildCompanySearchQueries(request: CompanyEnrichmentRequest): string[] {
   const queries: string[] = [];
   const company = request.companyName;
   
-  // Company overview
+  // Extract entities for better targeting
+  const entities = extractEntities(company);
+  console.log(`[lead-enrichment] Extracted entities:`, entities);
+  
+  // Company overview - prioritize official sources
+  queries.push(`"${company}" site:${company.toLowerCase().replace(/\s+/g, '')}.com`);
+  queries.push(`"${company}" official website about company overview`);
   queries.push(`"${company}" company overview about headquarters address phone`);
   
   // Financial information
@@ -230,7 +350,7 @@ function buildCompanySearchQueries(request: CompanyEnrichmentRequest): string[] 
     queries.push(`"${company}" ${request.country} office operations headquarters`);
   }
   
-  return queries.slice(0, 8);
+  return queries.slice(0, 10);
 }
 
 // Generate person enrichment report using OpenAI
