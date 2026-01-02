@@ -74,6 +74,34 @@ export interface StrictModeSettings {
   minSources: number;
 }
 
+// Research settings
+export interface ResearchSettings {
+  useDemoData: boolean; // Toggle for demo/synthetic data
+  enableDebugPanel: boolean;
+  autoRegenerate: boolean; // Auto-regenerate generic reports
+}
+
+// Run history entry for tracking research executions
+export interface RunHistoryEntry {
+  id: string;
+  query: string;
+  timestamp: Date;
+  status: 'running' | 'completed' | 'failed';
+  duration?: number;
+  inputs: {
+    query: string;
+    country?: string;
+    strictMode?: boolean;
+    reportFormat: ReportFormat;
+  };
+  outputs?: {
+    reportContent: string;
+    sourcesCount: number;
+    qualityScore: number;
+  };
+  error?: string;
+}
+
 export const REPORT_FORMAT_OPTIONS: { value: ReportFormat; label: string; description: string }[] = [
   { value: 'detailed', label: 'Detailed Report', description: 'Comprehensive analysis with full context' },
   { value: 'executive', label: 'Executive Summary', description: 'Concise overview for quick decisions' },
@@ -196,6 +224,13 @@ interface ResearchStore {
   countryFilter: string;
   strictMode: StrictModeSettings;
   
+  // New settings
+  researchSettings: ResearchSettings;
+  runHistory: RunHistoryEntry[];
+  lastSuccessfulReport: Report | null;
+  currentRunId: string | null;
+  debugLogs: string[];
+  
   // Agent state
   agentState: AgentStateInfo;
   
@@ -216,11 +251,21 @@ interface ResearchStore {
   addCustomSource: (source: Omit<DeepVerifySourceConfig, 'id' | 'isCustom'>) => void;
   updateSource: (id: string, updates: Partial<DeepVerifySourceConfig>) => void;
   deleteSource: (id: string) => void;
-      clearTasks: () => void;
-      setReportFormat: (format: ReportFormat) => void;
-      setTimeFrameFilter: (filter: TimeFrameValue) => void;
-      setCountryFilter: (country: string) => void;
-      setStrictMode: (settings: StrictModeSettings) => void;
+  clearTasks: () => void;
+  setReportFormat: (format: ReportFormat) => void;
+  setTimeFrameFilter: (filter: TimeFrameValue) => void;
+  setCountryFilter: (country: string) => void;
+  setStrictMode: (settings: StrictModeSettings) => void;
+  
+  // New actions
+  setResearchSettings: (settings: Partial<ResearchSettings>) => void;
+  addRunHistory: (entry: RunHistoryEntry) => void;
+  updateRunHistory: (id: string, updates: Partial<RunHistoryEntry>) => void;
+  setLastSuccessfulReport: (report: Report | null) => void;
+  setCurrentRunId: (id: string | null) => void;
+  addDebugLog: (log: string) => void;
+  clearDebugLogs: () => void;
+  cancelCurrentRun: () => void;
   
   // Agent state actions
   setAgentState: (state: AgentState) => void;
@@ -249,6 +294,17 @@ export const useResearchStore = create<ResearchStore>()(
       timeFrameFilter: { type: 'all' } as TimeFrameValue,
       countryFilter: 'global',
       strictMode: { enabled: true, minSources: 2 } as StrictModeSettings,
+      
+      // New settings
+      researchSettings: {
+        useDemoData: false,
+        enableDebugPanel: false,
+        autoRegenerate: true,
+      } as ResearchSettings,
+      runHistory: [] as RunHistoryEntry[],
+      lastSuccessfulReport: null as Report | null,
+      currentRunId: null as string | null,
+      debugLogs: [] as string[],
       
       // Agent state
       agentState: {
@@ -385,12 +441,55 @@ export const useResearchStore = create<ResearchStore>()(
           searchEngines: null,
         }
       }),
+      
+      // New actions
+      setResearchSettings: (settings) => set((s) => ({
+        researchSettings: { ...s.researchSettings, ...settings }
+      })),
+      
+      addRunHistory: (entry) => set((s) => ({
+        runHistory: [entry, ...s.runHistory].slice(0, 50) // Keep last 50 runs
+      })),
+      
+      updateRunHistory: (id, updates) => set((s) => ({
+        runHistory: s.runHistory.map((r) =>
+          r.id === id ? { ...r, ...updates } : r
+        )
+      })),
+      
+      setLastSuccessfulReport: (report) => set({ lastSuccessfulReport: report }),
+      
+      setCurrentRunId: (id) => set({ currentRunId: id }),
+      
+      addDebugLog: (log) => set((s) => ({
+        debugLogs: [...s.debugLogs, `${new Date().toISOString()}: ${log}`].slice(-100)
+      })),
+      
+      clearDebugLogs: () => set({ debugLogs: [] }),
+      
+      cancelCurrentRun: () => set((s) => {
+        if (s.currentRunId) {
+          return {
+            isSearching: false,
+            currentRunId: null,
+            runHistory: s.runHistory.map((r) =>
+              r.id === s.currentRunId && r.status === 'running'
+                ? { ...r, status: 'failed' as const, error: 'Cancelled by user' }
+                : r
+            )
+          };
+        }
+        return { isSearching: false };
+      }),
     }),
     {
       name: 'research-store',
       partialize: (state) => ({ 
         deepVerifyMode: state.deepVerifyMode,
-        deepVerifySourceConfigs: state.deepVerifySourceConfigs
+        deepVerifySourceConfigs: state.deepVerifySourceConfigs,
+        researchSettings: state.researchSettings,
+        lastSuccessfulReport: state.lastSuccessfulReport,
+        runHistory: state.runHistory.slice(0, 20), // Persist last 20 runs
       }),
     }
   )
