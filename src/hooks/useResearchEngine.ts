@@ -1,9 +1,11 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { ResearchTask, Report, useResearchStore, ReportFormat } from '@/store/researchStore';
 import { researchAgent, dataConsolidator } from '@/lib/agent';
 import { toast } from '@/hooks/use-toast';
 
 export const useResearchEngine = () => {
+  const abortControllerRef = useRef<AbortController | null>(null);
+  
   const { 
     addTask, 
     updateTask, 
@@ -12,7 +14,9 @@ export const useResearchEngine = () => {
     setSearchQuery,
     deepVerifyMode,
     deepVerifySourceConfigs,
-    reportFormat, countryFilter, strictMode,
+    reportFormat, 
+    countryFilter, 
+    strictMode,
     setDeepVerifySources,
     updateDeepVerifySource,
     clearDeepVerifySources,
@@ -24,7 +28,14 @@ export const useResearchEngine = () => {
     setAgentDecision,
     setAgentConsolidation,
     setAgentSearchEngines,
-    resetAgentState
+    resetAgentState,
+    addRunHistory,
+    updateRunHistory,
+    setLastSuccessfulReport,
+    setCurrentRunId,
+    addDebugLog,
+    clearDebugLogs,
+    researchSettings,
   } = useResearchStore();
 
   // Get only enabled sources
@@ -39,8 +50,29 @@ export const useResearchEngine = () => {
     }
   };
 
+  // Cancel any running research
+  const cancelResearch = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    researchAgent.cancel();
+    setIsSearching(false);
+  }, [setIsSearching]);
+
   const startResearch = useCallback(async (query: string) => {
+    // Cancel any previous run
+    cancelResearch();
+    
+    // Create new abort controller
+    abortControllerRef.current = new AbortController();
+    
     const taskId = `task-${Date.now()}`;
+    const runId = `run-${Date.now()}`;
+    
+    // Clear previous debug logs
+    clearDebugLogs();
+    addDebugLog('INIT', `Starting research for: ${query}`);
     
     const newTask: ResearchTask = {
       id: taskId,
@@ -53,7 +85,17 @@ export const useResearchEngine = () => {
 
     addTask(newTask);
     setIsSearching(true);
+    setCurrentRunId(runId);
     resetAgentState();
+
+    // Add to run history
+    addRunHistory({
+      id: runId,
+      taskId,
+      query,
+      startedAt: new Date(),
+      status: 'running',
+    });
 
     // Initialize deep verify sources if enabled
     if (deepVerifyMode) {
@@ -70,7 +112,7 @@ export const useResearchEngine = () => {
     researchAgent.setCallbacks({
       onStateChange: (state, context) => {
         setAgentState(state);
-        console.log(`Agent state: ${state}`, context);
+        addDebugLog('STATE', `Agent state: ${state}`);
       },
       onProgress: (progress) => {
         updateTask(taskId, { progress });
@@ -97,10 +139,11 @@ export const useResearchEngine = () => {
       },
       onDecision: (message, confidence) => {
         setAgentDecision(message, confidence);
-        console.log(`Agent decision (${(confidence * 100).toFixed(0)}%): ${message}`);
+        addDebugLog('DECISION', `${message} (${(confidence * 100).toFixed(0)}%)`);
       },
       onError: (error) => {
         console.error('Agent error:', error);
+        addDebugLog('ERROR', error.message);
         toast({
           title: "Agent Error",
           description: error.message,
@@ -109,7 +152,7 @@ export const useResearchEngine = () => {
       },
       onPlanUpdate: (plan) => {
         setAgentPlan(plan);
-        console.log('Research plan:', plan);
+        addDebugLog('PLAN', `Research plan created with ${plan.phases?.length || 0} phases`);
       },
       onVerificationUpdate: (verifications) => {
         setAgentVerifications(verifications);
@@ -125,11 +168,13 @@ export const useResearchEngine = () => {
     try {
       toast({
         title: deepVerifyMode ? "Deep Verify Research Started" : "Research Started",
-        description: `Autonomous agent analyzing: ${query}`,
+        description: `Analyzing: ${query.substring(0, 50)}...`,
       });
 
+      addDebugLog('EXEC', 'Executing research agent pipeline');
+
       // Execute the full agent pipeline
-      const { results, report, quality, verifications, plan, searchEngineInfo } = await researchAgent.execute(
+      const { results, report, quality, verifications, plan, searchEngineInfo, webSourcesUsed, warnings } = await researchAgent.execute(
         query,
         deepVerifyMode,
         enabledSources,
@@ -137,27 +182,28 @@ export const useResearchEngine = () => {
         { country: countryFilter, strictMode }
       );
 
+      // Log warnings
+      if (warnings && warnings.length > 0) {
+        warnings.forEach(w => addDebugLog('WARN', w));
+      }
+
       // Store search engine info
       if (searchEngineInfo) {
         setAgentSearchEngines(searchEngineInfo);
+        addDebugLog('SEARCH', `Engines used: ${searchEngineInfo.engines.join(', ')}`);
       }
 
-      // Calculate consolidation data (Manus-inspired)
+      // Calculate consolidation data
       const consolidatedResult = dataConsolidator.consolidate(results);
       
-      // Store consolidation data for the discrepancy report
       setAgentConsolidation({
         discrepancies: consolidatedResult.discrepancies,
         qualityMetrics: consolidatedResult.qualityMetrics,
         sourceCoverage: consolidatedResult.sourceCoverage,
-        consolidatedData: consolidatedResult.data,
+        consolidatedData: consolidatedResult.consolidatedData,
       });
 
-      console.log('[useResearchEngine] Consolidation complete:', {
-        discrepancies: consolidatedResult.discrepancies.length,
-        qualityScore: (consolidatedResult.qualityMetrics.overallScore * 100).toFixed(1) + '%',
-        sourceCoverage: consolidatedResult.sourceCoverage,
-      });
+      addDebugLog('CONSOLIDATE', `Discrepancies: ${consolidatedResult.discrepancies.length}, Quality: ${(consolidatedResult.qualityMetrics.overallScore * 100).toFixed(1)}%`);
 
       // Create report object
       const reportObj: Report = {
@@ -189,22 +235,49 @@ export const useResearchEngine = () => {
 
       addReport(reportObj);
       setSearchQuery('');
+      
+      // Persist to last successful report
+      setLastSuccessfulReport({
+        report: reportObj,
+        query,
+        completedAt: new Date(),
+        webSourcesUsed,
+      });
+
+      // Update run history
+      updateRunHistory(runId, {
+        status: 'completed',
+        completedAt: new Date(),
+        report: reportObj,
+        sourcesCount: results.length,
+        webSourcesUsed,
+      });
+
+      addDebugLog('COMPLETE', `Research complete. Quality: ${(quality.overall * 100).toFixed(0)}%, Sources: ${results.length}`);
 
       toast({
         title: "Research Complete",
-        description: `Quality: ${(quality.overall * 100).toFixed(0)}% | ${results.length} sources | ${verifications.length} claims verified`,
+        description: `Quality: ${(quality.overall * 100).toFixed(0)}% | ${results.length} sources | ${webSourcesUsed ? 'Web sources used' : 'AI knowledge only'}`,
       });
 
       return { task: newTask, results, report: reportObj };
     } catch (error) {
       console.error('Research error:', error);
       
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      addDebugLog('FATAL', errorMessage);
+      
       updateTask(taskId, {
         status: 'failed',
         progress: 0,
       });
 
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      // Update run history with failure
+      updateRunHistory(runId, {
+        status: 'failed',
+        completedAt: new Date(),
+        error: errorMessage,
+      });
       
       toast({
         title: "Research Failed",
@@ -215,6 +288,8 @@ export const useResearchEngine = () => {
       throw error;
     } finally {
       setIsSearching(false);
+      setCurrentRunId(null);
+      abortControllerRef.current = null;
     }
   }, [
     addTask, 
@@ -225,6 +300,8 @@ export const useResearchEngine = () => {
     deepVerifyMode, 
     enabledSources,
     reportFormat,
+    countryFilter,
+    strictMode,
     setDeepVerifySources,
     updateDeepVerifySource,
     setAgentState,
@@ -235,7 +312,14 @@ export const useResearchEngine = () => {
     setAgentDecision,
     setAgentConsolidation,
     setAgentSearchEngines,
-    resetAgentState
+    resetAgentState,
+    addRunHistory,
+    updateRunHistory,
+    setLastSuccessfulReport,
+    setCurrentRunId,
+    addDebugLog,
+    clearDebugLogs,
+    cancelResearch,
   ]);
 
   // Deep research - scrapes specific URLs using agent
@@ -314,6 +398,7 @@ export const useResearchEngine = () => {
     startResearch, 
     deepScrape, 
     mapWebsite,
+    cancelResearch,
     agent: researchAgent
   };
 };
