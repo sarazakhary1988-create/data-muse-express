@@ -47,7 +47,15 @@ export const Logo = () => {
         >
           ORKESTRA
         </motion.span>
-        <span className="text-[10px] text-muted-foreground -mt-0.5 tracking-wider uppercase font-medium">
+        <span 
+          className="text-[10px] -mt-0.5 tracking-wider uppercase font-medium"
+          style={{
+            background: 'linear-gradient(90deg, hsl(262, 60%, 55%) 0%, hsl(200, 70%, 50%) 50%, hsl(173, 70%, 45%) 100%)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            backgroundClip: 'text',
+          }}
+        >
           Autonomous Research Engine
         </span>
       </div>
