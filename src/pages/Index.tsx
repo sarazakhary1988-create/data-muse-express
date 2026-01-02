@@ -12,6 +12,7 @@ import { ReportViewer } from '@/components/ReportViewer';
 import { TaskHistory } from '@/components/TaskHistory';
 import { UrlScraper } from '@/components/UrlScraper';
 import { AgentStatusPanel } from '@/components/AgentStatusPanel';
+import { SearchEngineIndicator } from '@/components/SearchEngineIndicator';
 import { ScheduledTasksView } from '@/components/scheduled/ScheduledTasksView';
 import { ResearchTemplates } from '@/components/templates/ResearchTemplates';
 import { HypothesisLab } from '@/components/hypothesis/HypothesisLab';
@@ -162,6 +163,7 @@ const Index = () => {
                   className="mt-8 space-y-4"
                 >
                   <AgentStatusPanel />
+                  <SearchEngineIndicator />
                   <ResearchProgress 
                     steps={researchSteps} 
                     currentProgress={currentTask.progress}
