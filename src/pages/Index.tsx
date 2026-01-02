@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Helmet } from 'react-helmet-async';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, XCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { AnimatedBackground } from '@/components/AnimatedBackground';
 import { Sidebar, ViewType } from '@/components/Sidebar';
@@ -39,7 +40,7 @@ const Index = () => {
     setSearchQuery
   } = useResearchStore();
   
-  const { startResearch, deepScrape } = useResearchEngine();
+  const { startResearch, deepScrape, cancelResearch } = useResearchEngine();
 
   const currentReport = reports.find(r => r.taskId === currentTask?.id);
 
@@ -179,9 +180,20 @@ const Index = () => {
                             {reportGenerationStatus.message}
                           </span>
                         </div>
-                        <span className="text-lg font-bold text-primary">
-                          {reportGenerationStatus.progress}%
-                        </span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-lg font-bold text-primary">
+                            {reportGenerationStatus.progress}%
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={cancelResearch}
+                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                          >
+                            <XCircle className="w-4 h-4 mr-1" />
+                            Cancel
+                          </Button>
+                        </div>
                       </div>
                       <Progress value={reportGenerationStatus.progress} className="h-2" />
                     </motion.div>

@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { FileText, ArrowLeft, Filter, SortDesc, Activity, LayoutList, Scale, Loader2, Sparkles } from 'lucide-react';
+import { FileText, ArrowLeft, Filter, SortDesc, Activity, LayoutList, Scale, Loader2, Sparkles, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -10,6 +10,7 @@ import { ResearchTrace } from '@/components/ResearchTrace';
 import { DiscrepancyReport } from '@/components/DiscrepancyReport';
 import { ResearchTask, useResearchStore } from '@/store/researchStore';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { useResearchEngine } from '@/hooks/useResearchEngine';
 
 interface ResultsViewProps {
   task: ResearchTask;
@@ -20,6 +21,7 @@ interface ResultsViewProps {
 export const ResultsView = ({ task, onBack, onViewReport }: ResultsViewProps) => {
   const { reports, agentState, reportGenerationStatus } = useResearchStore();
   const { t, isRTL } = useLanguage();
+  const { cancelResearch } = useResearchEngine();
   const taskReport = reports.find(r => r.taskId === task.id);
   const consolidation = agentState.consolidation;
 
@@ -48,9 +50,20 @@ export const ResultsView = ({ task, onBack, onViewReport }: ResultsViewProps) =>
                   {reportGenerationStatus.message}
                 </span>
               </div>
-              <span className="text-sm font-bold text-primary">
-                {reportGenerationStatus.progress}%
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-primary">
+                  {reportGenerationStatus.progress}%
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={cancelResearch}
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 px-2"
+                >
+                  <XCircle className="w-3 h-3 mr-1" />
+                  Cancel
+                </Button>
+              </div>
             </div>
             <Progress value={reportGenerationStatus.progress} className="h-2" />
           </motion.div>
