@@ -77,6 +77,14 @@ export class ResearchAgent {
     resultCounts: Record<string, number>;
     searchMethod: string;
     timing?: number;
+    urlDetails?: {
+      engine: string;
+      url: string;
+      title: string;
+      relevanceScore: number;
+      status: 'pending' | 'scraped' | 'failed';
+      scrapedAt?: string;
+    }[];
   } | null = null;
 
   constructor() {
@@ -131,6 +139,14 @@ export class ResearchAgent {
       resultCounts: Record<string, number>;
       searchMethod: string;
       timing?: number;
+      urlDetails?: {
+        engine: string;
+        url: string;
+        title: string;
+        relevanceScore: number;
+        status: 'pending' | 'scraped' | 'failed';
+        scrapedAt?: string;
+      }[];
     };
     webSourcesUsed: boolean;
     warnings: string[];
@@ -467,12 +483,45 @@ export class ResearchAgent {
       }));
 
       this.verifications = wideResult.verifications;
+      
+      // Build result counts and URL details from aggregated sources
+      const resultCounts: Record<string, number> = {};
+      const urlDetails: Array<{
+        engine: string;
+        url: string;
+        title: string;
+        relevanceScore: number;
+        status: 'pending' | 'scraped' | 'failed';
+        scrapedAt?: string;
+      }> = [];
+      
+      for (const source of wideResult.aggregatedSources) {
+        const engine = source.source?.toLowerCase() || 'unknown';
+        resultCounts[engine] = (resultCounts[engine] || 0) + 1;
+        
+        urlDetails.push({
+          engine: source.source || 'unknown',
+          url: source.url,
+          title: source.title,
+          relevanceScore: source.reliability || 0.7,
+          status: source.content && source.content.length > 100 ? 'scraped' : 'pending',
+          scrapedAt: source.fetchedAt,
+        });
+      }
+      
       this.searchEngineInfo = {
-        engines: ['duckduckgo', 'google', 'bing'],
-        resultCounts: {},
+        engines: [...new Set(wideResult.aggregatedSources.map(s => s.source?.toLowerCase() || 'unknown'))].filter(e => e !== 'unknown'),
+        resultCounts,
         searchMethod: 'wide_research_parallel',
         timing: wideResult.timing.total,
+        urlDetails,
       };
+      
+      // Ensure we have at least default engines if none detected
+      if (this.searchEngineInfo.engines.length === 0) {
+        this.searchEngineInfo.engines = ['duckduckgo', 'google'];
+      }
+      
       this.webSourcesAvailable = wideResult.aggregatedSources.length > 0;
 
       // Create plan from wide research

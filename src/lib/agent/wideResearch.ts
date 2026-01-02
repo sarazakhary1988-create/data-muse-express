@@ -35,6 +35,8 @@ export interface WebSource {
   fetchedAt: string;
   reliability: number;
   source: string; // Search engine that found this
+  relevanceScore?: number;
+  status?: 'pending' | 'scraped' | 'failed';
 }
 
 export interface ExtractedContent {

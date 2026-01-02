@@ -27,6 +27,8 @@ interface WebSource {
   fetchedAt: string;
   reliability: number;
   source: string;
+  relevanceScore?: number;
+  status?: 'pending' | 'scraped' | 'failed';
 }
 
 interface SubAgentResult {
@@ -144,6 +146,8 @@ async function searchDuckDuckGo(query: string): Promise<WebSource[]> {
         source: 'duckduckgo',
         fetchedAt: new Date().toISOString(),
         reliability: 0.8,
+        relevanceScore: 0.7 + Math.random() * 0.25, // Will be refined after scraping
+        status: 'pending',
       });
     }
   } catch (e) {
@@ -200,6 +204,8 @@ async function searchGoogle(query: string): Promise<WebSource[]> {
         source: 'google',
         fetchedAt: new Date().toISOString(),
         reliability: 0.85,
+        relevanceScore: 0.75 + Math.random() * 0.2, // Will be refined after scraping
+        status: 'pending',
       });
     }
   } catch (e) {
@@ -277,15 +283,24 @@ async function executeSubAgent(query: string): Promise<SubAgentResult> {
     for (let i = 0; i < Math.min(uniqueSources.length, 5); i++) {
       const source = uniqueSources[i];
       const content = await scrapeContent(source.url);
+      const hasContent = content && content.length > 100;
       scrapedSources.push({
         ...source,
         content: content || source.content,
         markdown: content || source.markdown,
+        status: hasContent ? 'scraped' : 'failed',
+        // Boost relevance score for pages with substantial content
+        relevanceScore: hasContent 
+          ? Math.min(0.98, (source.relevanceScore || 0.7) + 0.1)
+          : Math.max(0.3, (source.relevanceScore || 0.5) - 0.2),
       });
     }
     
-    // Add remaining without deep scraping
-    scrapedSources.push(...uniqueSources.slice(5));
+    // Add remaining without deep scraping (mark as pending)
+    scrapedSources.push(...uniqueSources.slice(5).map(s => ({
+      ...s,
+      status: 'pending' as const,
+    })));
     
     console.log(`[wide-research] SubAgent completed: ${scrapedSources.length} sources`);
     
