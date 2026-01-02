@@ -6,13 +6,14 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { AnimatedBackground } from '@/components/AnimatedBackground';
 import { Sidebar, ViewType } from '@/components/Sidebar';
+import { TopNavigation } from '@/components/TopNavigation';
 import { SearchInput } from '@/components/SearchInput';
 import { HeroSection } from '@/components/HeroSection';
 import { FeatureGrid } from '@/components/FeatureGrid';
 import { ResearchProgress, defaultResearchSteps, deepVerifyResearchSteps } from '@/components/ResearchProgress';
 import { ResultsView } from '@/components/ResultsView';
 import { ReportViewer } from '@/components/ReportViewer';
-import { TaskHistory } from '@/components/TaskHistory';
+import { EnhancedHistory } from '@/components/EnhancedHistory';
 import { UrlScraper } from '@/components/UrlScraper';
 import { AgentStatusPanel } from '@/components/AgentStatusPanel';
 import { SearchEngineIndicator } from '@/components/SearchEngineIndicator';
@@ -133,6 +134,15 @@ const Index = () => {
     setCurrentTask(task);
     if (task.status === 'completed') {
       setActiveView('results');
+    }
+  };
+
+  const handleRerunQuery = async (query: string) => {
+    try {
+      await startResearch(query);
+      setActiveView('results');
+    } catch (error) {
+      console.error('Re-run failed:', error);
     }
   };
 
@@ -289,13 +299,20 @@ const Index = () => {
 
       case 'history':
         return (
-          <div className="w-full max-w-3xl mx-auto px-4 py-8">
+          <div className="w-full max-w-4xl mx-auto px-4 py-8">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
             >
-              <h2 className="text-2xl font-bold mb-6">Research History</h2>
-              <TaskHistory onSelectTask={handleSelectTask} />
+              <h2 className="text-2xl font-bold mb-6 flex items-center gap-3">
+                <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+                  Research History
+                </span>
+              </h2>
+              <EnhancedHistory 
+                onSelectTask={handleSelectTask} 
+                onRerunQuery={handleRerunQuery}
+              />
             </motion.div>
           </div>
         );
@@ -322,20 +339,26 @@ const Index = () => {
         <Sidebar activeView={activeView} onViewChange={setActiveView} />
         
         {/* Main Content */}
-        <main className="flex-1 overflow-auto">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeView}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={{ duration: 0.3 }}
-              className="min-h-full"
-            >
-              {renderContent()}
-            </motion.div>
-          </AnimatePresence>
-        </main>
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Top Navigation */}
+          <TopNavigation />
+          
+          {/* Main Content Area */}
+          <main className="flex-1 overflow-auto">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeView}
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.3 }}
+                className="min-h-full"
+              >
+                {renderContent()}
+              </motion.div>
+            </AnimatePresence>
+          </main>
+        </div>
       </div>
     </>
   );
