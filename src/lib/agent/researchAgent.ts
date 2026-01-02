@@ -407,46 +407,203 @@ export class ResearchAgent {
     }
   }
 
-  // Generate report using only AI knowledge (no web sources)
-  private async generateAIOnlyReport(query: string): Promise<string> {
-    console.log('[ResearchAgent] Generating AI-only report for:', query);
+  // Execute Wide Research for complex queries - 100% real-time web scraping
+  private async executeWideResearch(
+    query: string,
+    options?: {
+      country?: string;
+      strictMode?: { enabled: boolean; minSources: number };
+    }
+  ): Promise<{
+    results: AgentResearchResult[];
+    report: string;
+    quality: QualityScore;
+    verifications: ClaimVerification[];
+    plan: ResearchPlan;
+    searchEngineInfo?: {
+      engines: string[];
+      resultCounts: Record<string, number>;
+      searchMethod: string;
+      timing?: number;
+    };
+    webSourcesUsed: boolean;
+    warnings: string[];
+  }> {
+    console.log('[ResearchAgent] Executing Wide Research for:', query);
     
-    const formatInstructions = this.getReportFormatInstructions();
-    
-    const prompt = `You are a research analyst. Generate a comprehensive research report on the following topic using your knowledge base.
-
-RESEARCH QUERY: "${query}"
-
-${formatInstructions}
-
-IMPORTANT INSTRUCTIONS:
-1. Generate a complete, structured report with all required sections
-2. Clearly label this as "Generated from AI knowledge base"
-3. Be specific but acknowledge that data may need external verification
-4. Include "Open Questions" section for items that need external data
-5. Do NOT fabricate specific statistics or citations
-6. Focus on frameworks, analysis, and actionable insights
-
-Generate the research report:`;
+    const wideResearchCallbacks: WideResearchCallbacks = {
+      onProgress: (progress, phase) => {
+        this.callbacks.onProgress?.(progress);
+        this.callbacks.onDecision?.(phase, progress / 100);
+      },
+      onSourceFound: (source) => {
+        console.log(`[ResearchAgent] Wide Research found source: ${source.domain}`);
+      },
+    };
 
     try {
-      const analyzeResult = await researchApi.analyze(query, prompt, 'report', this.reportFormat);
-      
-      if (analyzeResult.success && analyzeResult.result) {
-        const metadataSection = `\n\n---\n\n**Research Metadata:**
-- Data Source: AI Knowledge Synthesis
-- Note: Web sources were unavailable - this report uses AI knowledge
-- Report generated: ${new Date().toISOString()}
-- Research engine: Manus 1.6 MAX`;
+      const wideResult = await executeWideResearch(query, {
+        maxSubAgents: 8,
+        scrapeDepth: 'medium',
+        verificationLevel: 'standard',
+        minSourcesPerItem: 2,
+        timeout: 30000,
+        country: options?.country,
+      }, wideResearchCallbacks);
 
-        return analyzeResult.result + metadataSection;
-      }
+      // Convert Wide Research sources to AgentResearchResult
+      this.results = wideResult.aggregatedSources.map((source, idx) => ({
+        id: `wide-${Date.now()}-${idx}`,
+        title: source.title,
+        url: source.url,
+        content: source.content,
+        summary: source.content.slice(0, 300),
+        relevanceScore: source.reliability,
+        extractedAt: new Date(source.fetchedAt),
+        metadata: {
+          domain: source.domain,
+          wordCount: source.content.split(/\s+/).length,
+        },
+      }));
+
+      this.verifications = wideResult.verifications;
+      this.searchEngineInfo = {
+        engines: ['duckduckgo', 'google', 'bing'],
+        resultCounts: {},
+        searchMethod: 'wide_research_parallel',
+        timing: wideResult.timing.total,
+      };
+      this.webSourcesAvailable = wideResult.aggregatedSources.length > 0;
+
+      // Create plan from wide research
+      this.currentPlan = {
+        id: `wide-plan-${Date.now()}`,
+        query,
+        strategy: {
+          approach: 'hybrid',
+          sourceTypes: ['news', 'official', 'financial'],
+          verificationLevel: 'standard',
+          maxSources: 20,
+          parallelism: 8,
+        },
+        steps: wideResult.subResults.map((sr, i) => ({
+          id: `step-${i}`,
+          type: 'search' as const,
+          status: sr.status === 'completed' ? 'completed' as const : 'failed' as const,
+          description: sr.query,
+          dependencies: [],
+          confidence: sr.sources.length > 0 ? 0.8 : 0.2,
+        })),
+        estimatedDuration: wideResult.timing.total,
+        priority: 'high',
+        createdAt: new Date(),
+        adaptations: [],
+      };
+
+      this.callbacks.onPlanUpdate?.(this.currentPlan);
+      this.callbacks.onResultsUpdate?.(this.results);
+      this.callbacks.onVerificationUpdate?.(this.verifications);
+      this.callbacks.onQualityUpdate?.(wideResult.quality);
+
+      console.log('[ResearchAgent] Wide Research complete:', {
+        sources: this.results.length,
+        verifications: this.verifications.length,
+        quality: wideResult.quality.overall,
+      });
+
+      return {
+        results: this.results,
+        report: wideResult.report,
+        quality: wideResult.quality,
+        verifications: this.verifications,
+        plan: this.currentPlan,
+        searchEngineInfo: this.searchEngineInfo,
+        webSourcesUsed: this.webSourcesAvailable,
+        warnings: wideResult.aggregatedSources.length === 0 
+          ? ['No web sources found - report may be incomplete'] 
+          : [],
+      };
     } catch (error) {
-      console.error('[ResearchAgent] AI-only report generation failed:', error);
-    }
+      console.error('[ResearchAgent] Wide Research failed:', error);
+      
+      // Return error state with empty report
+      const errorPlan: ResearchPlan = {
+        id: 'error-plan',
+        query,
+        strategy: {
+          approach: 'hybrid',
+          sourceTypes: ['news'],
+          verificationLevel: 'basic',
+          maxSources: 5,
+          parallelism: 1,
+        },
+        steps: [],
+        estimatedDuration: 0,
+        priority: 'medium',
+        createdAt: new Date(),
+        adaptations: [],
+      };
 
-    // Ultimate fallback
-    return this.generateFallbackReport(query, ['AI report generation failed']);
+      return {
+        results: [],
+        report: this.generateNoDataReport(query, error instanceof Error ? error.message : 'Unknown error'),
+        quality: { completeness: 0, sourceQuality: 0, accuracy: 0, freshness: 0, overall: 0, claimVerification: 0 },
+        verifications: [],
+        plan: errorPlan,
+        webSourcesUsed: false,
+        warnings: [`Wide Research failed: ${error instanceof Error ? error.message : 'Unknown error'}`],
+      };
+    }
+  }
+
+  // Generate report when no data is available (NO AI SYNTHESIS)
+  private generateNoDataReport(query: string, errorMessage: string): string {
+    const date = new Date().toLocaleDateString('en-US', { 
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+    });
+
+    return `# Research Report: ${query}
+
+> Generated ${date} | Mode: Wide Research | Status: **NO DATA AVAILABLE**
+
+---
+
+## ⚠️ Research Could Not Complete
+
+The research engine was unable to retrieve web data for this query.
+
+### Error Details
+- **Error**: ${errorMessage}
+- **Query**: ${query}
+
+### Possible Causes
+1. Target websites may be blocking automated access
+2. Network connectivity issues
+3. Query terms may not match available content
+4. Sources may require authentication
+
+### Recommended Actions
+1. **Try more specific search terms** - Use exact company names, stock tickers
+2. **Check source accessibility** - Some financial sources require subscriptions
+3. **Retry later** - Temporary blocks may expire
+4. **Use alternative queries** - Break down complex queries into simpler parts
+
+---
+
+**Research Metadata:**
+- Mode: Manus 1.6 MAX Wide Research
+- Status: Failed - No Data
+- Generated: ${new Date().toISOString()}
+
+**IMPORTANT**: This report contains NO SYNTHESIZED or AI-GENERATED content.
+The system requires real web data and will not fabricate information.`;
+  }
+
+  // Generate report using only AI knowledge (no web sources) - DEPRECATED, kept for fallback
+  private async generateAIOnlyReport(query: string): Promise<string> {
+    // In strict mode, return no-data report instead of AI synthesis
+    console.warn('[ResearchAgent] AI-only report requested but strict mode active - returning no-data report');
+    return this.generateNoDataReport(query, 'No web sources available and AI synthesis is disabled');
   }
 
   // Generate a basic fallback report that never fails

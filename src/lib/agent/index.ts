@@ -17,3 +17,14 @@ export { CrossReferenceValidator, crossReferenceValidator } from './crossReferen
 export type { FieldValidation, ValidationResult, DiscrepancyDetail } from './crossReferenceValidator';
 export { DataConsolidator, dataConsolidator } from './dataConsolidator';
 export type { ConsolidatedResult, QualityMetrics, SourceCoverage, Discrepancy } from './dataConsolidator';
+
+// Manus 1.6 MAX Wide Research
+export { executeWideResearch, wideResearch } from './wideResearch';
+export type { 
+  WideResearchConfig, 
+  WideResearchResult, 
+  WideResearchCallbacks,
+  SubAgentResult,
+  WebSource,
+  ExtractedContent
+} from './wideResearch';
