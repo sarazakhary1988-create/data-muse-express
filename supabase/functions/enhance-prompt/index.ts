@@ -1,3 +1,4 @@
+import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
@@ -31,9 +32,14 @@ serve(async (req) => {
       });
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+    // Use OpenAI API
+    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+    if (!OPENAI_API_KEY) {
+      console.error("OPENAI_API_KEY is not configured");
+      return new Response(JSON.stringify({ error: "OpenAI API key not configured. Please add it in project settings." }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // Build context from filters
@@ -47,7 +53,7 @@ serve(async (req) => {
 
     const contextStr = contextParts.length > 0 ? `\n\nResearch Context:\n${contextParts.join("\n")}` : "";
 
-    const systemPrompt = `You are an expert research query optimizer. Your task is to transform user research descriptions into highly effective, detailed research prompts that will yield comprehensive and accurate results.
+    const systemPrompt = `You are an expert research query optimizer powered by OpenAI GPT-4o. Your task is to transform user research descriptions into highly effective, detailed research prompts that will yield comprehensive and accurate results from search engines and data sources.
 
 Guidelines for enhancement:
 1. Make the query specific and actionable
@@ -58,33 +64,38 @@ Guidelines for enhancement:
 6. Maintain the original intent while expanding scope appropriately
 7. Keep the enhanced prompt concise but comprehensive (max 200 words)
 8. Format with clear structure using bullet points or numbered lists where helpful
+9. Add specific entity names, tickers, and identifiers when implied
+10. Include geographic and industry context when relevant
 
 Return ONLY the enhanced research prompt, no explanations or meta-commentary.`;
 
     const userPrompt = `Original research description:
 "${description}"${contextStr}
 
-Please enhance this research description into an optimized, comprehensive research prompt.`;
+Please enhance this research description into an optimized, comprehensive research prompt that will yield maximum relevant results from web searches.`;
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    console.log("[enhance-prompt] Calling OpenAI API for:", description.slice(0, 100));
+
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "Authorization": `Bearer ${OPENAI_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "gpt-4o-mini",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
         max_tokens: 500,
+        temperature: 0.7,
       }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("AI Gateway error:", response.status, errorText);
+      console.error("OpenAI API error:", response.status, errorText);
 
       if (response.status === 429) {
         return new Response(JSON.stringify({ error: "Rate limit exceeded. Please try again later." }), {
@@ -93,7 +104,14 @@ Please enhance this research description into an optimized, comprehensive resear
         });
       }
 
-      throw new Error(`AI Gateway error: ${response.status}`);
+      if (response.status === 401) {
+        return new Response(JSON.stringify({ error: "Invalid OpenAI API key. Please check your configuration." }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      throw new Error(`OpenAI API error: ${response.status}`);
     }
 
     const data = await response.json();
@@ -103,10 +121,13 @@ Please enhance this research description into an optimized, comprehensive resear
       throw new Error("No enhanced description generated");
     }
 
+    console.log("[enhance-prompt] Successfully enhanced with OpenAI GPT-4o-mini");
+
     return new Response(
       JSON.stringify({
         enhanced_description: enhancedDescription,
         original_description: description,
+        model: "gpt-4o-mini",
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );

@@ -1,3 +1,4 @@
+import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
@@ -16,33 +17,11 @@ interface AnalyzeRequest {
   constraints?: string;
 }
 
-interface ReportSchema {
-  title: string;
-  executiveSummary: string[];
-  keyFindings: { finding: string; evidence: string }[];
-  evidence: string[];
-  dataAssumptions: string[];
-  recommendations: { priority: 'high' | 'medium' | 'low'; action: string }[];
-  openQuestions: string[];
-  sources: { title: string; url: string; accessedDate: string }[];
-  generatedAt: string;
-  webSourcesUsed: boolean;
-}
-
 // Input validation constants
 const MAX_QUERY_LENGTH = 2000;
 const MAX_CONTENT_LENGTH = 100000;
 const ALLOWED_TYPES = ['summarize', 'analyze', 'extract', 'report', 'verify'];
 const ALLOWED_REPORT_FORMATS = ['detailed', 'executive', 'table'];
-
-// Required sections for report validation
-const REQUIRED_REPORT_SECTIONS = [
-  'title',
-  'executiveSummary',
-  'keyFindings',
-  'evidence',
-  'recommendations',
-];
 
 function validateQuery(query: unknown): string {
   if (typeof query !== 'string') return '';
@@ -67,67 +46,6 @@ function validateType(type: unknown): 'summarize' | 'analyze' | 'extract' | 'rep
     return 'analyze';
   }
   return type as 'summarize' | 'analyze' | 'extract' | 'report' | 'verify';
-}
-
-// Validate report has all required sections
-function validateReportStructure(reportText: string): { valid: boolean; missingSections: string[] } {
-  const missingSections: string[] = [];
-  
-  const checks = {
-    title: /^#\s+.+/m,
-    executiveSummary: /##\s*Executive\s*Summary/i,
-    keyFindings: /##\s*Key\s*Findings/i,
-    evidence: /##\s*(Evidence|Reasoning|Analysis)/i,
-    recommendations: /##\s*(Recommendations|Actions)/i,
-  };
-  
-  for (const [section, pattern] of Object.entries(checks)) {
-    if (!pattern.test(reportText)) {
-      missingSections.push(section);
-    }
-  }
-  
-  return { valid: missingSections.length === 0, missingSections };
-}
-
-// Specificity checker - ensures report references query terms and has concrete points
-function checkSpecificity(query: string, reportText: string): { isGeneric: boolean; issues: string[] } {
-  const issues: string[] = [];
-  
-  // Extract key terms from query
-  const queryTerms = query
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(t => t.length > 3 && !['the', 'and', 'for', 'with', 'about', 'that', 'this', 'from', 'have'].includes(t));
-  
-  const reportLower = reportText.toLowerCase();
-  
-  // Check if query terms appear in report
-  const matchedTerms = queryTerms.filter(term => reportLower.includes(term));
-  if (matchedTerms.length < Math.min(3, queryTerms.length)) {
-    issues.push('Report does not reference key query terms');
-  }
-  
-  // Check for concrete data points (numbers, percentages, dates)
-  const hasNumbers = /\d+(?:\.\d+)?%?/.test(reportText);
-  const hasSpecificNames = /[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+/.test(reportText);
-  const hasTables = reportText.includes('|');
-  
-  if (!hasNumbers && !hasTables) {
-    issues.push('Report lacks specific data points or metrics');
-  }
-  
-  if (!hasSpecificNames) {
-    issues.push('Report lacks specific entity names');
-  }
-  
-  // Count concrete points (bullet points with specific content)
-  const bulletPoints = reportText.match(/^[-*]\s+.{30,}/gm) || [];
-  if (bulletPoints.length < 3) {
-    issues.push('Report has fewer than 3 concrete points');
-  }
-  
-  return { isGeneric: issues.length >= 2, issues };
 }
 
 serve(async (req) => {
@@ -184,26 +102,27 @@ serve(async (req) => {
     const validatedType = validateType(type);
     const validatedFormat: string = ALLOWED_REPORT_FORMATS.includes(reportFormat || '') ? (reportFormat as string) : 'detailed';
 
-    const apiKey = Deno.env.get('LOVABLE_API_KEY');
-    if (!apiKey) {
-      log('ERROR: LOVABLE_API_KEY not configured');
+    // Use OpenAI API
+    const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+    if (!OPENAI_API_KEY) {
+      log('ERROR: OPENAI_API_KEY not configured');
       return new Response(
-        JSON.stringify({ success: false, error: 'AI not configured' }),
+        JSON.stringify({ success: false, error: 'OpenAI API key not configured. Please add it in project settings.' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    log(`Analyzing: query="${validatedQuery.substring(0, 100)}...", type=${validatedType}, format=${validatedFormat}, hasContent=${hasContent}`);
+    log(`Analyzing with OpenAI: query="${validatedQuery.substring(0, 100)}...", type=${validatedType}, format=${validatedFormat}, hasContent=${hasContent}`);
 
     // Build system prompts with deterministic report contract
     const systemPrompts: Record<string, string> = {
-      summarize: `You are a factual research assistant. Only use information explicitly stated in the provided sources. If something is not present in the sources, say "Not found in sources". Provide a concise summary and end with a short Sources list (URLs).`,
+      summarize: `You are a factual research assistant powered by OpenAI GPT-4o. Only use information explicitly stated in the provided sources. If something is not present in the sources, say "Not found in sources". Provide a concise summary and end with a short Sources list (URLs).`,
       
-      analyze: `You are a factual research analyst. Only use information explicitly stated in the provided sources. Do not guess or fill gaps. If the sources are insufficient, say what is missing. Cite sources by URL for every important claim.`,
+      analyze: `You are a factual research analyst powered by OpenAI GPT-4o. Only use information explicitly stated in the provided sources. Do not guess or fill gaps. If the sources are insufficient, say what is missing. Cite sources by URL for every important claim.`,
       
-      extract: `You are a strict data extraction assistant. Extract ONLY facts that are explicitly present in the provided sources. If a field is missing, output "Not found". Include the source URL for each extracted item.`,
+      extract: `You are a strict data extraction assistant powered by OpenAI GPT-4o. Extract ONLY facts that are explicitly present in the provided sources. If a field is missing, output "Not found". Include the source URL for each extracted item.`,
       
-      verify: `You are a strict verification engine.
+      verify: `You are a strict verification engine powered by OpenAI GPT-4o.
 
 CRITICAL RULES:
 1. Use ONLY the provided content excerpt; do NOT use external knowledge.
@@ -223,7 +142,7 @@ CRITICAL RULES:
             ? 'Web sources unavailable — generated from model knowledge + provided inputs' 
             : 'Generated from model knowledge');
       
-      const baseInstructions = `You are an expert research analyst generating a STRUCTURED research report.
+      const baseInstructions = `You are an expert research analyst powered by OpenAI GPT-4o generating a STRUCTURED research report.
 
 CURRENT DATE: ${currentDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
 
@@ -268,9 +187,10 @@ Explain WHY each finding is true. Provide:
 - [What should be investigated next?]
 
 ## Sources
-${hasWebContent ? '[List actual URLs used]' : `Note: ${sourceLabel}`}
+${hasWebContent ? '[List actual URLs used with domain citations]' : `Note: ${sourceLabel}`}
 
 ---
+Generated by: OpenAI GPT-4o | Manus 1.6 MAX Research Engine
 Generated: ${currentDate.toISOString()}
 `;
 
@@ -279,7 +199,7 @@ Generated: ${currentDate.toISOString()}
 
 ADDITIONAL INSTRUCTIONS FOR EXECUTIVE FORMAT:
 - Keep total length under 800 words
-- Focus on actionable insights
+- Focus on actionable insights for decision-makers
 - Lead with the most important findings
 - Use concise bullet points`;
       }
@@ -298,10 +218,10 @@ ADDITIONAL INSTRUCTIONS FOR TABLE FORMAT:
       return baseInstructions + `
 
 ADDITIONAL INSTRUCTIONS FOR DETAILED FORMAT:
-- Provide comprehensive analysis
+- Provide comprehensive analysis with 1500-2500 words
 - Include subsections within each major section as needed
 - Use tables, lists, and formatting for clarity
-- Aim for 1000-2000 words of substantive content`;
+- Provide thorough evidence and reasoning for all claims`;
     }
 
     // Limit content size passed to AI
@@ -361,101 +281,95 @@ Content to analyze:
 ${truncatedContent}`;
     }
 
-    log(`Calling AI gateway with ${userContent.length} chars of content`);
+    log(`Calling OpenAI API with ${userContent.length} chars of content`);
 
-    // First attempt
-    let response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    // Select model based on task complexity
+    const model = validatedType === 'report' ? 'gpt-4o' : 'gpt-4o-mini';
+    const maxTokens = validatedType === 'report' ? 4096 : 2048;
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: model,
         messages: [
           { role: 'system', content: systemPrompts[validatedType] || systemPrompts.analyze },
           { role: 'user', content: userContent },
         ],
+        max_tokens: maxTokens,
+        temperature: 0.3,
       }),
     });
 
     if (!response.ok) {
+      const errorText = await response.text();
+      log(`OpenAI API error: ${response.status} - ${errorText}`);
+      
       if (response.status === 429) {
-        log('Rate limit exceeded');
         return new Response(
           JSON.stringify({ success: false, error: 'Rate limit exceeded. Please try again later.' }),
           { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-      if (response.status === 402) {
-        log('Payment required');
+      if (response.status === 401) {
         return new Response(
-          JSON.stringify({ success: false, error: 'AI credits exhausted. Please add credits.' }),
-          { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          JSON.stringify({ success: false, error: 'Invalid OpenAI API key. Please check your configuration.' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-      const errorText = await response.text();
-      log(`AI gateway error: ${response.status} - ${errorText}`);
+      
       return new Response(
-        JSON.stringify({ success: false, error: 'AI analysis failed' }),
+        JSON.stringify({ success: false, error: `OpenAI API error: ${response.status}` }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    let data = await response.json();
+    const data = await response.json();
     let result = data.choices?.[0]?.message?.content || '';
-    log(`First attempt result length: ${result.length}`);
+    log(`OpenAI response received, length: ${result.length}`);
 
     // For reports, validate structure and regenerate if needed
-    if (validatedType === 'report' && result) {
-      const structureCheck = validateReportStructure(result);
-      const specificityCheck = checkSpecificity(validatedQuery, result);
+    if (validatedType === 'report' && result && result.length < 500) {
+      log('Report too short, regenerating with stronger instructions...');
       
-      log(`Structure valid: ${structureCheck.valid}, Missing: ${structureCheck.missingSections.join(', ')}`);
-      log(`Specificity: ${specificityCheck.isGeneric ? 'GENERIC' : 'OK'}, Issues: ${specificityCheck.issues.join(', ')}`);
-      
-      // Regenerate if structure is invalid OR too generic
-      if (!structureCheck.valid || specificityCheck.isGeneric) {
-        log('Regenerating report with stronger instructions...');
-        
-        const regeneratePrompt = `${userContent}
+      const regeneratePrompt = `${userContent}
 
-CRITICAL: Your previous response was incomplete or too generic.
-${structureCheck.missingSections.length > 0 ? `Missing sections: ${structureCheck.missingSections.join(', ')}` : ''}
-${specificityCheck.issues.length > 0 ? `Issues: ${specificityCheck.issues.join(', ')}` : ''}
-
-Be HIGHLY SPECIFIC. Include:
-- Specific metrics, percentages, and numbers
-- Actual company names, people, and dates
-- Concrete examples and clear steps
+CRITICAL: Your previous response was too short or incomplete.
+Generate a COMPLETE, COMPREHENSIVE research report with:
 - At least 5 bullet points in Executive Summary
-- At least 3 Key Findings with evidence
+- At least 3 Key Findings with detailed evidence
 - At least 3 prioritized Recommendations
+- Data tables where appropriate
+- Total length: 1500+ words for detailed format
 
 Generate the COMPLETE report now:`;
 
-        response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'google/gemini-2.5-flash',
-            messages: [
-              { role: 'system', content: systemPrompts.report },
-              { role: 'user', content: regeneratePrompt },
-            ],
-          }),
-        });
+      const retryResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${OPENAI_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o',
+          messages: [
+            { role: 'system', content: systemPrompts.report },
+            { role: 'user', content: regeneratePrompt },
+          ],
+          max_tokens: 4096,
+          temperature: 0.3,
+        }),
+      });
 
-        if (response.ok) {
-          data = await response.json();
-          const newResult = data.choices?.[0]?.message?.content || '';
-          if (newResult.length > result.length) {
-            result = newResult;
-            log(`Regenerated result length: ${result.length}`);
-          }
+      if (retryResponse.ok) {
+        const retryData = await retryResponse.json();
+        const newResult = retryData.choices?.[0]?.message?.content || '';
+        if (newResult.length > result.length) {
+          result = newResult;
+          log(`Regenerated result length: ${result.length}`);
         }
       }
     }
@@ -468,22 +382,23 @@ Generate the COMPLETE report now:`;
         success: true, 
         result,
         metadata: {
+          model: model,
           webSourcesUsed: hasContent,
           generatedAt: new Date().toISOString(),
           processingTime: totalTime,
           regenerated: logs.some(l => l.includes('Regenerating')),
         },
-        debug: logs,
+        logs: logs,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
-    console.error('Error analyzing:', error);
+    console.error('[research-analyze] Error:', error);
     return new Response(
       JSON.stringify({ 
         success: false, 
-        error: 'Failed to analyze',
-        debug: logs,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        logs: logs,
       }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
