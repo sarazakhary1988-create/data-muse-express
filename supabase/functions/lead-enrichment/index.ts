@@ -1,3 +1,4 @@
+import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
@@ -25,61 +26,26 @@ interface CompanyEnrichmentRequest {
   reportType: 'full' | 'executive' | 'sales' | 'hr';
 }
 
-type EnrichmentRequest = PersonEnrichmentRequest | CompanyEnrichmentRequest;
-
-interface EnrichmentResult {
-  success: boolean;
-  data?: {
+interface ChatEditRequest {
+  type: 'chat_edit';
+  currentReport: string;
+  editInstruction: string;
+  reportContext: {
     name: string;
-    type: 'person' | 'company';
-    // Person fields
-    title?: string;
-    company?: string;
-    linkedinUrl?: string;
-    email?: string;
-    phone?: string;
-    education?: string[];
-    experience?: Array<{ title: string; company: string; duration: string }>;
-    skills?: string[];
-    // Company fields
-    industry?: string;
-    location?: string;
-    website?: string;
-    employees?: string;
-    revenue?: string;
-    founded?: string;
-    // Shared fields
-    overview: string;
-    financials?: {
-      revenue?: string;
-      funding?: string;
-      valuation?: string;
-      investors?: string[];
-    };
-    leadership?: Array<{
-      name: string;
-      title: string;
-      background?: string;
-    }>;
-    boardMembers?: Array<{
-      name: string;
-      title?: string;
-      otherRoles?: string;
-    }>;
-    keyFacts: string[];
-    recentNews?: string[];
-    sources: Array<{ title: string; url: string }>;
+    entityType: 'person' | 'company';
   };
-  error?: string;
 }
 
+type EnrichmentRequest = PersonEnrichmentRequest | CompanyEnrichmentRequest | ChatEditRequest;
+
 // Perform web search
-async function searchWeb(query: string, maxResults: number = 10): Promise<any[]> {
+async function searchWeb(query: string, maxResults: number = 12): Promise<any[]> {
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   
   try {
-    const response = await fetch(`${supabaseUrl}/functions/v1/web-search`, {
+    console.log(`[lead-enrichment] Searching: ${query}`);
+    const response = await fetch(`${supabaseUrl}/functions/v1/research-search`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -87,31 +53,31 @@ async function searchWeb(query: string, maxResults: number = 10): Promise<any[]>
       },
       body: JSON.stringify({
         query,
-        maxResults,
-        searchEngine: 'all',
-        scrapeContent: true,
+        limit: maxResults,
+        deepScrape: true,
       }),
     });
     
     if (!response.ok) {
-      console.error('[lead-enrichment] Web search failed:', response.status);
+      console.error('[lead-enrichment] Search failed:', response.status);
       return [];
     }
     
     const data = await response.json();
     return data.data || [];
   } catch (error) {
-    console.error('[lead-enrichment] Web search error:', error);
+    console.error('[lead-enrichment] Search error:', error);
     return [];
   }
 }
 
 // Scrape specific URL
-async function scrapeUrl(url: string): Promise<string> {
+async function scrapeUrl(url: string): Promise<{ markdown: string; links: string[] }> {
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   
   try {
+    console.log(`[lead-enrichment] Scraping: ${url}`);
     const response = await fetch(`${supabaseUrl}/functions/v1/research-scrape`, {
       method: 'POST',
       headers: {
@@ -121,80 +87,259 @@ async function scrapeUrl(url: string): Promise<string> {
       body: JSON.stringify({ url, formats: ['markdown'], onlyMainContent: true }),
     });
     
-    if (!response.ok) return '';
+    if (!response.ok) return { markdown: '', links: [] };
     const data = await response.json();
-    return data.data?.markdown || '';
+    return { 
+      markdown: data.data?.markdown || '', 
+      links: data.data?.links || [] 
+    };
   } catch {
-    return '';
+    return { markdown: '', links: [] };
   }
 }
 
-// Build search queries for comprehensive research
-function buildSearchQueries(request: EnrichmentRequest): string[] {
+// Build comprehensive search queries for person
+function buildPersonSearchQueries(request: PersonEnrichmentRequest): string[] {
   const queries: string[] = [];
+  const fullName = `${request.firstName || ''} ${request.lastName || ''}`.trim();
   
-  if (request.type === 'person') {
-    const fullName = `${request.firstName || ''} ${request.lastName || ''}`.trim();
-    
-    if (request.linkedinUrl) {
-      queries.push(`"${fullName}" LinkedIn profile`);
-    }
-    
-    if (fullName) {
-      queries.push(`"${fullName}" ${request.company || ''} professional profile`);
-      queries.push(`"${fullName}" ${request.company || ''} executive biography`);
-      queries.push(`"${fullName}" career background experience`);
-    }
-    
-    if (request.company) {
-      queries.push(`${request.company} ${fullName} announcement news`);
-    }
-  } else {
-    const company = request.companyName;
-    
-    // Company overview and general info
-    queries.push(`"${company}" company overview about profile`);
-    
-    // Financial information
-    queries.push(`"${company}" revenue funding valuation financials`);
-    
-    // Leadership and founders
-    queries.push(`"${company}" founder CEO executives leadership team`);
-    queries.push(`"${company}" board members directors`);
-    
-    // If website provided, we'll scrape it directly
-    if (request.website) {
-      queries.push(`site:${request.website} about leadership team`);
-    }
-    
-    // Industry-specific
-    if (request.industry) {
-      queries.push(`"${company}" ${request.industry} market position competitors`);
-    }
-    
-    // Location-specific
-    if (request.country && request.country !== 'All Countries') {
-      queries.push(`"${company}" ${request.country} office operations`);
-    }
+  if (request.linkedinUrl) {
+    queries.push(`${fullName} LinkedIn profile biography`);
   }
   
-  return queries.slice(0, 5); // Limit to 5 queries
+  if (fullName) {
+    // Professional profile
+    queries.push(`"${fullName}" ${request.company || ''} professional profile biography`);
+    queries.push(`"${fullName}" career work experience education background`);
+    
+    // Social media discovery
+    queries.push(`"${fullName}" ${request.company || ''} LinkedIn Twitter social media profiles`);
+    
+    // Investment and business interests
+    queries.push(`"${fullName}" investor investments board member advisory`);
+    
+    // News and recent activity
+    queries.push(`"${fullName}" ${request.company || ''} news announcement interview`);
+  }
+  
+  if (request.email) {
+    queries.push(`"${request.email}" contact profile`);
+  }
+  
+  if (request.company) {
+    queries.push(`${request.company} ${fullName} executive leadership`);
+  }
+  
+  return queries.slice(0, 6);
 }
 
-// Generate the enrichment report using AI
-async function generateEnrichmentReport(
-  request: EnrichmentRequest,
-  searchResults: any[],
-  websiteContent: string
-): Promise<EnrichmentResult> {
-  const apiKey = Deno.env.get('LOVABLE_API_KEY');
+// Build comprehensive search queries for company
+function buildCompanySearchQueries(request: CompanyEnrichmentRequest): string[] {
+  const queries: string[] = [];
+  const company = request.companyName;
   
-  if (!apiKey) {
-    console.error('[lead-enrichment] LOVABLE_API_KEY not configured');
-    return { success: false, error: 'AI not configured' };
+  // Company overview
+  queries.push(`"${company}" company overview about headquarters address phone`);
+  
+  // Financial information
+  queries.push(`"${company}" revenue funding valuation financials annual report`);
+  
+  // Leadership
+  queries.push(`"${company}" CEO founder executives leadership team biography`);
+  queries.push(`"${company}" board directors members governance`);
+  
+  // Ownership
+  queries.push(`"${company}" shareholders ownership investors stake equity`);
+  
+  // News and developments
+  queries.push(`"${company}" acquisition investment funding news 2024 2025`);
+  
+  // Social media
+  queries.push(`"${company}" LinkedIn company page social media website`);
+  
+  // Industry specific
+  if (request.industry) {
+    queries.push(`"${company}" ${request.industry} market competitors position`);
   }
   
-  // Combine all content
+  // Location specific
+  if (request.country && request.country !== 'All Countries') {
+    queries.push(`"${company}" ${request.country} office operations headquarters`);
+  }
+  
+  return queries.slice(0, 8);
+}
+
+// Generate person enrichment report using OpenAI
+async function generatePersonReport(
+  request: PersonEnrichmentRequest,
+  searchResults: any[],
+  scrapedContent: string,
+  socialProfiles: { linkedin?: string; twitter?: string; website?: string; others: string[] }
+): Promise<any> {
+  const apiKey = Deno.env.get('OPENAI_API_KEY');
+  if (!apiKey) {
+    console.error('[lead-enrichment] OPENAI_API_KEY not configured');
+    return { success: false, error: 'OpenAI API not configured' };
+  }
+  
+  const fullName = `${request.firstName || ''} ${request.lastName || ''}`.trim();
+  const allContent = searchResults.map(r => 
+    `Source: ${r.url}\nTitle: ${r.title}\n${r.markdown || r.description || ''}`
+  ).join('\n\n---\n\n');
+  
+  const combinedContent = scrapedContent 
+    ? `Direct Profile Content:\n${scrapedContent}\n\n---\n\nWeb Research:\n${allContent}`
+    : allContent;
+  
+  const systemPrompt = `You are an expert lead intelligence analyst powered by OpenAI GPT-4o. Generate a COMPREHENSIVE person enrichment profile.
+
+YOUR TASK: Create a detailed professional intelligence report for "${fullName}".
+
+You MUST extract and generate ALL of the following fields. Use "Not found in sources" only if truly absent.
+
+OUTPUT AS JSON with this EXACT structure:
+{
+  "name": "Full Name",
+  "type": "person",
+  "title": "Current Job Title",
+  "company": "Current Company",
+  "estimatedAnnualIncome": "$X - $Y range based on title/company/industry",
+  "aiProfileSummary": "2-3 paragraph professional AI-generated summary of this person",
+  "bestTimeToContact": {
+    "prediction": "e.g., Tuesday-Thursday, 9-11 AM local time",
+    "reasoning": "Based on role, seniority, industry patterns",
+    "confidence": "high/medium/low"
+  },
+  "linkedinUrl": "LinkedIn profile URL",
+  "twitterUrl": "Twitter/X profile URL",
+  "email": "Email if found",
+  "phone": "Phone if found",
+  "location": "City, Country",
+  "education": [
+    {"degree": "MBA", "institution": "Harvard Business School", "year": "2015", "details": "Focus on Strategy"}
+  ],
+  "workExperience": [
+    {"title": "CEO", "company": "Company Name", "duration": "2020-Present", "description": "Key responsibilities and achievements"}
+  ],
+  "skills": ["Leadership", "Strategy", "M&A"],
+  "investmentInterests": {
+    "sectors": ["Technology", "Healthcare"],
+    "investmentStyle": "Growth equity, Series B-C",
+    "pastInvestments": ["Company A", "Company B"],
+    "boardPositions": ["Company X", "Company Y"]
+  },
+  "interestIndicators": {
+    "businessInterests": ["AI/ML", "Fintech", "SaaS"],
+    "personalInterests": ["Golf", "Philanthropy"],
+    "networkingEvents": ["TechCrunch Disrupt", "Davos"],
+    "publicationsOrMedia": ["Forbes contributor", "Bloomberg interviews"]
+  },
+  "overview": "Comprehensive professional bio",
+  "keyFacts": ["Achievement 1", "Achievement 2"],
+  "recentNews": ["Recent news item 1"],
+  "socialProfiles": {
+    "linkedin": "URL",
+    "twitter": "URL",
+    "website": "URL",
+    "others": ["GitHub URL", "Medium URL"]
+  }
+}
+
+CRITICAL INSTRUCTIONS:
+1. estimatedAnnualIncome: Base on job title, company size, industry, and location. Provide a range.
+2. bestTimeToContact: Analyze their role (executives prefer early morning, sales prefer mid-week), timezone, and industry.
+3. investmentInterests: Look for any mention of investments, board positions, advisory roles, or fund involvement.
+4. interestIndicators: Analyze their content, speeches, articles, hobbies, and affiliations.
+5. Be specific with data - no vague statements.`;
+
+  const userPrompt = `Research Subject: ${fullName}
+${request.company ? `Current Company: ${request.company}` : ''}
+${request.country ? `Country: ${request.country}` : ''}
+${request.email ? `Email: ${request.email}` : ''}
+${request.linkedinUrl ? `LinkedIn: ${request.linkedinUrl}` : ''}
+
+Social Profiles Found:
+- LinkedIn: ${socialProfiles.linkedin || 'Not found'}
+- Twitter: ${socialProfiles.twitter || 'Not found'}
+- Website: ${socialProfiles.website || 'Not found'}
+- Other profiles: ${socialProfiles.others.join(', ') || 'None found'}
+
+Sources to analyze:
+${combinedContent.slice(0, 60000)}
+
+Extract ALL available information and generate the complete person profile JSON.`;
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        max_tokens: 4096,
+        temperature: 0.3,
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error('[lead-enrichment] OpenAI error:', response.status, errText);
+      if (response.status === 429) return { success: false, error: 'Rate limit exceeded' };
+      if (response.status === 402) return { success: false, error: 'OpenAI credits exhausted' };
+      return { success: false, error: 'OpenAI API error' };
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || '';
+    
+    // Parse JSON
+    let parsedData: any;
+    try {
+      const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, content];
+      parsedData = JSON.parse((jsonMatch[1] || content).trim());
+    } catch {
+      return {
+        success: true,
+        data: {
+          name: fullName,
+          type: 'person',
+          overview: content,
+          keyFacts: [],
+          sources: searchResults.slice(0, 10).map(r => ({ title: r.title, url: r.url })),
+        }
+      };
+    }
+    
+    // Add sources
+    parsedData.sources = searchResults.slice(0, 15).map(r => ({ title: r.title, url: r.url }));
+    
+    return { success: true, data: parsedData };
+  } catch (error) {
+    console.error('[lead-enrichment] Error:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Failed' };
+  }
+}
+
+// Generate company enrichment report using OpenAI
+async function generateCompanyReport(
+  request: CompanyEnrichmentRequest,
+  searchResults: any[],
+  websiteContent: string,
+  socialProfiles: { linkedin?: string; twitter?: string; website?: string; others: string[] }
+): Promise<any> {
+  const apiKey = Deno.env.get('OPENAI_API_KEY');
+  if (!apiKey) {
+    console.error('[lead-enrichment] OPENAI_API_KEY not configured');
+    return { success: false, error: 'OpenAI API not configured' };
+  }
+  
   const allContent = searchResults.map(r => 
     `Source: ${r.url}\nTitle: ${r.title}\n${r.markdown || r.description || ''}`
   ).join('\n\n---\n\n');
@@ -203,194 +348,262 @@ async function generateEnrichmentReport(
     ? `Official Website Content:\n${websiteContent}\n\n---\n\nWeb Research:\n${allContent}`
     : allContent;
   
-  // Build system prompt based on type
-  const isCompany = request.type === 'company';
-  const companyName = isCompany ? (request as CompanyEnrichmentRequest).companyName : '';
-  const personName = !isCompany ? `${(request as PersonEnrichmentRequest).firstName || ''} ${(request as PersonEnrichmentRequest).lastName || ''}`.trim() : '';
-  
-  const systemPrompt = isCompany ? `You are an expert business intelligence analyst specializing in company research.
+  const systemPrompt = `You are an expert business intelligence analyst powered by OpenAI GPT-4o. Generate a COMPREHENSIVE company enrichment profile.
 
-YOUR TASK: Generate a COMPREHENSIVE company enrichment report for "${companyName}".
+YOUR TASK: Create a detailed company intelligence report for "${request.companyName}".
 
-CRITICAL: You MUST extract and provide the following information from the sources. Use "Not found in sources" only if truly absent.
+You MUST extract and generate ALL of the following fields. Use "Not found in sources" only if truly absent.
 
-REQUIRED DATA POINTS:
-1. COMPANY OVERVIEW
-   - Full legal name and trading names
-   - Industry and sector
-   - Headquarters location
-   - Year founded
-   - Company description (2-3 paragraphs)
-
-2. FINANCIAL INFORMATION
-   - Revenue (most recent)
-   - Funding rounds and amounts
-   - Total funding raised
-   - Valuation (if available)
-   - Key investors/VCs
-
-3. LEADERSHIP & FOUNDERS
-   - Founder(s): Name, background, previous companies
-   - CEO: Name, background, tenure
-   - Other C-suite executives
-   - For each: education, previous roles, notable achievements
-
-4. BOARD OF DIRECTORS
-   - Full name of each board member
-   - Their title/role on board
-   - Other notable positions they hold
-   - Background summary
-
-5. KEY FACTS & METRICS
-   - Employee count
-   - Office locations
-   - Key products/services
-   - Major clients/customers
-   - Recent milestones
-
-6. RECENT NEWS
-   - Latest announcements
-   - Press releases
-   - Major developments
-
-OUTPUT AS JSON with this exact structure:
+OUTPUT AS JSON with this EXACT structure:
 {
-  "name": "Company Name",
+  "name": "Company Legal Name",
   "type": "company",
-  "industry": "Industry",
-  "location": "HQ Location",
-  "website": "URL",
-  "employees": "X employees",
+  "tradingNames": ["DBA names"],
+  "industry": "Primary Industry",
+  "subIndustry": "Specific sector",
+  "location": "Headquarters City, Country",
+  "offices": [
+    {"location": "City, Country", "type": "HQ/Regional/Branch", "address": "Full address", "phone": "+1 xxx"}
+  ],
+  "website": "Official website URL",
+  "linkedinUrl": "LinkedIn company page URL",
+  "socialMedia": {
+    "linkedin": "URL",
+    "twitter": "URL",
+    "facebook": "URL",
+    "instagram": "URL",
+    "youtube": "URL"
+  },
+  "employees": "X employees or X-Y range",
   "founded": "Year",
-  "overview": "2-3 paragraph company description",
+  "overview": "3-4 paragraph comprehensive company description",
+  "estimatedRevenueRange": "$X million - $Y million or $X billion",
+  "revenueGrowth": "X% YoY if available",
   "financials": {
-    "revenue": "$X million/billion",
+    "revenue": "$X",
+    "netIncome": "$X if public",
     "funding": "$X total raised",
-    "valuation": "$X valuation",
+    "lastFundingRound": {"amount": "$X", "date": "YYYY-MM", "series": "Series X"},
+    "valuation": "$X",
     "investors": ["Investor 1", "Investor 2"]
   },
+  "ownership": {
+    "type": "Private/Public/Government",
+    "majorShareholders": [
+      {"name": "Shareholder Name", "stake": "X%", "type": "Individual/Institution"}
+    ],
+    "ultimateOwner": "Parent company or individual"
+  },
   "leadership": [
-    {"name": "Founder Name", "title": "Founder & CEO", "background": "Previous experience, education"},
-    {"name": "CTO Name", "title": "Chief Technology Officer", "background": "Background"}
+    {
+      "name": "CEO Name",
+      "title": "Chief Executive Officer",
+      "aiProfileSummary": "2-3 sentence AI summary of this person",
+      "background": "Previous roles and education",
+      "linkedinUrl": "Personal LinkedIn if found",
+      "tenure": "Since YYYY"
+    }
   ],
   "boardMembers": [
-    {"name": "Board Member", "title": "Independent Director", "otherRoles": "CEO at X, Board at Y"}
+    {
+      "name": "Board Member Name",
+      "title": "Independent Director",
+      "aiProfileSummary": "2-3 sentence AI summary",
+      "otherRoles": "CEO at X, Board at Y",
+      "background": "Key background info"
+    }
   ],
-  "keyFacts": ["Fact 1", "Fact 2", "Fact 3"],
-  "recentNews": ["News item 1", "News item 2"]
-}` : `You are an expert talent intelligence analyst specializing in professional profile research.
-
-YOUR TASK: Generate a COMPREHENSIVE person enrichment report for "${personName}".
-
-CRITICAL: Extract and provide detailed information about this person from the sources.
-
-REQUIRED DATA POINTS:
-1. PROFESSIONAL PROFILE
-   - Current title and company
-   - Previous roles and companies (career history)
-   - Years of experience
-   - Key achievements
-
-2. BACKGROUND
-   - Education (degrees, institutions, years)
-   - Skills and expertise areas
-   - Languages spoken
-
-3. CURRENT COMPANY
-   - Company name and role
-   - Time in position
-   - Key responsibilities
-
-4. SOCIAL & CONTACT
-   - LinkedIn URL
-   - Email (if publicly available)
-   - Other public profiles
-
-OUTPUT AS JSON with this exact structure:
-{
-  "name": "Full Name",
-  "type": "person",
-  "title": "Current Title",
-  "company": "Current Company",
-  "linkedinUrl": "LinkedIn URL",
-  "email": "Email if available",
-  "education": ["Degree, Institution, Year"],
-  "experience": [
-    {"title": "Previous Title", "company": "Previous Company", "duration": "2018-2022"}
+  "keyPeople": [
+    {
+      "name": "Person Name",
+      "title": "VP of Sales",
+      "aiProfileSummary": "2-3 sentence AI summary",
+      "department": "Sales",
+      "linkedinUrl": "LinkedIn URL if found"
+    }
   ],
-  "skills": ["Skill 1", "Skill 2"],
-  "overview": "2-3 paragraph professional summary",
-  "keyFacts": ["Achievement 1", "Achievement 2"],
-  "recentNews": ["News item if any"]
-}`;
+  "products": ["Product/Service 1", "Product/Service 2"],
+  "keyClients": ["Client 1", "Client 2"],
+  "competitors": ["Competitor 1", "Competitor 2"],
+  "keyFacts": ["Fact 1", "Fact 2"],
+  "recentNews": [
+    {"headline": "News title", "date": "YYYY-MM-DD", "summary": "Brief summary", "url": "Source URL"}
+  ],
+  "investmentActivity": {
+    "acquisitions": [{"company": "Name", "date": "YYYY", "amount": "$X"}],
+    "investments": [{"company": "Name", "date": "YYYY", "amount": "$X"}],
+    "fundingReceived": [{"round": "Series X", "date": "YYYY", "amount": "$X", "investors": ["A", "B"]}]
+  },
+  "marketPosition": "Analysis of market position and competitive advantages"
+}
 
-  const userPrompt = `Research Subject: ${isCompany ? companyName : personName}
+CRITICAL INSTRUCTIONS:
+1. For EVERY leadership/board/key person, generate an AI Profile Summary
+2. estimatedRevenueRange: Provide a realistic range based on industry, employee count, and available data
+3. Include ALL office locations, phone numbers, and addresses found
+4. List ALL social media profiles discovered
+5. For ownership, try to identify the ultimate beneficial owner
+6. Include acquisition, investment, and funding history`;
+
+  const userPrompt = `Research Subject: ${request.companyName}
+${request.industry ? `Industry: ${request.industry}` : ''}
+${request.country ? `Country Focus: ${request.country}` : ''}
+${request.website ? `Website: ${request.website}` : ''}
+
+Social Profiles Found:
+- LinkedIn: ${socialProfiles.linkedin || 'Not found'}
+- Twitter: ${socialProfiles.twitter || 'Not found'}
+- Website: ${socialProfiles.website || request.website || 'Not found'}
+- Other profiles: ${socialProfiles.others.join(', ') || 'None found'}
 
 Sources to analyze:
 ${combinedContent.slice(0, 60000)}
 
-Extract ALL available information and generate the enrichment report. For any field truly not found, write "Not found in sources" but try to extract as much as possible.`;
+Extract ALL available information and generate the complete company profile JSON.`;
 
   try {
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: 'gpt-4o',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
+        max_tokens: 4096,
+        temperature: 0.3,
       }),
     });
 
     if (!response.ok) {
-      if (response.status === 429) {
-        return { success: false, error: 'Rate limit exceeded. Please try again later.' };
-      }
-      if (response.status === 402) {
-        return { success: false, error: 'AI credits exhausted. Please add credits.' };
-      }
-      console.error('[lead-enrichment] AI error:', response.status);
-      return { success: false, error: 'AI analysis failed' };
+      const errText = await response.text();
+      console.error('[lead-enrichment] OpenAI error:', response.status, errText);
+      if (response.status === 429) return { success: false, error: 'Rate limit exceeded' };
+      return { success: false, error: 'OpenAI API error' };
     }
 
-    const aiData = await response.json();
-    const content = aiData.choices?.[0]?.message?.content || '';
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || '';
     
-    // Parse JSON from response
+    // Parse JSON
     let parsedData: any;
     try {
-      // Extract JSON from potential markdown code blocks
       const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, content];
-      const jsonStr = jsonMatch[1] || content;
-      parsedData = JSON.parse(jsonStr.trim());
-    } catch (parseError) {
-      console.error('[lead-enrichment] Failed to parse AI response:', parseError);
-      // Return a basic result with the raw content
+      parsedData = JSON.parse((jsonMatch[1] || content).trim());
+    } catch {
       return {
         success: true,
         data: {
-          name: isCompany ? companyName : personName,
-          type: request.type,
+          name: request.companyName,
+          type: 'company',
           overview: content,
           keyFacts: [],
-          sources: searchResults.slice(0, 5).map(r => ({ title: r.title, url: r.url })),
+          sources: searchResults.slice(0, 10).map(r => ({ title: r.title, url: r.url })),
         }
       };
     }
     
-    // Add sources to the result
-    parsedData.sources = searchResults.slice(0, 10).map(r => ({ title: r.title, url: r.url }));
+    // Add sources
+    parsedData.sources = searchResults.slice(0, 15).map(r => ({ title: r.title, url: r.url }));
     
     return { success: true, data: parsedData };
   } catch (error) {
     console.error('[lead-enrichment] Error:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Enrichment failed' };
+    return { success: false, error: error instanceof Error ? error.message : 'Failed' };
   }
+}
+
+// Chat to edit report
+async function chatEditReport(request: ChatEditRequest): Promise<any> {
+  const apiKey = Deno.env.get('OPENAI_API_KEY');
+  if (!apiKey) {
+    return { success: false, error: 'OpenAI API not configured' };
+  }
+  
+  const systemPrompt = `You are an AI assistant helping to edit and improve a lead enrichment report.
+The user will provide the current report content and an instruction for how to modify it.
+Apply the requested changes while maintaining the professional format and accuracy.
+Return the COMPLETE updated report with all changes applied.
+Preserve all sections and data that were not specifically asked to be changed.`;
+
+  const userPrompt = `Current Report for ${request.reportContext.name} (${request.reportContext.entityType}):
+
+${request.currentReport}
+
+---
+
+User's Edit Instruction: ${request.editInstruction}
+
+Apply the requested changes and return the complete updated report:`;
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        max_tokens: 4096,
+        temperature: 0.3,
+      }),
+    });
+
+    if (!response.ok) {
+      return { success: false, error: 'Failed to edit report' };
+    }
+
+    const data = await response.json();
+    const updatedReport = data.choices?.[0]?.message?.content || '';
+    
+    return { success: true, updatedReport };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Failed' };
+  }
+}
+
+// Extract social profiles from search results
+function extractSocialProfiles(searchResults: any[], links: string[]): { linkedin?: string; twitter?: string; website?: string; others: string[] } {
+  const profiles: { linkedin?: string; twitter?: string; website?: string; others: string[] } = { others: [] };
+  
+  const allUrls = [
+    ...searchResults.map(r => r.url),
+    ...links,
+  ];
+  
+  for (const url of allUrls) {
+    if (!url) continue;
+    const lowerUrl = url.toLowerCase();
+    
+    if (lowerUrl.includes('linkedin.com/in/') || lowerUrl.includes('linkedin.com/company/')) {
+      if (!profiles.linkedin) profiles.linkedin = url;
+    } else if (lowerUrl.includes('twitter.com/') || lowerUrl.includes('x.com/')) {
+      if (!profiles.twitter) profiles.twitter = url;
+    } else if (lowerUrl.includes('github.com/')) {
+      profiles.others.push(url);
+    } else if (lowerUrl.includes('medium.com/')) {
+      profiles.others.push(url);
+    } else if (lowerUrl.includes('crunchbase.com/')) {
+      profiles.others.push(url);
+    } else if (lowerUrl.includes('bloomberg.com/profile/')) {
+      profiles.others.push(url);
+    } else if (lowerUrl.includes('facebook.com/')) {
+      profiles.others.push(url);
+    } else if (lowerUrl.includes('instagram.com/')) {
+      profiles.others.push(url);
+    }
+  }
+  
+  return profiles;
 }
 
 serve(async (req) => {
@@ -401,65 +614,138 @@ serve(async (req) => {
   try {
     const request = await req.json() as EnrichmentRequest;
     
-    console.log('[lead-enrichment] Starting enrichment:', request.type, request.type === 'company' ? request.companyName : `${request.firstName} ${request.lastName}`);
+    // Handle chat edit request
+    if (request.type === 'chat_edit') {
+      console.log('[lead-enrichment] Processing chat edit request');
+      const result = await chatEditReport(request as ChatEditRequest);
+      return new Response(
+        JSON.stringify(result),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    console.log('[lead-enrichment] Starting enrichment:', 
+      request.type, 
+      request.type === 'company' ? (request as CompanyEnrichmentRequest).companyName : 
+        `${(request as PersonEnrichmentRequest).firstName} ${(request as PersonEnrichmentRequest).lastName}`
+    );
     
     // Build search queries
-    const queries = buildSearchQueries(request);
+    const queries = request.type === 'person' 
+      ? buildPersonSearchQueries(request as PersonEnrichmentRequest)
+      : buildCompanySearchQueries(request as CompanyEnrichmentRequest);
+    
     console.log('[lead-enrichment] Search queries:', queries);
     
-    // Execute searches in parallel
-    const searchPromises = queries.map(q => searchWeb(q, 8));
+    // Execute all searches in parallel
+    const searchPromises = queries.map(q => searchWeb(q, 10));
     const searchResultArrays = await Promise.all(searchPromises);
     
     // Combine and deduplicate results
     const allResults: any[] = [];
     const seenUrls = new Set<string>();
+    const allLinks: string[] = [];
+    
     for (const results of searchResultArrays) {
       for (const result of results) {
         if (!seenUrls.has(result.url)) {
           seenUrls.add(result.url);
           allResults.push(result);
+          if (result.links) allLinks.push(...result.links);
         }
       }
     }
     
     console.log('[lead-enrichment] Total unique results:', allResults.length);
     
-    // If company has website, scrape it for official info
-    let websiteContent = '';
-    if (request.type === 'company' && request.website) {
-      console.log('[lead-enrichment] Scraping company website:', request.website);
-      websiteContent = await scrapeUrl(request.website);
+    // Extract social profiles
+    const socialProfiles = extractSocialProfiles(allResults, allLinks);
+    console.log('[lead-enrichment] Social profiles found:', socialProfiles);
+    
+    // Scrape additional content based on type
+    let additionalContent = '';
+    
+    if (request.type === 'company') {
+      const companyReq = request as CompanyEnrichmentRequest;
       
-      // Also try about/team pages
-      try {
-        const aboutUrl = new URL('/about', request.website).toString();
-        const teamUrl = new URL('/team', request.website).toString();
-        const leadershipUrl = new URL('/leadership', request.website).toString();
+      // Scrape company website
+      if (companyReq.website) {
+        console.log('[lead-enrichment] Scraping company website:', companyReq.website);
+        const websiteResult = await scrapeUrl(companyReq.website);
+        additionalContent = websiteResult.markdown;
         
-        const [aboutContent, teamContent, leadershipContent] = await Promise.all([
-          scrapeUrl(aboutUrl),
-          scrapeUrl(teamUrl),
-          scrapeUrl(leadershipUrl),
-        ]);
-        
-        websiteContent += '\n\n--- About Page ---\n' + aboutContent;
-        websiteContent += '\n\n--- Team Page ---\n' + teamContent;
-        websiteContent += '\n\n--- Leadership Page ---\n' + leadershipContent;
-      } catch {
-        // Ignore errors for subpages
+        // Try to get about/team pages
+        try {
+          const aboutUrl = new URL('/about', companyReq.website).toString();
+          const teamUrl = new URL('/team', companyReq.website).toString();
+          const leadershipUrl = new URL('/leadership', companyReq.website).toString();
+          const contactUrl = new URL('/contact', companyReq.website).toString();
+          
+          const [aboutResult, teamResult, leadershipResult, contactResult] = await Promise.all([
+            scrapeUrl(aboutUrl),
+            scrapeUrl(teamUrl),
+            scrapeUrl(leadershipUrl),
+            scrapeUrl(contactUrl),
+          ]);
+          
+          additionalContent += '\n\n--- About Page ---\n' + aboutResult.markdown;
+          additionalContent += '\n\n--- Team Page ---\n' + teamResult.markdown;
+          additionalContent += '\n\n--- Leadership Page ---\n' + leadershipResult.markdown;
+          additionalContent += '\n\n--- Contact Page ---\n' + contactResult.markdown;
+        } catch {
+          // Ignore errors for subpages
+        }
       }
+      
+      // Scrape LinkedIn company page if found
+      if (socialProfiles.linkedin && socialProfiles.linkedin.includes('/company/')) {
+        const linkedinResult = await scrapeUrl(socialProfiles.linkedin);
+        additionalContent += '\n\n--- LinkedIn Company Page ---\n' + linkedinResult.markdown;
+      }
+      
+      // Generate company report
+      const result = await generateCompanyReport(
+        companyReq,
+        allResults,
+        additionalContent,
+        socialProfiles
+      );
+      
+      console.log('[lead-enrichment] Company enrichment complete, success:', result.success);
+      
+      return new Response(
+        JSON.stringify(result),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    } else {
+      // Person enrichment
+      const personReq = request as PersonEnrichmentRequest;
+      
+      // Scrape LinkedIn profile if provided
+      if (personReq.linkedinUrl) {
+        socialProfiles.linkedin = personReq.linkedinUrl;
+        const linkedinResult = await scrapeUrl(personReq.linkedinUrl);
+        additionalContent = linkedinResult.markdown;
+      } else if (socialProfiles.linkedin) {
+        const linkedinResult = await scrapeUrl(socialProfiles.linkedin);
+        additionalContent = linkedinResult.markdown;
+      }
+      
+      // Generate person report
+      const result = await generatePersonReport(
+        personReq,
+        allResults,
+        additionalContent,
+        socialProfiles
+      );
+      
+      console.log('[lead-enrichment] Person enrichment complete, success:', result.success);
+      
+      return new Response(
+        JSON.stringify(result),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
-    
-    // Generate enrichment report
-    const result = await generateEnrichmentReport(request, allResults, websiteContent);
-    
-    console.log('[lead-enrichment] Enrichment complete, success:', result.success);
-    
-    return new Response(
-      JSON.stringify(result),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
   } catch (error) {
     console.error('[lead-enrichment] Error:', error);
     return new Response(
