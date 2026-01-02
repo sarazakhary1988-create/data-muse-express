@@ -100,11 +100,11 @@ export const translations = {
 
     // Hero Section
     hero: {
-      title: 'AI-Powered Research Engine',
+      title: 'Autonomous Research Engine',
       titleHighlight: 'Anything',
-      titleSuffix: 'with AI Precision',
-      subtitle: 'Deep web research, intelligent data extraction, and comprehensive report generation',
-      badge: 'Powered by Advanced AI',
+      titleSuffix: 'with Orchestrated Intelligence',
+      subtitle: 'Orkestra orchestrates autonomous AI agents to research, analyze, and synthesize intelligence — faster, deeper, and without dependency.',
+      badge: 'Powered by ORKESTRA',
     },
 
     // Search
@@ -670,11 +670,11 @@ export const translations = {
 
     // Hero Section - Gulf Arabic (خليجي)
     hero: {
-      title: 'ابحث عن أي شي بالذكاء الاصطناعي',
+      title: 'محرك البحث الذاتي',
       titleHighlight: 'أي شي',
-      titleSuffix: 'بدقة الذكاء الاصطناعي',
-      subtitle: 'بحث عميق في الويب، استخراج البيانات الذكي، وتسوي لك تقارير شاملة',
-      badge: 'مدعوم بأقوى ذكاء اصطناعي',
+      titleSuffix: 'بذكاء منسّق',
+      subtitle: 'أوركسترا ينسّق وكلاء الذكاء الاصطناعي للبحث والتحليل وتوليف المعلومات — أسرع وأعمق وبدون اعتماد.',
+      badge: 'مدعوم من ORKESTRA',
     },
 
     // Search - Gulf Arabic (خليجي)
