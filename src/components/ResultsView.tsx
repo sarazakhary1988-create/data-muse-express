@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { FileText, ArrowLeft, Filter, SortDesc, Activity, LayoutList, Scale } from 'lucide-react';
+import { FileText, ArrowLeft, Filter, SortDesc, Activity, LayoutList, Scale, Loader2, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -17,11 +17,12 @@ interface ResultsViewProps {
 }
 
 export const ResultsView = ({ task, onBack, onViewReport }: ResultsViewProps) => {
-  const { reports, agentState } = useResearchStore();
+  const { reports, agentState, reportGenerationStatus } = useResearchStore();
   const { t, isRTL } = useLanguage();
   const taskReport = reports.find(r => r.taskId === task.id);
   const consolidation = agentState.consolidation;
 
+  // Show loading state with OpenAI message
   if (task.status === 'processing') {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px]">
@@ -31,6 +32,20 @@ export const ResultsView = ({ task, onBack, onViewReport }: ResultsViewProps) =>
           transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
         />
         <p className="mt-4 text-muted-foreground">{t.common.processing}</p>
+        
+        {/* Show report generation status */}
+        {reportGenerationStatus.message && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-4 flex items-center gap-2 px-4 py-2 bg-primary/10 rounded-lg border border-primary/20"
+          >
+            <Sparkles className="w-4 h-4 text-primary animate-pulse" />
+            <span className="text-sm font-medium text-primary">
+              {reportGenerationStatus.message}
+            </span>
+          </motion.div>
+        )}
       </div>
     );
   }

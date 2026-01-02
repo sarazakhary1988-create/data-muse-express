@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Helmet } from 'react-helmet-async';
+import { Sparkles } from 'lucide-react';
 import { AnimatedBackground } from '@/components/AnimatedBackground';
 import { Sidebar, ViewType } from '@/components/Sidebar';
 import { SearchInput } from '@/components/SearchInput';
@@ -32,6 +33,7 @@ const Index = () => {
     deepVerifyMode,
     deepVerifySources,
     agentState,
+    reportGenerationStatus,
     setCurrentTask,
     setSearchQuery
   } = useResearchStore();
@@ -162,6 +164,25 @@ const Index = () => {
                   exit={{ opacity: 0, y: -20 }}
                   className="mt-8 space-y-4"
                 >
+                  {/* OpenAI Report Generation Indicator */}
+                  {reportGenerationStatus.message && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-primary/10 via-accent/10 to-primary/10 rounded-xl border border-primary/20 shadow-lg"
+                    >
+                      <Sparkles className="w-5 h-5 text-primary animate-pulse" />
+                      <span className="text-base font-medium bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+                        {reportGenerationStatus.message}
+                      </span>
+                      <motion.div
+                        className="w-2 h-2 rounded-full bg-primary"
+                        animate={{ scale: [1, 1.5, 1], opacity: [1, 0.5, 1] }}
+                        transition={{ duration: 1.5, repeat: Infinity }}
+                      />
+                    </motion.div>
+                  )}
+                  
                   <AgentStatusPanel />
                   <SearchEngineIndicator />
                   <ResearchProgress 

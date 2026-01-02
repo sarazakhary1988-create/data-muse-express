@@ -243,6 +243,12 @@ interface ResearchStore {
   // Agent state
   agentState: AgentStateInfo;
   
+  // Report generation state
+  reportGenerationStatus: {
+    isGenerating: boolean;
+    message: string;
+  };
+  
   // Actions
   setSearchQuery: (query: string) => void;
   addTask: (task: ResearchTask) => void;
@@ -286,6 +292,9 @@ interface ResearchStore {
   setAgentConsolidation: (consolidation: AgentStateInfo['consolidation']) => void;
   setAgentSearchEngines: (searchEngines: AgentStateInfo['searchEngines']) => void;
   resetAgentState: () => void;
+  
+  // Report generation actions
+  setReportGenerationStatus: (status: { isGenerating: boolean; message: string }) => void;
 }
 
 export const useResearchStore = create<ResearchStore>()(
@@ -325,6 +334,12 @@ export const useResearchStore = create<ResearchStore>()(
         lastDecision: null,
         consolidation: null,
         searchEngines: null,
+      },
+      
+      // Report generation state
+      reportGenerationStatus: {
+        isGenerating: false,
+        message: '',
       },
       
       setSearchQuery: (query) => set({ searchQuery: query }),
@@ -448,8 +463,14 @@ export const useResearchStore = create<ResearchStore>()(
           lastDecision: null,
           consolidation: null,
           searchEngines: null,
+        },
+        reportGenerationStatus: {
+          isGenerating: false,
+          message: '',
         }
       }),
+      
+      setReportGenerationStatus: (status) => set({ reportGenerationStatus: status }),
       
       // New actions
       setResearchSettings: (settings) => set((s) => ({

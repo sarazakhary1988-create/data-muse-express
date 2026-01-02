@@ -2,6 +2,7 @@ import { useCallback, useRef } from 'react';
 import { ResearchTask, Report, useResearchStore, ReportFormat, RunHistoryEntry } from '@/store/researchStore';
 import { researchAgent, dataConsolidator } from '@/lib/agent';
 import { toast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 export const useResearchEngine = () => {
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -34,6 +35,7 @@ export const useResearchEngine = () => {
     setCurrentRunId,
     addDebugLog,
     clearDebugLogs,
+    setReportGenerationStatus,
   } = useResearchStore();
 
   // Get only enabled sources
@@ -178,7 +180,9 @@ export const useResearchEngine = () => {
 
       addDebugLog('[EXEC] Executing research agent pipeline');
 
-      // Execute the full agent pipeline
+      // Execute the full agent pipeline with progress updates
+      setReportGenerationStatus({ isGenerating: false, message: 'Searching and gathering sources...' });
+      
       const { results, report, quality, verifications, plan, searchEngineInfo, webSourcesUsed, warnings } = await researchAgent.execute(
         query,
         deepVerifyMode,
@@ -186,6 +190,9 @@ export const useResearchEngine = () => {
         reportFormat,
         { country: countryFilter, strictMode }
       );
+
+      // Show report generation status
+      setReportGenerationStatus({ isGenerating: true, message: 'Generating report with OpenAI GPT-4o...' });
 
       // Log warnings
       if (warnings && warnings.length > 0) {
@@ -210,16 +217,41 @@ export const useResearchEngine = () => {
 
       addDebugLog(`[CONSOLIDATE] Discrepancies: ${consolidatedResult.discrepancies.length}, Quality: ${(consolidatedResult.qualityMetrics.overallScore * 100).toFixed(1)}%`);
 
-      // Create report object
+      // Generate AI title for the report
+      setReportGenerationStatus({ isGenerating: true, message: 'Generating AI title...' });
+      let reportTitle = `Research Report: ${query}`;
+      
+      try {
+        const { data: titleData, error: titleError } = await supabase.functions.invoke('research-analyze', {
+          body: {
+            query: query,
+            content: report.substring(0, 2000),
+            type: 'title'
+          }
+        });
+        
+        if (!titleError && titleData?.success && titleData?.result) {
+          reportTitle = titleData.result.trim();
+          addDebugLog(`[TITLE] AI-generated title: ${reportTitle}`);
+        }
+      } catch (titleErr) {
+        console.warn('Title generation failed, using default:', titleErr);
+      }
+
+      // Create report object with AI-generated title and prompt at start
+      const reportWithPrompt = `> **Research Prompt:** ${query}\n\n${report}`;
+      
       const reportObj: Report = {
         id: `report-${Date.now()}`,
-        title: `Research Report: ${query}`,
+        title: reportTitle,
         taskId,
         format: 'markdown',
-        content: report,
+        content: reportWithPrompt,
         createdAt: new Date(),
-        sections: [{ id: 'content', title: 'Full Report', content: report, order: 1 }],
+        sections: [{ id: 'content', title: 'Full Report', content: reportWithPrompt, order: 1 }],
       };
+
+      setReportGenerationStatus({ isGenerating: false, message: '' });
 
       // Complete the task
       updateTask(taskId, {
@@ -270,6 +302,8 @@ export const useResearchEngine = () => {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       addDebugLog(`[FATAL] ${errorMessage}`);
       
+      setReportGenerationStatus({ isGenerating: false, message: '' });
+      
       updateTask(taskId, {
         status: 'failed',
         progress: 0,
@@ -294,6 +328,7 @@ export const useResearchEngine = () => {
       setIsSearching(false);
       setCurrentRunId(null);
       abortControllerRef.current = null;
+      setReportGenerationStatus({ isGenerating: false, message: '' });
     }
   }, [
     addTask, 
@@ -324,6 +359,7 @@ export const useResearchEngine = () => {
     addDebugLog,
     clearDebugLogs,
     cancelResearch,
+    setReportGenerationStatus,
   ]);
 
   // Deep research - scrapes specific URLs using agent
