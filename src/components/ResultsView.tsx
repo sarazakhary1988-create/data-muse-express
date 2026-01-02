@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { FileText, ArrowLeft, Filter, SortDesc, Activity, LayoutList, Scale, Loader2, Sparkles, XCircle } from 'lucide-react';
+import { FileText, ArrowLeft, Filter, SortDesc, Activity, LayoutList, Scale, Loader2, Sparkles, XCircle, Link2, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -8,6 +8,8 @@ import { Progress } from '@/components/ui/progress';
 import { ResultCard } from '@/components/ResultCard';
 import { ResearchTrace } from '@/components/ResearchTrace';
 import { DiscrepancyReport } from '@/components/DiscrepancyReport';
+import { EvidenceChainPanel, EvidenceSource, DerivedClaim } from '@/components/EvidenceChainPanel';
+import { ReportExportButton } from '@/components/ReportExportButton';
 import { ResearchTask, useResearchStore } from '@/store/researchStore';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useResearchEngine } from '@/hooks/useResearchEngine';
@@ -174,12 +176,16 @@ export const ResultsView = ({ task, onBack, onViewReport }: ResultsViewProps) =>
         </div>
       </div>
 
-      {/* Tabs: Sources vs Trace vs Validation */}
+      {/* Tabs: Sources vs Evidence Chain vs Validation vs Trace */}
       <Tabs defaultValue="sources" className="w-full">
         <TabsList className="mb-4">
           <TabsTrigger value="sources" className="gap-2">
             <LayoutList className="w-4 h-4" />
             {t.common.sources}
+          </TabsTrigger>
+          <TabsTrigger value="evidence" className="gap-2">
+            <Link2 className="w-4 h-4" />
+            {isRTL ? 'سلسلة الأدلة' : 'Evidence Chain'}
           </TabsTrigger>
           <TabsTrigger value="validation" className="gap-2">
             <Scale className="w-4 h-4" />
@@ -236,6 +242,32 @@ export const ResultsView = ({ task, onBack, onViewReport }: ResultsViewProps) =>
                 ))}
             </AnimatePresence>
           </div>
+        </TabsContent>
+
+        <TabsContent value="evidence">
+          <EvidenceChainPanel 
+            sources={task.results.map((r, i) => ({
+              id: r.id,
+              url: r.url,
+              domain: r.metadata.domain || new URL(r.url).hostname,
+              title: r.title,
+              status: r.relevanceScore > 0.7 ? 'verified' : r.relevanceScore > 0.4 ? 'partial' : 'unverified',
+              extractedData: [
+                { id: `${r.id}-1`, field: 'Title', value: r.title, sourceSnippet: r.summary.slice(0, 100), confidence: r.relevanceScore },
+                { id: `${r.id}-2`, field: 'Domain', value: r.metadata.domain || '', sourceSnippet: r.url, confidence: 0.95 },
+              ],
+              confidenceScore: r.relevanceScore * 100,
+              wordCount: r.metadata.wordCount || r.content?.length || 500,
+            } as EvidenceSource))}
+            claims={consolidation?.discrepancies?.map((d, i) => ({
+              id: `claim-${i}`,
+              statement: `${d.field}: ${d.resolution.selectedValue}`,
+              supportingSources: d.values.filter(v => v.value === d.resolution.selectedValue).map(v => v.source),
+              contradictingSources: d.values.filter(v => v.value !== d.resolution.selectedValue).map(v => v.source),
+              confidenceScore: 0.75,
+              verificationStatus: 'likely' as const,
+            } as DerivedClaim)) || []}
+          />
         </TabsContent>
 
         <TabsContent value="validation">

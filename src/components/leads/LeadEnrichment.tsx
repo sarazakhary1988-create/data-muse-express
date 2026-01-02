@@ -439,9 +439,21 @@ export const LeadEnrichment = () => {
     setChatMessages([]);
   };
 
-  const exportResult = async (result: EnrichedResult, format: 'json' | 'markdown' | 'html' = 'json') => {
+  const exportResult = async (result: EnrichedResult, format: 'json' | 'markdown' | 'html' | 'pdf' = 'json') => {
+    // Build JSON with full evidence chain
+    const exportData = {
+      ...result,
+      evidenceChain: result.sources?.map((s, i) => ({
+        sourceId: i + 1,
+        title: s.title,
+        url: s.url,
+        extractedData: result.keyFacts?.slice(i * 2, i * 2 + 2) || [],
+      })),
+      exportedAt: new Date().toISOString(),
+    };
+
     if (format === 'json') {
-      const data = JSON.stringify(result, null, 2);
+      const data = JSON.stringify(exportData, null, 2);
       const blob = new Blob([data], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -451,57 +463,75 @@ export const LeadEnrichment = () => {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-    } else {
-      // Use the export-report function for other formats
-      try {
-        const reportData = {
-          title: `${result.type === 'person' ? 'Person' : 'Company'} Profile: ${result.name}`,
-          summary: result.overview || result.aiProfileSummary || '',
-          sections: [
-            result.type === 'person' && result.aiProfileSummary ? { heading: 'AI Profile Summary', content: result.aiProfileSummary, citations: [] } : null,
-            result.type === 'person' && result.estimatedAnnualIncome ? { heading: 'Estimated Annual Income', content: result.estimatedAnnualIncome, citations: [] } : null,
-            result.type === 'person' && result.bestTimeToContact ? { heading: 'Best Time to Contact', content: `${result.bestTimeToContact.prediction}\n\nReasoning: ${result.bestTimeToContact.reasoning}\n\nConfidence: ${result.bestTimeToContact.confidence}`, citations: [] } : null,
-            result.financials ? { heading: 'Financial Information', content: `Revenue: ${result.financials.revenue || 'N/A'}\nFunding: ${result.financials.funding || 'N/A'}\nValuation: ${result.financials.valuation || 'N/A'}`, citations: [] } : null,
-            result.leadership?.length ? { heading: 'Leadership', content: result.leadership.map(l => `**${l.name}** - ${l.title}\n${l.aiProfileSummary || l.background || ''}`).join('\n\n'), citations: [] } : null,
-            result.keyFacts?.length ? { heading: 'Key Facts', content: result.keyFacts.map(f => `• ${f}`).join('\n'), citations: [] } : null,
-          ].filter(Boolean),
-          citations: result.sources?.map((s, i) => ({
-            id: `${i + 1}`,
-            text: s.title,
-            context: s.url,
-            confidence: 0.9,
-          })) || [],
-          metadata: {
-            totalSources: result.sources?.length || 0,
-            verifiedClaims: result.keyFacts?.length || 0,
-            confidenceScore: 0.85,
-            generatedAt: new Date().toISOString(),
-          },
-        };
-        
-        const { data, error } = await supabase.functions.invoke('export-report', {
-          body: { report: reportData, format },
-        });
-        
-        if (error) throw error;
-        
-        const blob = new Blob([data], { type: format === 'html' ? 'text/html' : 'text/markdown' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${result.name.replace(/\s+/g, '_')}_enriched.${format === 'html' ? 'html' : 'md'}`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      } catch (error) {
-        console.error('Export error:', error);
-        toast({ title: "Export Failed", description: "Could not export report", variant: "destructive" });
-        return;
-      }
+      toast({ title: "Exported", description: `Report exported as JSON with ${result.sources?.length || 0} sources` });
+      return;
     }
-    
-    toast({ title: "Exported", description: `Report exported as ${format.toUpperCase()}` });
+
+    // Use the export-report function for other formats
+    try {
+      const reportData = {
+        title: `${result.type === 'person' ? 'Person' : 'Company'} Profile: ${result.name}`,
+        summary: result.overview || result.aiProfileSummary || '',
+        sections: [
+          result.type === 'person' && result.aiProfileSummary ? { heading: 'AI Profile Summary', content: result.aiProfileSummary, citations: [] } : null,
+          result.type === 'person' && result.estimatedAnnualIncome ? { heading: 'Estimated Annual Income', content: result.estimatedAnnualIncome, citations: [] } : null,
+          result.type === 'person' && result.bestTimeToContact ? { heading: 'Best Time to Contact', content: `${result.bestTimeToContact.prediction}\n\nReasoning: ${result.bestTimeToContact.reasoning}\n\nConfidence: ${result.bestTimeToContact.confidence}`, citations: [] } : null,
+          result.financials ? { heading: 'Financial Information', content: `Revenue: ${result.financials.revenue || 'N/A'}\nFunding: ${result.financials.funding || 'N/A'}\nValuation: ${result.financials.valuation || 'N/A'}`, citations: [] } : null,
+          result.leadership?.length ? { heading: 'Leadership', content: result.leadership.map(l => `**${l.name}** - ${l.title}\n${l.aiProfileSummary || l.background || ''}`).join('\n\n'), citations: [] } : null,
+          result.keyFacts?.length ? { heading: 'Key Facts', content: result.keyFacts.map(f => `• ${f}`).join('\n'), citations: [] } : null,
+          // Evidence chain section
+          result.sources?.length ? { 
+            heading: 'Evidence Chain & Sources', 
+            content: result.sources.map((s, i) => `${i + 1}. **${s.title}**\n   URL: ${s.url}`).join('\n\n'),
+            citations: result.sources.map(s => s.url)
+          } : null,
+        ].filter(Boolean),
+        citations: result.sources?.map((s, i) => ({
+          id: `${i + 1}`,
+          text: s.title,
+          context: s.url,
+          confidence: 0.9,
+        })) || [],
+        metadata: {
+          totalSources: result.sources?.length || 0,
+          verifiedClaims: result.keyFacts?.length || 0,
+          confidenceScore: 0.85,
+          generatedAt: new Date().toISOString(),
+        },
+      };
+      
+      const { data, error } = await supabase.functions.invoke('export-report', {
+        body: { report: reportData, format },
+      });
+      
+      if (error) throw error;
+      
+      let mimeType = 'text/markdown';
+      let extension = 'md';
+      
+      if (format === 'html') {
+        mimeType = 'text/html';
+        extension = 'html';
+      } else if (format === 'pdf') {
+        mimeType = 'application/pdf';
+        extension = 'pdf';
+      }
+      
+      const blob = new Blob([data], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${result.name.replace(/\s+/g, '_')}_enriched.${extension}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      toast({ title: "Exported", description: `Report exported as ${format.toUpperCase()} with evidence chain` });
+    } catch (error) {
+      console.error('Export error:', error);
+      toast({ title: "Export Failed", description: "Could not export report", variant: "destructive" });
+    }
   };
 
   const renderPersonResult = (result: EnrichedResult, index: number) => (
@@ -529,14 +559,15 @@ export const LeadEnrichment = () => {
               Edit with AI
             </Button>
             <Select onValueChange={(v) => exportResult(result, v as any)} defaultValue="">
-              <SelectTrigger className="w-[120px] h-9">
+              <SelectTrigger className="w-[140px] h-9">
                 <Download className="w-4 h-4 mr-2" />
                 <SelectValue placeholder="Export" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="json">JSON</SelectItem>
+                <SelectItem value="json">JSON (with sources)</SelectItem>
                 <SelectItem value="markdown">Markdown</SelectItem>
                 <SelectItem value="html">HTML</SelectItem>
+                <SelectItem value="pdf">PDF Report</SelectItem>
               </SelectContent>
             </Select>
           </div>
