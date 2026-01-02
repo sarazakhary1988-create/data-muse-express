@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
 import { ResultCard } from '@/components/ResultCard';
 import { ResearchTrace } from '@/components/ResearchTrace';
 import { DiscrepancyReport } from '@/components/DiscrepancyReport';
@@ -22,7 +23,7 @@ export const ResultsView = ({ task, onBack, onViewReport }: ResultsViewProps) =>
   const taskReport = reports.find(r => r.taskId === task.id);
   const consolidation = agentState.consolidation;
 
-  // Show loading state with OpenAI message
+  // Show loading state with OpenAI message and progress
   if (task.status === 'processing') {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px]">
@@ -33,17 +34,25 @@ export const ResultsView = ({ task, onBack, onViewReport }: ResultsViewProps) =>
         />
         <p className="mt-4 text-muted-foreground">{t.common.processing}</p>
         
-        {/* Show report generation status */}
+        {/* Show report generation status with progress */}
         {reportGenerationStatus.message && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mt-4 flex items-center gap-2 px-4 py-2 bg-primary/10 rounded-lg border border-primary/20"
+            className="mt-4 w-full max-w-md"
           >
-            <Sparkles className="w-4 h-4 text-primary animate-pulse" />
-            <span className="text-sm font-medium text-primary">
-              {reportGenerationStatus.message}
-            </span>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-primary animate-pulse" />
+                <span className="text-sm font-medium text-primary">
+                  {reportGenerationStatus.message}
+                </span>
+              </div>
+              <span className="text-sm font-bold text-primary">
+                {reportGenerationStatus.progress}%
+              </span>
+            </div>
+            <Progress value={reportGenerationStatus.progress} className="h-2" />
           </motion.div>
         )}
       </div>

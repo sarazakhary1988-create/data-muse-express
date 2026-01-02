@@ -181,7 +181,7 @@ export const useResearchEngine = () => {
       addDebugLog('[EXEC] Executing research agent pipeline');
 
       // Execute the full agent pipeline with progress updates
-      setReportGenerationStatus({ isGenerating: false, message: 'Searching and gathering sources...' });
+      setReportGenerationStatus({ isGenerating: true, message: 'Searching and gathering sources...', progress: 10 });
       
       const { results, report, quality, verifications, plan, searchEngineInfo, webSourcesUsed, warnings } = await researchAgent.execute(
         query,
@@ -191,8 +191,8 @@ export const useResearchEngine = () => {
         { country: countryFilter, strictMode }
       );
 
-      // Show report generation status
-      setReportGenerationStatus({ isGenerating: true, message: 'Generating report with OpenAI GPT-4o...' });
+      // Show report generation status with progress
+      setReportGenerationStatus({ isGenerating: true, message: 'Analyzing and consolidating data...', progress: 40 });
 
       // Log warnings
       if (warnings && warnings.length > 0) {
@@ -218,7 +218,7 @@ export const useResearchEngine = () => {
       addDebugLog(`[CONSOLIDATE] Discrepancies: ${consolidatedResult.discrepancies.length}, Quality: ${(consolidatedResult.qualityMetrics.overallScore * 100).toFixed(1)}%`);
 
       // Generate AI title for the report
-      setReportGenerationStatus({ isGenerating: true, message: 'Generating AI title...' });
+      setReportGenerationStatus({ isGenerating: true, message: 'Generating AI title...', progress: 60 });
       let reportTitle = `Research Report: ${query}`;
       
       try {
@@ -238,6 +238,9 @@ export const useResearchEngine = () => {
         console.warn('Title generation failed, using default:', titleErr);
       }
 
+      // Generate the final report with OpenAI
+      setReportGenerationStatus({ isGenerating: true, message: 'Generating report with OpenAI GPT-4o...', progress: 80 });
+
       // Create report object with AI-generated title and prompt at start
       const reportWithPrompt = `> **Research Prompt:** ${query}\n\n${report}`;
       
@@ -251,7 +254,7 @@ export const useResearchEngine = () => {
         sections: [{ id: 'content', title: 'Full Report', content: reportWithPrompt, order: 1 }],
       };
 
-      setReportGenerationStatus({ isGenerating: false, message: '' });
+      setReportGenerationStatus({ isGenerating: true, message: 'Finalizing report...', progress: 95 });
 
       // Complete the task
       updateTask(taskId, {
@@ -269,6 +272,8 @@ export const useResearchEngine = () => {
         })),
         completedAt: new Date(),
       });
+
+      setReportGenerationStatus({ isGenerating: false, message: 'Complete!', progress: 100 });
 
       addReport(reportObj);
       setSearchQuery('');
@@ -302,7 +307,7 @@ export const useResearchEngine = () => {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       addDebugLog(`[FATAL] ${errorMessage}`);
       
-      setReportGenerationStatus({ isGenerating: false, message: '' });
+      setReportGenerationStatus({ isGenerating: false, message: '', progress: 0 });
       
       updateTask(taskId, {
         status: 'failed',
@@ -328,7 +333,7 @@ export const useResearchEngine = () => {
       setIsSearching(false);
       setCurrentRunId(null);
       abortControllerRef.current = null;
-      setReportGenerationStatus({ isGenerating: false, message: '' });
+      setReportGenerationStatus({ isGenerating: false, message: '', progress: 0 });
     }
   }, [
     addTask, 

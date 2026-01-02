@@ -247,6 +247,7 @@ interface ResearchStore {
   reportGenerationStatus: {
     isGenerating: boolean;
     message: string;
+    progress: number; // 0-100
   };
   
   // Actions
@@ -294,7 +295,7 @@ interface ResearchStore {
   resetAgentState: () => void;
   
   // Report generation actions
-  setReportGenerationStatus: (status: { isGenerating: boolean; message: string }) => void;
+  setReportGenerationStatus: (status: { isGenerating: boolean; message: string; progress?: number }) => void;
 }
 
 export const useResearchStore = create<ResearchStore>()(
@@ -340,6 +341,7 @@ export const useResearchStore = create<ResearchStore>()(
       reportGenerationStatus: {
         isGenerating: false,
         message: '',
+        progress: 0,
       },
       
       setSearchQuery: (query) => set({ searchQuery: query }),
@@ -467,10 +469,17 @@ export const useResearchStore = create<ResearchStore>()(
         reportGenerationStatus: {
           isGenerating: false,
           message: '',
+          progress: 0,
         }
       }),
       
-      setReportGenerationStatus: (status) => set({ reportGenerationStatus: status }),
+      setReportGenerationStatus: (status) => set((s) => ({ 
+        reportGenerationStatus: { 
+          ...s.reportGenerationStatus, 
+          ...status, 
+          progress: status.progress ?? s.reportGenerationStatus.progress 
+        } 
+      })),
       
       // New actions
       setResearchSettings: (settings) => set((s) => ({
