@@ -7,6 +7,7 @@ import { HelmetProvider } from "react-helmet-async";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { LanguageProvider } from "@/lib/i18n/LanguageContext";
+import { ResearchDebugPanel } from "@/components/ResearchDebugPanel";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 
@@ -35,6 +36,7 @@ const App = () => (
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </BrowserRouter>
+              <ResearchDebugPanel />
             </TooltipProvider>
           </LanguageProvider>
         </ThemeProvider>
