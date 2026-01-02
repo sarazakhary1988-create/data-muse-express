@@ -129,6 +129,15 @@ export interface AgentStateInfo {
     resultCounts: Record<string, number>;
     searchMethod: string;
     timing?: number;
+    // Detailed URL tracking per engine
+    urlDetails?: {
+      engine: string;
+      url: string;
+      title: string;
+      relevanceScore: number;
+      status: 'pending' | 'scraped' | 'failed';
+      scrapedAt?: string;
+    }[];
   } | null;
 }
 
