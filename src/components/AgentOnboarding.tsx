@@ -1,17 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bot, Sparkles, Heart, Check } from 'lucide-react';
+import { Bot, Sparkles, Heart, Check, User, UserCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { AgentGender } from '@/hooks/useAgentStore';
 
 interface AgentOnboardingProps {
-  onComplete: (agentName: string) => void;
+  onComplete: (agentName: string, gender: AgentGender) => void;
 }
 
 export const AgentOnboarding = ({ onComplete }: AgentOnboardingProps) => {
   const { language, isRTL } = useLanguage();
   const [agentName, setAgentName] = useState('');
+  const [gender, setGender] = useState<AgentGender>('other');
   const [step, setStep] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
 
@@ -25,12 +27,18 @@ export const AgentOnboarding = ({ onComplete }: AgentOnboardingProps) => {
       placeholder: 'Enter a name for your AI...',
       suggestions: ['Atlas', 'Nova', 'Sage', 'Orion', 'Echo'],
       continue: 'Continue',
+      genderQuestion: 'Choose your assistant voice',
+      genderOptions: {
+        male: 'Male Voice',
+        female: 'Female Voice',
+        other: 'Neutral',
+      },
       greeting: (name: string) => `Hello! I'm ${name}, and I'll be your research partner.`,
       features: [
         'Predictive research suggestions',
         'Multi-perspective analysis',
         'Real-time insights',
-        'Smart scheduling',
+        'Voice interaction support',
       ],
       letsGo: "Let's Start Researching!",
     },
@@ -41,12 +49,18 @@ export const AgentOnboarding = ({ onComplete }: AgentOnboardingProps) => {
       placeholder: 'اكتب اسم لمساعدك...',
       suggestions: ['نور', 'سلطان', 'ياسر', 'ريما', 'فهد'],
       continue: 'استمر',
+      genderQuestion: 'اختر صوت مساعدك',
+      genderOptions: {
+        male: 'صوت رجالي',
+        female: 'صوت نسائي',
+        other: 'محايد',
+      },
       greeting: (name: string) => `هلا والله! أنا ${name}، حاضر أساعدك في البحث.`,
       features: [
         'اقتراحات بحث تنبؤية',
         'تحليل متعدد الزوايا',
         'رؤى فورية',
-        'جدولة ذكية',
+        'دعم التفاعل الصوتي',
       ],
       letsGo: 'يالله نبدأ البحث!',
     },
@@ -65,7 +79,7 @@ export const AgentOnboarding = ({ onComplete }: AgentOnboardingProps) => {
   };
 
   const handleComplete = () => {
-    onComplete(agentName.trim());
+    onComplete(agentName.trim(), gender);
   };
 
   const handleSuggestion = (name: string) => {
@@ -84,18 +98,31 @@ export const AgentOnboarding = ({ onComplete }: AgentOnboardingProps) => {
             className="w-full max-w-lg text-center space-y-8"
             dir={isRTL ? 'rtl' : 'ltr'}
           >
-            {/* Animated Bot Icon */}
+            {/* Animated Bot Icon with Mesh Gradient */}
             <motion.div
               animate={{ y: [0, -10, 0] }}
               transition={{ repeat: Infinity, duration: 2 }}
-              className="mx-auto w-24 h-24 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-2xl shadow-primary/30"
+              className="mx-auto w-24 h-24 rounded-full flex items-center justify-center shadow-2xl relative overflow-hidden"
+              style={{
+                background: 'linear-gradient(135deg, hsl(262, 83%, 58%) 0%, hsl(280, 70%, 50%) 30%, hsl(200, 80%, 50%) 60%, hsl(173, 80%, 40%) 100%)',
+              }}
             >
-              <Bot className="w-12 h-12 text-white" />
+              {/* Glow effect */}
+              <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent" />
+              <Bot className="w-12 h-12 text-white relative z-10" />
             </motion.div>
 
             {/* Welcome Text */}
             <div className="space-y-2">
-              <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-transparent">
+              <h1 
+                className="text-3xl md:text-4xl font-bold"
+                style={{
+                  background: 'linear-gradient(135deg, hsl(262, 83%, 58%) 0%, hsl(200, 80%, 50%) 50%, hsl(173, 80%, 40%) 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text',
+                }}
+              >
                 {t.welcome}
               </h1>
               <p className="text-muted-foreground text-lg">{t.subtitle}</p>
@@ -131,11 +158,41 @@ export const AgentOnboarding = ({ onComplete }: AgentOnboardingProps) => {
               </div>
             </div>
 
+            {/* Gender Selection */}
+            <div className="space-y-3">
+              <h3 className="text-lg font-medium">{t.genderQuestion}</h3>
+              <div className="flex justify-center gap-3">
+                {(['male', 'female', 'other'] as AgentGender[]).map((g) => (
+                  <button
+                    key={g}
+                    onClick={() => setGender(g)}
+                    className={`flex items-center gap-2 px-4 py-3 rounded-xl transition-all ${
+                      gender === g
+                        ? 'bg-gradient-to-r from-primary to-accent text-white shadow-lg'
+                        : 'bg-muted hover:bg-muted/80'
+                    }`}
+                  >
+                    {g === 'male' ? (
+                      <User className="w-5 h-5" />
+                    ) : g === 'female' ? (
+                      <UserCircle className="w-5 h-5" />
+                    ) : (
+                      <Bot className="w-5 h-5" />
+                    )}
+                    <span className="font-medium">{t.genderOptions[g]}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Continue Button */}
             <Button
               onClick={handleContinue}
               disabled={!agentName.trim() || isAnimating}
-              className="w-full h-12 text-lg bg-gradient-to-r from-primary to-accent hover:opacity-90"
+              className="w-full h-12 text-lg"
+              style={{
+                background: 'linear-gradient(135deg, hsl(262, 83%, 58%) 0%, hsl(173, 80%, 40%) 100%)',
+              }}
             >
               <Sparkles className="w-5 h-5 mr-2" />
               {t.continue}
@@ -150,19 +207,25 @@ export const AgentOnboarding = ({ onComplete }: AgentOnboardingProps) => {
             className="w-full max-w-lg text-center space-y-8"
             dir={isRTL ? 'rtl' : 'ltr'}
           >
-            {/* Agent Avatar */}
+            {/* Agent Avatar with Mesh Gradient */}
             <motion.div
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
               transition={{ type: 'spring', delay: 0.2 }}
-              className="mx-auto w-32 h-32 rounded-full bg-gradient-to-br from-primary via-accent to-primary flex items-center justify-center shadow-2xl shadow-primary/30 relative"
+              className="mx-auto w-32 h-32 rounded-full flex items-center justify-center shadow-2xl relative overflow-hidden"
+              style={{
+                background: 'linear-gradient(135deg, hsl(262, 83%, 58%) 0%, hsl(280, 70%, 50%) 30%, hsl(200, 80%, 50%) 60%, hsl(173, 80%, 40%) 100%)',
+                boxShadow: '0 0 40px rgba(139, 92, 246, 0.4), 0 0 80px rgba(45, 212, 191, 0.2)',
+              }}
             >
+              {/* Inner glow */}
+              <div className="absolute inset-0 bg-gradient-to-br from-white/30 to-transparent" />
               <motion.div
                 animate={{ rotate: 360 }}
                 transition={{ repeat: Infinity, duration: 10, ease: 'linear' }}
-                className="absolute inset-0 rounded-full border-2 border-dashed border-primary/30"
+                className="absolute inset-0 rounded-full border-2 border-dashed border-white/30"
               />
-              <span className="text-4xl font-bold text-white">
+              <span className="text-4xl font-bold text-white relative z-10">
                 {agentName.charAt(0).toUpperCase()}
               </span>
             </motion.div>
@@ -195,8 +258,13 @@ export const AgentOnboarding = ({ onComplete }: AgentOnboardingProps) => {
                   transition={{ delay: 0.7 + index * 0.1 }}
                   className="flex items-center gap-3 p-3 rounded-lg bg-muted/50"
                 >
-                  <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
-                    <Check className="w-4 h-4 text-primary" />
+                  <div 
+                    className="w-8 h-8 rounded-full flex items-center justify-center"
+                    style={{
+                      background: 'linear-gradient(135deg, hsl(262, 83%, 58%) 0%, hsl(173, 80%, 40%) 100%)',
+                    }}
+                  >
+                    <Check className="w-4 h-4 text-white" />
                   </div>
                   <span className="font-medium">{feature}</span>
                 </motion.div>
@@ -211,7 +279,10 @@ export const AgentOnboarding = ({ onComplete }: AgentOnboardingProps) => {
             >
               <Button
                 onClick={handleComplete}
-                className="w-full h-14 text-lg bg-gradient-to-r from-primary to-accent hover:opacity-90"
+                className="w-full h-14 text-lg"
+                style={{
+                  background: 'linear-gradient(135deg, hsl(262, 83%, 58%) 0%, hsl(173, 80%, 40%) 100%)',
+                }}
               >
                 <Heart className="w-5 h-5 mr-2" />
                 {t.letsGo}

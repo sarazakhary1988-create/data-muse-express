@@ -68,7 +68,7 @@ interface AIAssistantPanelProps {
   onSuggestedSearch?: (query: string) => void;
 }
 
-type AgentMood = 'happy' | 'excited' | 'thinking' | 'surprised' | 'celebratory' | 'helpful' | 'concerned';
+type AgentMood = 'happy' | 'excited' | 'thinking' | 'surprised' | 'celebratory' | 'helpful' | 'concerned' | 'tired';
 type PanelSize = 'small' | 'medium' | 'large';
 
 interface ChatMessage {
@@ -79,11 +79,11 @@ interface ChatMessage {
   type?: 'greeting' | 'suggestion' | 'alert' | 'insight' | 'celebration';
 }
 
-// 3D Animated Avatar Component
+// 3D Animated Avatar with Mesh Gradient
 const AnimatedAvatar = ({ mood, isThinking }: { mood: AgentMood; isThinking: boolean }) => {
   const [eyeState, setEyeState] = useState<'open' | 'closed'>('open');
   
-  // Blinking animation
+  // Blinking animation - steady, no pulsing
   useEffect(() => {
     const blinkInterval = setInterval(() => {
       setEyeState('closed');
@@ -95,57 +95,46 @@ const AnimatedAvatar = ({ mood, isThinking }: { mood: AgentMood; isThinking: boo
   const getMoodConfig = () => {
     switch (mood) {
       case 'excited':
-        return { eyeSize: 'scale-110', mouthPath: 'M 10 22 Q 18 30 26 22', eyeColor: '#FFD700', bgGlow: 'from-yellow-400 to-orange-500' };
+        return { eyeSize: 'scale-110', mouthPath: 'M 10 22 Q 18 30 26 22', eyeColor: '#FFD700' };
       case 'thinking':
-        return { eyeSize: 'scale-100', mouthPath: 'M 12 24 L 24 24', eyeColor: '#60A5FA', bgGlow: 'from-blue-400 to-purple-500' };
+        return { eyeSize: 'scale-100', mouthPath: 'M 12 24 L 24 24', eyeColor: '#60A5FA' };
       case 'surprised':
-        return { eyeSize: 'scale-125', mouthPath: 'M 14 22 Q 18 28 22 22', eyeColor: '#F472B6', bgGlow: 'from-pink-400 to-purple-500' };
+        return { eyeSize: 'scale-125', mouthPath: 'M 14 22 Q 18 28 22 22', eyeColor: '#F472B6' };
       case 'celebratory':
-        return { eyeSize: 'scale-110', mouthPath: 'M 8 20 Q 18 32 28 20', eyeColor: '#34D399', bgGlow: 'from-green-400 to-emerald-500' };
+        return { eyeSize: 'scale-110', mouthPath: 'M 8 20 Q 18 32 28 20', eyeColor: '#34D399' };
       case 'concerned':
-        return { eyeSize: 'scale-95', mouthPath: 'M 12 26 Q 18 22 24 26', eyeColor: '#FB923C', bgGlow: 'from-orange-400 to-red-400' };
+        return { eyeSize: 'scale-95', mouthPath: 'M 12 26 Q 18 22 24 26', eyeColor: '#FB923C' };
       case 'helpful':
-        return { eyeSize: 'scale-105', mouthPath: 'M 10 22 Q 18 28 26 22', eyeColor: '#818CF8', bgGlow: 'from-indigo-400 to-violet-500' };
+        return { eyeSize: 'scale-105', mouthPath: 'M 10 22 Q 18 28 26 22', eyeColor: '#818CF8' };
+      case 'tired':
+        return { eyeSize: 'scale-90', mouthPath: 'M 12 24 L 24 24', eyeColor: '#94A3B8' };
       default:
-        return { eyeSize: 'scale-100', mouthPath: 'M 10 22 Q 18 26 26 22', eyeColor: '#22D3EE', bgGlow: 'from-cyan-400 to-teal-500' };
+        return { eyeSize: 'scale-100', mouthPath: 'M 10 22 Q 18 26 26 22', eyeColor: '#22D3EE' };
     }
   };
 
   const config = getMoodConfig();
 
   return (
-    <motion.div
-      className="relative w-16 h-16"
-      animate={{
-        scale: [1, 1.02, 1],
-      }}
-      transition={{
-        duration: 3,
-        repeat: Infinity,
-        ease: "easeInOut"
-      }}
-    >
-      {/* Background glow */}
-      <motion.div
-        className={`absolute inset-0 rounded-full bg-gradient-to-br ${config.bgGlow} blur-lg opacity-60`}
-        animate={{
-          scale: [1, 1.2, 1],
-          opacity: [0.4, 0.7, 0.4],
-        }}
-        transition={{
-          duration: 2,
-          repeat: Infinity,
-          ease: "easeInOut"
+    <div className="relative w-16 h-16">
+      {/* Subtle outer glow - no animation */}
+      <div 
+        className="absolute -inset-2 rounded-full blur-xl opacity-40"
+        style={{
+          background: 'linear-gradient(135deg, hsl(262, 83%, 58%) 0%, hsl(200, 80%, 50%) 50%, hsl(173, 80%, 40%) 100%)',
         }}
       />
       
-      {/* Main face */}
-      <motion.div
-        className="absolute inset-0 rounded-full bg-gradient-to-br from-slate-800 to-slate-900 border-2 border-white/20 shadow-2xl overflow-hidden"
+      {/* Main face with mesh gradient */}
+      <div
+        className="absolute inset-0 rounded-full border border-white/30 shadow-xl overflow-hidden"
         style={{
-          boxShadow: `0 0 30px ${config.eyeColor}40, inset 0 0 20px rgba(255,255,255,0.1)`
+          background: 'linear-gradient(135deg, hsl(262, 83%, 58%) 0%, hsl(280, 70%, 50%) 30%, hsl(200, 80%, 50%) 60%, hsl(173, 80%, 40%) 100%)',
+          boxShadow: '0 0 20px rgba(139, 92, 246, 0.3), inset 0 0 15px rgba(255,255,255,0.15)'
         }}
       >
+        {/* Inner highlight */}
+        <div className="absolute inset-0 bg-gradient-to-br from-white/25 to-transparent" />
         {/* Face SVG */}
         <svg viewBox="0 0 36 36" className="w-full h-full">
           {/* Left Eye */}
@@ -215,7 +204,7 @@ const AnimatedAvatar = ({ mood, isThinking }: { mood: AgentMood; isThinking: boo
             </motion.g>
           )}
         </svg>
-      </motion.div>
+      </div>
       
       {/* Celebration particles */}
       {mood === 'celebratory' && (
@@ -244,7 +233,7 @@ const AnimatedAvatar = ({ mood, isThinking }: { mood: AgentMood; isThinking: boo
           ))}
         </>
       )}
-    </motion.div>
+    </div>
   );
 };
 
