@@ -29,13 +29,13 @@ serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'dall-e-3',
+        model: 'gpt-image-1',
         prompt: prompt,
         n: 1,
         size: '1024x1024',
-        quality: 'hd',
-        style: 'vivid',
-        response_format: 'url',
+        quality: 'high',
+        background: 'transparent',
+        output_format: 'png',
       }),
     });
 
@@ -48,8 +48,9 @@ serve(async (req) => {
     const data = await response.json();
     console.log('Image generated successfully');
 
-    // DALL-E-3 returns URL
-    const imageUrl = data.data[0].url;
+    // gpt-image-1 returns base64
+    const imageData = data.data[0].b64_json;
+    const imageUrl = `data:image/png;base64,${imageData}`;
 
     return new Response(JSON.stringify({ 
       success: true,
