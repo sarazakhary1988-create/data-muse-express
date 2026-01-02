@@ -1,6 +1,6 @@
 // Research Agent - Main orchestrator that coordinates all agent components
-// Enhanced with Manus-inspired validation and consolidation
-// Fixed: LLM-first approach - always produces a report even if web search fails
+// MANUS 1.6 MAX - Real-time web scraping ONLY, NO AI synthesis fallback
+// All data must come from actual web sources
 
 import { AgentStateMachine, agentStateMachine } from './stateMachine';
 import { PlanningAgent, planningAgent } from './planningAgent';
@@ -10,6 +10,7 @@ import { DecisionEngine, decisionEngine } from './decisionEngine';
 import { ParallelExecutor, parallelExecutor } from './parallelExecutor';
 import { sourceAuthorityManager } from './sourceAuthority';
 import { dataConsolidator, ConsolidatedResult } from './dataConsolidator';
+import { executeWideResearch, WideResearchResult, WideResearchCallbacks } from './wideResearch';
 import { 
   AgentState, 
   ResearchPlan, 
@@ -151,10 +152,19 @@ export class ResearchAgent {
 
     console.log(`[ResearchAgent] ========== STARTING MANUS 1.6 MAX RESEARCH ENGINE ==========`);
     console.log(`[ResearchAgent] Query: "${query}"`);
-    console.log(`[ResearchAgent] Mode: LLM-FIRST with optional web augmentation`);
+    console.log(`[ResearchAgent] Mode: REAL-TIME WEB SCRAPING ONLY (No AI Synthesis)`);
     console.log(`[ResearchAgent] Format: ${reportFormat}`);
     
     this.reportFormat = reportFormat;
+
+    // Use Wide Research for complex queries
+    const isComplexQuery = query.split(/\s+/).length > 5 || 
+      /\b(board|directors?|shareholders?|executive|leadership|financials?)\b/i.test(query);
+    
+    if (isComplexQuery) {
+      console.log(`[ResearchAgent] Complex query detected - using Wide Research`);
+      return this.executeWideResearch(query, options);
+    }
 
     try {
       // Phase 1: Planning
