@@ -1,8 +1,12 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+export type AgentGender = 'male' | 'female' | 'other';
+export type AgentMood = 'happy' | 'excited' | 'thinking' | 'surprised' | 'celebratory' | 'helpful' | 'concerned' | 'tired';
+
 interface AgentSettings {
   agentName: string;
+  agentGender: AgentGender;
   hasCompletedOnboarding: boolean;
   researchStreak: number;
   totalQueries: number;
@@ -11,6 +15,7 @@ interface AgentSettings {
   xp: number;
   badges: string[];
   lastActiveDate: string;
+  currentMood: AgentMood;
   preferences: {
     voiceEnabled: boolean;
     predictionsEnabled: boolean;
@@ -21,6 +26,8 @@ interface AgentSettings {
 
 interface AgentStore extends AgentSettings {
   setAgentName: (name: string) => void;
+  setAgentGender: (gender: AgentGender) => void;
+  setMood: (mood: AgentMood) => void;
   completeOnboarding: () => void;
   incrementStreak: () => void;
   addQuery: () => void;
@@ -37,6 +44,7 @@ const calculateLevel = (xp: number): number => {
 
 const defaultSettings: AgentSettings = {
   agentName: '',
+  agentGender: 'other',
   hasCompletedOnboarding: false,
   researchStreak: 0,
   totalQueries: 0,
@@ -45,6 +53,7 @@ const defaultSettings: AgentSettings = {
   xp: 0,
   badges: [],
   lastActiveDate: '',
+  currentMood: 'happy',
   preferences: {
     voiceEnabled: false,
     predictionsEnabled: true,
@@ -60,6 +69,10 @@ export const useAgentStore = create<AgentStore>()(
 
       setAgentName: (name) => set({ agentName: name }),
 
+      setAgentGender: (gender) => set({ agentGender: gender }),
+
+      setMood: (mood) => set({ currentMood: mood }),
+
       completeOnboarding: () => {
         set({ 
           hasCompletedOnboarding: true,
@@ -73,13 +86,11 @@ export const useAgentStore = create<AgentStore>()(
         const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
 
         if (lastActive === yesterday) {
-          // Continue streak
           set((state) => ({
             researchStreak: state.researchStreak + 1,
             lastActiveDate: today,
           }));
         } else if (lastActive !== today) {
-          // Reset streak if not consecutive
           set({ researchStreak: 1, lastActiveDate: today });
         }
       },
@@ -87,13 +98,12 @@ export const useAgentStore = create<AgentStore>()(
       addQuery: () => {
         const state = get();
         const newTotal = state.totalQueries + 1;
-        const xpGain = 10; // XP per query
+        const xpGain = 10;
         const newXP = state.xp + xpGain;
         const newLevel = calculateLevel(newXP);
 
         const badges = [...state.badges];
         
-        // Badge unlocks
         if (newTotal >= 1 && !badges.includes('firstSearch')) {
           badges.push('firstSearch');
         }
@@ -114,14 +124,13 @@ export const useAgentStore = create<AgentStore>()(
           badges,
         });
 
-        // Also check streak
         get().incrementStreak();
       },
 
       addReport: () => {
         const state = get();
         const newTotal = state.totalReports + 1;
-        const xpGain = 50; // XP per report
+        const xpGain = 50;
         const newXP = state.xp + xpGain;
         const newLevel = calculateLevel(newXP);
 

@@ -26,7 +26,7 @@ import { AgentOnboarding } from '@/components/AgentOnboarding';
 import { AIAssistantPanel } from '@/components/AIAssistantPanel';
 import { useResearchStore, ResearchTask } from '@/store/researchStore';
 import { useResearchEngine } from '@/hooks/useResearchEngine';
-import { useAgentStore } from '@/hooks/useAgentStore';
+import { useAgentStore, AgentGender } from '@/hooks/useAgentStore';
 
 const Index = () => {
   const [activeView, setActiveView] = useState<ViewType>('search');
@@ -50,7 +50,8 @@ const Index = () => {
   const { 
     agentName, 
     hasCompletedOnboarding, 
-    setAgentName, 
+    setAgentName,
+    setAgentGender,
     completeOnboarding,
     addQuery,
     addReport,
@@ -140,8 +141,9 @@ const Index = () => {
     }
   };
 
-  const handleAgentComplete = (name: string) => {
+  const handleAgentComplete = (name: string, gender: AgentGender) => {
     setAgentName(name);
+    setAgentGender(gender);
     completeOnboarding();
   };
 
