@@ -22,12 +22,16 @@ import { ResearchTemplates } from '@/components/templates/ResearchTemplates';
 import { HypothesisLab } from '@/components/hypothesis/HypothesisLab';
 import { LeadEnrichment } from '@/components/leads/LeadEnrichment';
 import { IntegrationsPage } from '@/components/integrations/IntegrationsPage';
+import { AgentOnboarding } from '@/components/AgentOnboarding';
+import { AIAssistantPanel } from '@/components/AIAssistantPanel';
 import { useResearchStore, ResearchTask } from '@/store/researchStore';
 import { useResearchEngine } from '@/hooks/useResearchEngine';
+import { useAgentStore } from '@/hooks/useAgentStore';
 
 const Index = () => {
   const [activeView, setActiveView] = useState<ViewType>('search');
   const [researchSteps, setResearchSteps] = useState(defaultResearchSteps);
+  const [lastQuery, setLastQuery] = useState('');
   
   const { 
     isSearching, 
@@ -42,6 +46,15 @@ const Index = () => {
   } = useResearchStore();
   
   const { startResearch, deepScrape, cancelResearch } = useResearchEngine();
+  
+  const { 
+    agentName, 
+    hasCompletedOnboarding, 
+    setAgentName, 
+    completeOnboarding,
+    addQuery,
+    addReport,
+  } = useAgentStore();
 
   const currentReport = reports.find(r => r.taskId === currentTask?.id);
 
@@ -118,11 +131,22 @@ const Index = () => {
 
   const handleSearch = async (query: string) => {
     try {
+      setLastQuery(query);
+      addQuery(); // Track for gamification
       await startResearch(query);
       setActiveView('results');
     } catch (error) {
       console.error('Research failed:', error);
     }
+  };
+
+  const handleAgentComplete = (name: string) => {
+    setAgentName(name);
+    completeOnboarding();
+  };
+
+  const handleSuggestedSearch = (query: string) => {
+    handleSearch(query);
   };
 
   const handleScrapeUrl = async (url: string) => {
@@ -332,6 +356,11 @@ const Index = () => {
         />
       </Helmet>
 
+      {/* Agent Onboarding */}
+      {!hasCompletedOnboarding && (
+        <AgentOnboarding onComplete={handleAgentComplete} />
+      )}
+
       <div className="flex min-h-screen bg-background">
         <AnimatedBackground />
         
@@ -359,6 +388,15 @@ const Index = () => {
             </AnimatePresence>
           </main>
         </div>
+
+        {/* AI Assistant Panel */}
+        {hasCompletedOnboarding && agentName && (
+          <AIAssistantPanel 
+            agentName={agentName}
+            lastQuery={lastQuery}
+            onSuggestedSearch={handleSuggestedSearch}
+          />
+        )}
       </div>
     </>
   );
