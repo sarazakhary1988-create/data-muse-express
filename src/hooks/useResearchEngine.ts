@@ -58,7 +58,13 @@ export const useResearchEngine = () => {
     }
     researchAgent.cancel();
     setIsSearching(false);
-  }, [setIsSearching]);
+    setReportGenerationStatus({ isGenerating: false, message: '', progress: 0 });
+    
+    toast({
+      title: "Research Cancelled",
+      description: "The research process has been stopped.",
+    });
+  }, [setIsSearching, setReportGenerationStatus]);
 
   const startResearch = useCallback(async (query: string) => {
     // Cancel any previous run
