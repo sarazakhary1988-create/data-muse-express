@@ -31,9 +31,9 @@ export const HeroSection = () => {
           </>
         ) : (
           <>
-            Research <span className="gradient-text">Anything</span>
+            Research <span className="gradient-text">{t.hero.titleHighlight}</span>
             <br />
-            with AI Precision
+            {t.hero.titleSuffix}
           </>
         )}
       </h1>
