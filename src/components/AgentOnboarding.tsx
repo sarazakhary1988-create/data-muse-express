@@ -19,8 +19,8 @@ export const AgentOnboarding = ({ onComplete }: AgentOnboardingProps) => {
 
   const content = {
     en: {
-      welcome: 'Welcome to NexusAI',
-      subtitle: 'Your exceptional AI research companion',
+      welcome: 'Welcome to ORKESTRA',
+      subtitle: 'Your autonomous AI research companion',
       question: "What shall we call your AI assistant?",
       placeholder: 'Enter a name for your AI...',
       suggestions: ['Atlas', 'Nova', 'Sage', 'Orion', 'Echo'],
@@ -35,8 +35,8 @@ export const AgentOnboarding = ({ onComplete }: AgentOnboardingProps) => {
       letsGo: "Let's Start Researching!",
     },
     ar: {
-      welcome: 'أهلاً وسهلاً في نيكسس',
-      subtitle: 'مساعدك الاستثنائي للبحث بالذكاء الاصطناعي',
+      welcome: 'أهلاً وسهلاً في أوركسترا',
+      subtitle: 'مساعدك الذاتي للبحث بالذكاء الاصطناعي',
       question: 'شنو تبي نسمي مساعدك الذكي؟',
       placeholder: 'اكتب اسم لمساعدك...',
       suggestions: ['نور', 'سلطان', 'ياسر', 'ريما', 'فهد'],

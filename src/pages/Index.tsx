@@ -349,10 +349,10 @@ const Index = () => {
   return (
     <>
       <Helmet>
-        <title>NexusAI - AI-Powered Research Engine</title>
+        <title>ORKESTRA - Autonomous Research Engine</title>
         <meta 
           name="description" 
-          content="Deep web research, intelligent data extraction, and comprehensive report generation. Find accurate information from any source." 
+          content="Orkestra orchestrates autonomous AI agents to research, analyze, and synthesize intelligence — faster, deeper, and without dependency." 
         />
       </Helmet>
 
