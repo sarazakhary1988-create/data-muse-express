@@ -499,4 +499,109 @@ export const researchApi = {
       error: deduped.length === 0 && errors.length > 0 ? errors.join('; ') : undefined,
     };
   },
+
+  // WIDE RESEARCH: Parallel sub-agent execution (Manus 1.6 MAX)
+  async wideResearch(
+    query: string,
+    options?: {
+      items?: string[];
+      maxSubAgents?: number;
+      scrapeDepth?: 'shallow' | 'medium' | 'deep';
+      minSourcesPerItem?: number;
+      country?: string;
+    }
+  ): Promise<{
+    success: boolean;
+    query: string;
+    subResults: Array<{
+      query: string;
+      status: 'completed' | 'failed';
+      sources: Array<{
+        url: string;
+        title: string;
+        domain: string;
+        content: string;
+        markdown: string;
+        fetchedAt: string;
+        reliability: number;
+        source: string;
+      }>;
+      error?: string;
+    }>;
+    aggregatedSources: Array<{
+      url: string;
+      title: string;
+      domain: string;
+      content: string;
+      markdown: string;
+      fetchedAt: string;
+      reliability: number;
+      source: string;
+    }>;
+    metadata: {
+      subQueriesExecuted: number;
+      successfulSubQueries: number;
+      failedSubQueries: number;
+      totalSourcesScraped: number;
+      uniqueDomains: number;
+    };
+    timing: { total: number };
+    error?: string;
+  }> {
+    try {
+      console.log('[researchApi] Wide Research:', query);
+      
+      const { data, error } = await supabase.functions.invoke('wide-research', {
+        body: { 
+          query,
+          items: options?.items,
+          config: {
+            maxSubAgents: options?.maxSubAgents || 8,
+            scrapeDepth: options?.scrapeDepth || 'medium',
+            minSourcesPerItem: options?.minSourcesPerItem || 2,
+            country: options?.country,
+          },
+        },
+      });
+
+      if (error) {
+        console.error('[researchApi] Wide Research error:', error);
+        return { 
+          success: false, 
+          query,
+          subResults: [],
+          aggregatedSources: [],
+          metadata: {
+            subQueriesExecuted: 0,
+            successfulSubQueries: 0,
+            failedSubQueries: 0,
+            totalSourcesScraped: 0,
+            uniqueDomains: 0,
+          },
+          timing: { total: 0 },
+          error: error.message,
+        };
+      }
+
+      console.log('[researchApi] Wide Research success:', data.metadata);
+      return data;
+    } catch (err) {
+      console.error('[researchApi] Wide Research error:', err);
+      return { 
+        success: false, 
+        query,
+        subResults: [],
+        aggregatedSources: [],
+        metadata: {
+          subQueriesExecuted: 0,
+          successfulSubQueries: 0,
+          failedSubQueries: 0,
+          totalSourcesScraped: 0,
+          uniqueDomains: 0,
+        },
+        timing: { total: 0 },
+        error: err instanceof Error ? err.message : 'Wide research failed',
+      };
+    }
+  },
 };
