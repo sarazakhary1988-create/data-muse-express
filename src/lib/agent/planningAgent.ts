@@ -1,4 +1,5 @@
-// Planning Agent - Creates adaptive research strategies
+// Planning Agent - Creates adaptive research strategies using Claude API for enhanced reasoning
+// API ORCHESTRATION: Claude for query planning and evidence verification
 
 import { 
   ResearchPlan, 
@@ -18,13 +19,17 @@ interface QueryAnalysis {
   region?: string;
   complexity: 'simple' | 'moderate' | 'complex';
   suggestedSources: SourceType[];
+  subQuestions?: string[];
 }
 
 export class PlanningAgent {
   private memoryCache: AgentMemory[] = [];
+  private useClaudeForPlanning: boolean = true;
 
   async createPlan(query: string, deepVerifyEnabled: boolean = false): Promise<ResearchPlan> {
-    // Analyze the query to understand intent and requirements
+    console.log('[PlanningAgent] Creating plan for:', query.slice(0, 100));
+    
+    // Analyze the query - use Claude API for complex queries
     const analysis = await this.analyzeQuery(query);
     
     // Get relevant memories for similar queries
@@ -47,12 +52,69 @@ export class PlanningAgent {
       adaptations: [],
     };
 
+    console.log('[PlanningAgent] Plan created:', {
+      steps: steps.length,
+      approach: strategy.approach,
+      verificationLevel: strategy.verificationLevel,
+      estimatedDuration: plan.estimatedDuration
+    });
+
     return plan;
   }
 
   private async analyzeQuery(query: string): Promise<QueryAnalysis> {
-    // Use enhanced heuristic analysis for better query understanding
+    // For complex queries, use Claude API for better decomposition
+    if (this.useClaudeForPlanning && query.length > 50) {
+      try {
+        const claudeAnalysis = await this.analyzeWithClaude(query);
+        if (claudeAnalysis) {
+          console.log('[PlanningAgent] Used Claude for query analysis');
+          return claudeAnalysis;
+        }
+      } catch (error) {
+        console.warn('[PlanningAgent] Claude analysis failed, using heuristics:', error);
+      }
+    }
+    
+    // Fallback to enhanced heuristic analysis
     return this.enhancedQueryAnalysis(query);
+  }
+
+  private async analyzeWithClaude(query: string): Promise<QueryAnalysis | null> {
+    try {
+      const { data, error } = await supabase.functions.invoke('research-analyze', {
+        body: {
+          query: query,
+          content: query,
+          type: 'extract',
+          useClaudeForPlanning: true,
+        }
+      });
+
+      if (error || !data?.success) {
+        return null;
+      }
+
+      // Parse the response to extract analysis
+      const result = data.result;
+      
+      // If we got a structured response, use it
+      if (typeof result === 'string') {
+        // Extract sub-questions if present
+        const subQuestions = result.match(/\d+\.\s+([^\n]+)/g)?.map(q => q.replace(/^\d+\.\s+/, '').trim()) || [];
+        
+        // Use heuristic analysis but enhance with Claude's sub-questions
+        const heuristicAnalysis = this.enhancedQueryAnalysis(query);
+        if (subQuestions.length > 0) {
+          heuristicAnalysis.subQuestions = subQuestions.slice(0, 5);
+        }
+        return heuristicAnalysis;
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
   }
 
   private enhancedQueryAnalysis(query: string): QueryAnalysis {
@@ -99,7 +161,7 @@ export class PlanningAgent {
     const suggestedSources: SourceType[] = ['news'];
     
     // Financial/market queries
-    if (/\b(stock|market|ipo|listing|trading|shares?|equity|investment|fund|etf|nasdaq|nyse|tasi|nomu|tadawul)\b/i.test(queryLower)) {
+    if (/\b(stock|market|ipo|listing|trading|shares?|equity|investment|fund|etf|nasdaq|nyse|tasi|nomu|tadawul|earnings|quarterly|revenue)\b/i.test(queryLower)) {
       suggestedSources.push('financial', 'official', 'regulatory');
     }
     // Academic/research queries
@@ -113,6 +175,10 @@ export class PlanningAgent {
     // Government/regulatory queries
     if (/\b(government|regulation|law|policy|compliance|authority|sec|cma|fda)\b/i.test(queryLower)) {
       suggestedSources.push('official', 'regulatory');
+    }
+    // Company/person research
+    if (/\b(ceo|executive|board|leadership|founder|chairman|director)\b/i.test(queryLower)) {
+      suggestedSources.push('official', 'social');
     }
 
     // Detect regions
@@ -130,6 +196,24 @@ export class PlanningAgent {
     if (/\b(last year|past year|recent|latest|current|this year|2024|2025)\b/i.test(queryLower)) {
       timeframe = 'recent';
     }
+    if (/\b(quarterly|q[1-4])\b/i.test(queryLower)) {
+      timeframe = 'quarterly';
+    }
+
+    // Generate sub-questions for complex queries
+    const subQuestions: string[] = [];
+    if (complexity === 'complex') {
+      // Auto-decompose the query
+      if (entities.length > 0) {
+        subQuestions.push(`Who is ${entities[0]} and what is their role?`);
+      }
+      if (region) {
+        subQuestions.push(`What are the regional considerations for ${region}?`);
+      }
+      if (/\b(earnings|revenue|financial)\b/i.test(queryLower)) {
+        subQuestions.push(`What are the key financial metrics?`);
+      }
+    }
 
     console.log('[PlanningAgent] Query analysis:', {
       intent,
@@ -138,7 +222,8 @@ export class PlanningAgent {
       entities,
       suggestedSources: [...new Set(suggestedSources)],
       region,
-      timeframe
+      timeframe,
+      subQuestions
     });
 
     return {
@@ -149,6 +234,7 @@ export class PlanningAgent {
       suggestedSources: [...new Set(suggestedSources)],
       region,
       timeframe,
+      subQuestions,
     };
   }
 
@@ -218,6 +304,19 @@ export class PlanningAgent {
       dependencies: [],
     });
 
+    // Step 1b: Search sub-questions if available
+    if (analysis.subQuestions && analysis.subQuestions.length > 0) {
+      analysis.subQuestions.slice(0, 3).forEach((sq, idx) => {
+        steps.push({
+          id: `step-${++stepOrder}`,
+          type: 'search',
+          status: 'pending',
+          description: `Sub-query ${idx + 1}: ${sq.slice(0, 50)}`,
+          dependencies: [],
+        });
+      });
+    }
+
     // Step 2: Deep verify sources if enabled
     if (strategy.verificationLevel === 'thorough') {
       steps.push({
@@ -247,13 +346,13 @@ export class PlanningAgent {
       dependencies: [`step-${stepOrder - 1}`],
     });
 
-    // Step 5: Verify claims
+    // Step 5: Verify claims (using Claude for verification)
     if (strategy.verificationLevel !== 'basic') {
       steps.push({
         id: `step-${++stepOrder}`,
         type: 'verify',
         status: 'pending',
-        description: 'Verify claims with cross-references',
+        description: 'Verify claims with cross-references (Claude)',
         dependencies: [`step-${stepOrder - 1}`],
       });
     }
@@ -316,6 +415,10 @@ export class PlanningAgent {
     if (this.memoryCache.length > 100) {
       this.memoryCache = this.memoryCache.slice(-100);
     }
+  }
+
+  setUseClaudeForPlanning(enabled: boolean): void {
+    this.useClaudeForPlanning = enabled;
   }
 }
 
