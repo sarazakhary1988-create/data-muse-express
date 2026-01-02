@@ -17,9 +17,17 @@ export const Logo = () => {
         <img 
           src={orkestraLogo} 
           alt="ORKESTRA - Autonomous Research Engine" 
-          className="h-10 w-auto object-contain"
+          className="h-9 w-9 object-contain"
         />
       </motion.div>
+      <div className="flex flex-col">
+        <span className="text-lg font-semibold tracking-tight bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+          ORKESTRA
+        </span>
+        <span className="text-[10px] text-muted-foreground -mt-0.5 tracking-wide">
+          Autonomous Research Engine
+        </span>
+      </div>
     </motion.div>
   );
 };
