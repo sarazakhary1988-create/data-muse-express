@@ -43,7 +43,7 @@ export interface AgentResearchResult {
 }
 
 export interface ResearchAgentCallbacks {
-  onStateChange?: (state: AgentState, context: DecisionContext) => void;
+  onStateChange?: (state: AgentState, context?: DecisionContext) => void;
   onProgress?: (progress: number) => void;
   onQualityUpdate?: (quality: QualityScore) => void;
   onMetricsUpdate?: (metrics: ExecutionMetrics) => void;
@@ -197,7 +197,7 @@ export class ResearchAgent {
 
         if (searchResult.success && searchResult.data && searchResult.data.length > 0) {
           console.log(`[ResearchAgent] Web search returned ${searchResult.data.length} results`);
-          this.results = searchResult.data.map((item, idx) => this.convertSearchResult(item, idx));
+          this.results = searchResult.data.map((item: any, idx: number) => this.convertSearchResult(item, idx));
           this.webSourcesAvailable = true;
         } else {
           console.warn(`[ResearchAgent] Primary search returned no results, trying hybrid`);
@@ -211,7 +211,7 @@ export class ResearchAgent {
           });
           
           if (hybridResult.success && hybridResult.data && hybridResult.data.length > 0) {
-            this.results = hybridResult.data.map((item, idx) => this.convertSearchResult(item, idx));
+            this.results = hybridResult.data.map((item: any, idx: number) => this.convertSearchResult(item, idx));
             this.webSourcesAvailable = true;
             if (!this.searchEngineInfo) {
               this.searchEngineInfo = {
@@ -365,12 +365,29 @@ export class ResearchAgent {
       this.callbacks.onError?.(agentError);
 
       // Return fallback instead of throwing
+      const fallbackPlan: ResearchPlan = this.currentPlan || {
+        id: 'fallback',
+        query,
+        strategy: {
+          approach: 'hybrid',
+          sourceTypes: ['news'],
+          verificationLevel: 'basic',
+          maxSources: 5,
+          parallelism: 1
+        },
+        steps: [],
+        estimatedDuration: 0,
+        priority: 'medium',
+        createdAt: new Date(),
+        adaptations: []
+      };
+
       return {
         results: this.createSyntheticResults(query, fallbackReport),
         report: fallbackReport,
-        quality: { completeness: 0.3, sourceQuality: 0.3, accuracy: 0.5, freshness: 0.8, overall: 0.4 },
+        quality: { completeness: 0.3, sourceQuality: 0.3, accuracy: 0.5, freshness: 0.8, overall: 0.4, claimVerification: 0 },
         verifications: [],
-        plan: this.currentPlan || { id: 'fallback', query, strategy: 'llm_only', phases: [], createdAt: new Date() },
+        plan: fallbackPlan,
         webSourcesUsed: false,
         warnings: [`Research encountered an error: ${agentError.message}`],
       };
@@ -573,14 +590,15 @@ Explain WHY each finding is supported with data and logic
       sourceQuality,
       accuracy,
       freshness,
-      overall: (completeness + sourceQuality + accuracy + freshness) / 4
+      overall: (completeness + sourceQuality + accuracy + freshness) / 4,
+      claimVerification: 0.7,
     };
   }
 
   // Calculate verification quality
   private calculateVerificationQuality(): Partial<QualityScore> {
     if (this.verifications.length === 0) {
-      return { completeness: 0.5, accuracy: 0.5, overall: 0.5 };
+      return { completeness: 0.5, accuracy: 0.5, overall: 0.5, claimVerification: 0 };
     }
 
     const verifiedCount = this.verifications.filter(v => v.status === 'verified').length;
@@ -589,7 +607,8 @@ Explain WHY each finding is supported with data and logic
     return {
       accuracy: avgConfidence,
       completeness: Math.min(1, this.verifications.length / 5),
-      overall: (avgConfidence + verifiedCount / this.verifications.length) / 2
+      overall: (avgConfidence + verifiedCount / this.verifications.length) / 2,
+      claimVerification: avgConfidence,
     };
   }
 

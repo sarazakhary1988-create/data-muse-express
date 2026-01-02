@@ -19,7 +19,6 @@ export const useResearchEngine = () => {
     strictMode,
     setDeepVerifySources,
     updateDeepVerifySource,
-    clearDeepVerifySources,
     setAgentState,
     setAgentQuality,
     setAgentMetrics,
@@ -35,7 +34,6 @@ export const useResearchEngine = () => {
     setCurrentRunId,
     addDebugLog,
     clearDebugLogs,
-    researchSettings,
   } = useResearchStore();
 
   // Get only enabled sources
@@ -110,7 +108,7 @@ export const useResearchEngine = () => {
 
     // Set up agent callbacks
     researchAgent.setCallbacks({
-      onStateChange: (state, context) => {
+      onStateChange: (state) => {
         setAgentState(state);
         addDebugLog('STATE', `Agent state: ${state}`);
       },
@@ -152,7 +150,7 @@ export const useResearchEngine = () => {
       },
       onPlanUpdate: (plan) => {
         setAgentPlan(plan);
-        addDebugLog('PLAN', `Research plan created with ${plan.phases?.length || 0} phases`);
+        addDebugLog('PLAN', `Research plan created with ${plan.steps?.length || 0} steps`);
       },
       onVerificationUpdate: (verifications) => {
         setAgentVerifications(verifications);
@@ -200,7 +198,7 @@ export const useResearchEngine = () => {
         discrepancies: consolidatedResult.discrepancies,
         qualityMetrics: consolidatedResult.qualityMetrics,
         sourceCoverage: consolidatedResult.sourceCoverage,
-        consolidatedData: consolidatedResult.consolidatedData,
+        consolidatedData: consolidatedResult.data || {},
       });
 
       addDebugLog('CONSOLIDATE', `Discrepancies: ${consolidatedResult.discrepancies.length}, Quality: ${(consolidatedResult.qualityMetrics.overallScore * 100).toFixed(1)}%`);
@@ -241,16 +239,16 @@ export const useResearchEngine = () => {
         report: reportObj,
         query,
         completedAt: new Date(),
-        webSourcesUsed,
+        webSourcesUsed: webSourcesUsed || false,
       });
 
       // Update run history
       updateRunHistory(runId, {
         status: 'completed',
         completedAt: new Date(),
-        report: reportObj,
+        reportId: reportObj.id,
         sourcesCount: results.length,
-        webSourcesUsed,
+        webSourcesUsed: webSourcesUsed || false,
       });
 
       addDebugLog('COMPLETE', `Research complete. Quality: ${(quality.overall * 100).toFixed(0)}%, Sources: ${results.length}`);
