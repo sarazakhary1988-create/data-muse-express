@@ -24,6 +24,59 @@ interface EnhanceRequest {
   timeframe?: string;
 }
 
+// Entity extraction for automatic query understanding
+function extractQueryEntities(text: string): { companies: string[]; persons: string[]; keywords: string[]; domains: string[] } {
+  const companies: string[] = [];
+  const persons: string[] = [];
+  const keywords: string[] = [];
+  const domains: string[] = [];
+  
+  // Known company patterns
+  const knownCompanies = ['Microsoft', 'Apple', 'Google', 'Amazon', 'Meta', 'Netflix', 'Tesla', 'Nvidia', 'IBM', 'Oracle', 'Salesforce', 'Adobe', 'Intel', 'Cisco', 'Samsung', 'Walmart', 'JPMorgan', 'Goldman Sachs', 'Visa', 'Mastercard', 'PayPal', 'Uber', 'Airbnb', 'Spotify', 'Twitter', 'OpenAI', 'Anthropic'];
+  
+  // Known executives
+  const knownPersons = ['Tim Cook', 'Satya Nadella', 'Elon Musk', 'Mark Zuckerberg', 'Jeff Bezos', 'Sundar Pichai', 'Jensen Huang', 'Sam Altman', 'Dario Amodei', 'Sheryl Sandberg', 'Andy Jassy'];
+  
+  const textLower = text.toLowerCase();
+  
+  for (const company of knownCompanies) {
+    if (textLower.includes(company.toLowerCase())) {
+      companies.push(company);
+    }
+  }
+  
+  for (const person of knownPersons) {
+    if (textLower.includes(person.toLowerCase())) {
+      persons.push(person);
+    }
+  }
+  
+  // Extract domain constraints
+  const domainPattern = /(?:site:|from:|only\s+)?([a-z0-9-]+\.(?:com|org|net|io|gov|edu))/gi;
+  const domainMatches = text.matchAll(domainPattern);
+  for (const match of domainMatches) {
+    if (!domains.includes(match[1])) domains.push(match[1]);
+  }
+  
+  // Extract keywords
+  const keywordPatterns = [
+    /\b(quarterly\s+earnings|revenue|financials|annual\s+report|market\s+cap|stock|shares|IPO|acquisition|merger)\b/gi,
+    /\b(CEO|CFO|CTO|COO|executive|board|director|leadership|founder)\b/gi,
+    /\b(headquarters|location|office|address)\b/gi,
+    /\b(2024|2025|Q1|Q2|Q3|Q4)\b/gi,
+  ];
+  
+  for (const pattern of keywordPatterns) {
+    const matches = text.matchAll(pattern);
+    for (const match of matches) {
+      const keyword = match[0].trim();
+      if (!keywords.includes(keyword)) keywords.push(keyword);
+    }
+  }
+  
+  return { companies, persons, keywords, domains };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -53,6 +106,14 @@ serve(async (req) => {
       });
     }
 
+    // AUTO-EXTRACT entities from the query
+    const extractedEntities = extractQueryEntities(description);
+    console.log(`[enhance-prompt] ===== ENTITY EXTRACTION =====`);
+    console.log(`[enhance-prompt] Companies found: ${extractedEntities.companies.join(', ') || 'none'}`);
+    console.log(`[enhance-prompt] Persons found: ${extractedEntities.persons.join(', ') || 'none'}`);
+    console.log(`[enhance-prompt] Keywords found: ${extractedEntities.keywords.join(', ') || 'none'}`);
+    console.log(`[enhance-prompt] Domains constrained: ${extractedEntities.domains.join(', ') || 'none'}`);
+
     // Build TASK-SPECIFIC context based on taskType
     const contextParts: string[] = [];
     if (industry) contextParts.push(`Industry: ${industry}`);
@@ -61,7 +122,18 @@ serve(async (req) => {
     if (geographic_focus) contextParts.push(`Geographic Region: ${geographic_focus}`);
     if (country) contextParts.push(`Country Focus: ${country}`);
     if (timeframe) contextParts.push(`Timeframe: ${timeframe}`);
-    if (custom_websites?.length) contextParts.push(`Priority Websites: ${custom_websites.join(", ")}`);
+    if (custom_websites?.length) contextParts.push(`RESTRICTED TO DOMAINS: ${custom_websites.join(", ")}`);
+    
+    // Add auto-extracted entity context
+    if (extractedEntities.companies.length > 0) {
+      contextParts.push(`Detected Companies: ${extractedEntities.companies.join(', ')}`);
+    }
+    if (extractedEntities.persons.length > 0) {
+      contextParts.push(`Detected Persons: ${extractedEntities.persons.join(', ')}`);
+    }
+    if (extractedEntities.domains.length > 0) {
+      contextParts.push(`Domain Constraints: ONLY search ${extractedEntities.domains.join(', ')}`);
+    }
     
     // Add task-specific context
     if (taskType === 'lead' && personName) {
