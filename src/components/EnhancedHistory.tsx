@@ -37,6 +37,7 @@ import { ResearchTask, useResearchStore } from '@/store/researchStore';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { cn } from '@/lib/utils';
 import { format, isToday, isYesterday, isThisWeek, isThisMonth } from 'date-fns';
+import { arSA, enUS } from 'date-fns/locale';
 
 interface EnhancedHistoryProps {
   onSelectTask: (task: ResearchTask) => void;
@@ -57,11 +58,13 @@ interface PersistedHistoryEntry {
 
 export const EnhancedHistory = ({ onSelectTask, onRerunQuery }: EnhancedHistoryProps) => {
   const { tasks, currentTask, clearTasks, reports } = useResearchStore();
-  const { t, isRTL } = useLanguage();
+  const { t, isRTL, language } = useLanguage();
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | ResearchTask['status']>('all');
   const [persistedHistory, setPersistedHistory] = useState<PersistedHistoryEntry[]>([]);
+
+  const dateLocale = language === 'ar' ? arSA : enUS;
 
   // Load persisted history on mount
   useEffect(() => {
