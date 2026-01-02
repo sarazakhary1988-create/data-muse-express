@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Globe, Search, ChevronDown, ChevronUp, ExternalLink, CheckCircle, XCircle, Clock, Star } from 'lucide-react';
+import { Globe, Search, ChevronDown, ChevronUp, ExternalLink, CheckCircle, XCircle, Clock, Star, Filter, ArrowUpDown } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel } from '@/components/ui/dropdown-menu';
 import { useResearchStore } from '@/store/researchStore';
 import { cn } from '@/lib/utils';
 
@@ -16,6 +18,9 @@ const ENGINE_CONFIG: Record<string, { color: string; bgColor: string; label: str
   internal: { color: 'text-purple-500', bgColor: 'bg-purple-500/10 border-purple-500/30', label: 'Sitemap', textColor: 'text-purple-400' },
   unknown: { color: 'text-muted-foreground', bgColor: 'bg-muted/50 border-border', label: 'Other', textColor: 'text-muted-foreground' },
 };
+
+type StatusFilter = 'all' | 'scraped' | 'pending' | 'failed';
+type SortOption = 'relevance' | 'domain' | 'status';
 
 const getRelevanceColor = (score: number) => {
   if (score >= 0.8) return 'text-emerald-500 bg-emerald-500/10';
@@ -35,10 +40,20 @@ const getStatusIcon = (status: 'pending' | 'scraped' | 'failed') => {
   }
 };
 
+const extractDomain = (url: string): string => {
+  try {
+    return new URL(url).hostname.replace('www.', '');
+  } catch {
+    return url;
+  }
+};
+
 export const SearchEngineIndicator = () => {
   const { agentState, isSearching } = useResearchStore();
   const { searchEngines } = agentState;
   const [isExpanded, setIsExpanded] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [sortBy, setSortBy] = useState<SortOption>('relevance');
 
   if (!searchEngines && !isSearching) return null;
 
@@ -51,13 +66,45 @@ export const SearchEngineIndicator = () => {
   // Calculate total results
   const totalResults = Object.values(resultCounts).reduce((sum, count) => sum + count, 0);
 
-  // Group URLs by engine
-  const urlsByEngine = urlDetails.reduce((acc, url) => {
-    const engine = url.engine.toLowerCase();
-    if (!acc[engine]) acc[engine] = [];
-    acc[engine].push(url);
-    return acc;
-  }, {} as Record<string, typeof urlDetails>);
+  // Filter and sort URLs
+  const filteredAndSortedUrls = useMemo(() => {
+    let filtered = [...urlDetails];
+    
+    // Apply status filter
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(u => u.status === statusFilter);
+    }
+    
+    // Apply sorting
+    filtered.sort((a, b) => {
+      switch (sortBy) {
+        case 'relevance':
+          return b.relevanceScore - a.relevanceScore;
+        case 'domain':
+          return extractDomain(a.url).localeCompare(extractDomain(b.url));
+        case 'status':
+          const statusOrder = { scraped: 0, pending: 1, failed: 2 };
+          return statusOrder[a.status] - statusOrder[b.status];
+        default:
+          return 0;
+      }
+    });
+    
+    return filtered;
+  }, [urlDetails, statusFilter, sortBy]);
+
+  // Group filtered URLs by engine
+  const urlsByEngine = useMemo(() => {
+    return filteredAndSortedUrls.reduce((acc, url) => {
+      const engine = url.engine.toLowerCase();
+      if (!acc[engine]) acc[engine] = [];
+      acc[engine].push(url);
+      return acc;
+    }, {} as Record<string, typeof urlDetails>);
+  }, [filteredAndSortedUrls]);
+
+  const filterLabel = statusFilter === 'all' ? 'All' : statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1);
+  const sortLabel = sortBy === 'relevance' ? 'Relevance' : sortBy === 'domain' ? 'Domain' : 'Status';
 
   return (
     <motion.div
@@ -193,6 +240,116 @@ export const SearchEngineIndicator = () => {
                 transition={{ duration: 0.2 }}
                 className="mt-3 border border-border rounded-lg overflow-hidden bg-card/50"
               >
+                {/* Filter and Sort Controls */}
+                <div className="flex items-center gap-2 p-2 border-b border-border bg-muted/30">
+                  {/* Status Filter */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1.5">
+                        <Filter className="w-3 h-3" />
+                        {filterLabel}
+                        <ChevronDown className="w-2.5 h-2.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-36">
+                      <DropdownMenuLabel className="text-[10px]">Filter by Status</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem 
+                        onClick={() => setStatusFilter('all')}
+                        className={cn("text-xs", statusFilter === 'all' && "bg-accent")}
+                      >
+                        All URLs
+                        <Badge variant="secondary" className="ml-auto text-[9px] h-4 px-1">
+                          {urlDetails.length}
+                        </Badge>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem 
+                        onClick={() => setStatusFilter('scraped')}
+                        className={cn("text-xs", statusFilter === 'scraped' && "bg-accent")}
+                      >
+                        <CheckCircle className="w-3 h-3 mr-1.5 text-emerald-500" />
+                        Scraped
+                        <Badge variant="secondary" className="ml-auto text-[9px] h-4 px-1 bg-emerald-500/10 text-emerald-500">
+                          {urlDetails.filter(u => u.status === 'scraped').length}
+                        </Badge>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem 
+                        onClick={() => setStatusFilter('pending')}
+                        className={cn("text-xs", statusFilter === 'pending' && "bg-accent")}
+                      >
+                        <Clock className="w-3 h-3 mr-1.5 text-amber-500" />
+                        Pending
+                        <Badge variant="secondary" className="ml-auto text-[9px] h-4 px-1 bg-amber-500/10 text-amber-500">
+                          {urlDetails.filter(u => u.status === 'pending').length}
+                        </Badge>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem 
+                        onClick={() => setStatusFilter('failed')}
+                        className={cn("text-xs", statusFilter === 'failed' && "bg-accent")}
+                      >
+                        <XCircle className="w-3 h-3 mr-1.5 text-red-500" />
+                        Failed
+                        <Badge variant="secondary" className="ml-auto text-[9px] h-4 px-1 bg-red-500/10 text-red-500">
+                          {urlDetails.filter(u => u.status === 'failed').length}
+                        </Badge>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+
+                  {/* Sort Options */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1.5">
+                        <ArrowUpDown className="w-3 h-3" />
+                        Sort: {sortLabel}
+                        <ChevronDown className="w-2.5 h-2.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-36">
+                      <DropdownMenuLabel className="text-[10px]">Sort by</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem 
+                        onClick={() => setSortBy('relevance')}
+                        className={cn("text-xs", sortBy === 'relevance' && "bg-accent")}
+                      >
+                        <Star className="w-3 h-3 mr-1.5" />
+                        Relevance
+                      </DropdownMenuItem>
+                      <DropdownMenuItem 
+                        onClick={() => setSortBy('domain')}
+                        className={cn("text-xs", sortBy === 'domain' && "bg-accent")}
+                      >
+                        <Globe className="w-3 h-3 mr-1.5" />
+                        Domain
+                      </DropdownMenuItem>
+                      <DropdownMenuItem 
+                        onClick={() => setSortBy('status')}
+                        className={cn("text-xs", sortBy === 'status' && "bg-accent")}
+                      >
+                        <CheckCircle className="w-3 h-3 mr-1.5" />
+                        Status
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+
+                  {/* Active filters indicator */}
+                  {(statusFilter !== 'all') && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-[10px] text-muted-foreground hover:text-foreground"
+                      onClick={() => setStatusFilter('all')}
+                    >
+                      Clear filter
+                      <XCircle className="w-3 h-3 ml-1" />
+                    </Button>
+                  )}
+
+                  <div className="ml-auto text-[10px] text-muted-foreground">
+                    Showing {filteredAndSortedUrls.length} of {urlDetails.length}
+                  </div>
+                </div>
+
                 <ScrollArea className="max-h-[300px]">
                   <div className="p-2 space-y-3">
                     {engines.map((engine) => {
@@ -261,6 +418,12 @@ export const SearchEngineIndicator = () => {
                         </div>
                       );
                     })}
+
+                    {filteredAndSortedUrls.length === 0 && (
+                      <div className="py-8 text-center text-muted-foreground text-xs">
+                        No URLs match the current filter
+                      </div>
+                    )}
                   </div>
                 </ScrollArea>
 
