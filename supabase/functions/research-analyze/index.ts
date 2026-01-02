@@ -9,18 +9,20 @@ const corsHeaders = {
 interface AnalyzeRequest {
   query: string;
   content: string;
-  type: 'summarize' | 'analyze' | 'extract' | 'report' | 'verify';
+  type: 'summarize' | 'analyze' | 'extract' | 'report' | 'verify' | 'title';
   reportFormat?: 'detailed' | 'executive' | 'table';
   webSourcesAvailable?: boolean;
   userQuery?: string;
   objective?: string;
   constraints?: string;
+  originalPrompt?: string;
+  generateTitle?: boolean;
 }
 
 // Input validation constants
 const MAX_QUERY_LENGTH = 2000;
 const MAX_CONTENT_LENGTH = 100000;
-const ALLOWED_TYPES = ['summarize', 'analyze', 'extract', 'report', 'verify'];
+const ALLOWED_TYPES = ['summarize', 'analyze', 'extract', 'report', 'verify', 'title'];
 const ALLOWED_REPORT_FORMATS = ['detailed', 'executive', 'table'];
 
 function validateQuery(query: unknown): string {
@@ -41,11 +43,11 @@ function validateContent(content: unknown): { valid: boolean; error?: string; va
   return { valid: true, value: trimmed.slice(0, MAX_CONTENT_LENGTH) };
 }
 
-function validateType(type: unknown): 'summarize' | 'analyze' | 'extract' | 'report' | 'verify' {
+function validateType(type: unknown): 'summarize' | 'analyze' | 'extract' | 'report' | 'verify' | 'title' {
   if (typeof type !== 'string' || !ALLOWED_TYPES.includes(type)) {
     return 'analyze';
   }
-  return type as 'summarize' | 'analyze' | 'extract' | 'report' | 'verify';
+  return type as 'summarize' | 'analyze' | 'extract' | 'report' | 'verify' | 'title';
 }
 
 serve(async (req) => {
@@ -71,7 +73,7 @@ serve(async (req) => {
       );
     }
 
-    const { query, content, type, reportFormat, webSourcesAvailable, userQuery, objective, constraints } = body as AnalyzeRequest;
+    const { query, content, type, reportFormat, webSourcesAvailable, userQuery, objective, constraints, originalPrompt, generateTitle } = body as AnalyzeRequest;
 
     log(`Request received: type=${type}, queryLength=${query?.length || 0}, contentLength=${content?.length || 0}`);
 
@@ -81,8 +83,8 @@ serve(async (req) => {
       typeof contentValidation.value === 'string' && 
       contentValidation.value.length > 100;
     
-    // For report type, we can proceed even without web content (LLM-first)
-    if (type !== 'report' && !contentValidation.valid) {
+    // For report and title types, we can proceed even without web content
+    if (type !== 'report' && type !== 'title' && !contentValidation.valid) {
       log(`Content validation failed: ${contentValidation.error}`);
       return new Response(
         JSON.stringify({ success: false, error: contentValidation.error }),
@@ -131,10 +133,29 @@ CRITICAL RULES:
 4. If the excerpt supports the claim, choose the strongest justified support level.
 5. Return ONLY a JSON object (no markdown, no code fences).`,
 
-      report: getReportPrompt(validatedFormat, hasContent, Boolean(webSourcesAvailable)),
+      title: `You are a professional title generator. Generate a concise, professional title for a research report based on the provided query or content.
+
+RULES:
+- The title should be 5-10 words maximum
+- It should capture the essence of the research topic
+- Do not include dates or generic words like "Report" or "Analysis"
+- Be specific and descriptive
+- Return ONLY the title text, nothing else (no quotes, no explanation)
+
+Examples:
+- Query: "Generate a full detailed report on Saudi Aramco focusing on Saudi Arabia, including executive board members and shareholders"
+  Title: Saudi Aramco Leadership and Ownership Structure
+
+- Query: "Research the latest AI developments in healthcare"
+  Title: AI Innovations Transforming Healthcare
+
+- Query: "Analyze market trends for electric vehicles in Europe"
+  Title: European Electric Vehicle Market Dynamics`,
+
+      report: getReportPrompt(validatedFormat, hasContent, Boolean(webSourcesAvailable), originalPrompt),
     };
 
-    function getReportPrompt(format: string, hasWebContent: boolean, webSourcesAttempted: boolean): string {
+    function getReportPrompt(format: string, hasWebContent: boolean, webSourcesAttempted: boolean, originalPrompt?: string): string {
       const currentDate = new Date();
       const sourceLabel = hasWebContent 
         ? 'Based on real-time web sources' 
@@ -149,7 +170,10 @@ CURRENT DATE: ${currentDate.toLocaleDateString('en-US', { weekday: 'long', year:
 SOURCE CONTEXT: ${sourceLabel}
 
 CRITICAL: You MUST generate a complete, substantive report with ALL required sections.
-
+${originalPrompt ? `
+IMPORTANT: Include the original research prompt at the very beginning of the report in a blockquote, like this:
+> **Research Prompt:** ${originalPrompt}
+` : ''}
 REQUIRED REPORT STRUCTURE (Markdown):
 
 # [Title Based on Query - Be Specific]
@@ -238,6 +262,12 @@ Content excerpt:
 ${truncatedContent}
 
 Return ONLY a JSON object (no markdown): { "support": "strong|moderate|weak|contradicts|none", "reason": "brief explanation" }`;
+    } else if (validatedType === 'title') {
+      userContent = `Generate a concise, professional title for a research report about:
+
+"${validatedQuery}"
+
+Return ONLY the title text, no quotes or explanation.`;
     } else if (validatedType === 'report') {
       const isSaudi = /\b(saudi|tadawul|tasi|nomu|cma|riyadh)\b/i.test(validatedQuery);
 
@@ -285,7 +315,9 @@ ${truncatedContent}`;
 
     // Select model based on task complexity
     const model = validatedType === 'report' ? 'gpt-4o' : 'gpt-4o-mini';
-    const maxTokens = validatedType === 'report' ? 4096 : 2048;
+    const maxTokens = validatedType === 'report' ? 4096 : validatedType === 'title' ? 100 : 2048;
+
+    log(`Using OpenAI model: ${model} with max_tokens: ${maxTokens}`);
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
