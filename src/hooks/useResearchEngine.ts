@@ -1,5 +1,5 @@
 import { useCallback, useRef } from 'react';
-import { ResearchTask, Report, useResearchStore, ReportFormat } from '@/store/researchStore';
+import { ResearchTask, Report, useResearchStore, ReportFormat, RunHistoryEntry } from '@/store/researchStore';
 import { researchAgent, dataConsolidator } from '@/lib/agent';
 import { toast } from '@/hooks/use-toast';
 
@@ -67,10 +67,11 @@ export const useResearchEngine = () => {
     
     const taskId = `task-${Date.now()}`;
     const runId = `run-${Date.now()}`;
+    const startTime = Date.now();
     
     // Clear previous debug logs
     clearDebugLogs();
-    addDebugLog('INIT', `Starting research for: ${query}`);
+    addDebugLog(`[INIT] Starting research for: ${query}`);
     
     const newTask: ResearchTask = {
       id: taskId,
@@ -86,14 +87,20 @@ export const useResearchEngine = () => {
     setCurrentRunId(runId);
     resetAgentState();
 
-    // Add to run history
-    addRunHistory({
+    // Add to run history with correct RunHistoryEntry structure
+    const historyEntry: RunHistoryEntry = {
       id: runId,
-      taskId,
       query,
-      startedAt: new Date(),
+      timestamp: new Date(),
       status: 'running',
-    });
+      inputs: {
+        query,
+        country: countryFilter,
+        strictMode: strictMode.enabled,
+        reportFormat: reportFormat,
+      },
+    };
+    addRunHistory(historyEntry);
 
     // Initialize deep verify sources if enabled
     if (deepVerifyMode) {
@@ -110,7 +117,7 @@ export const useResearchEngine = () => {
     researchAgent.setCallbacks({
       onStateChange: (state) => {
         setAgentState(state);
-        addDebugLog('STATE', `Agent state: ${state}`);
+        addDebugLog(`[STATE] Agent state: ${state}`);
       },
       onProgress: (progress) => {
         updateTask(taskId, { progress });
@@ -137,11 +144,11 @@ export const useResearchEngine = () => {
       },
       onDecision: (message, confidence) => {
         setAgentDecision(message, confidence);
-        addDebugLog('DECISION', `${message} (${(confidence * 100).toFixed(0)}%)`);
+        addDebugLog(`[DECISION] ${message} (${(confidence * 100).toFixed(0)}%)`);
       },
       onError: (error) => {
         console.error('Agent error:', error);
-        addDebugLog('ERROR', error.message);
+        addDebugLog(`[ERROR] ${error.message}`);
         toast({
           title: "Agent Error",
           description: error.message,
@@ -150,7 +157,7 @@ export const useResearchEngine = () => {
       },
       onPlanUpdate: (plan) => {
         setAgentPlan(plan);
-        addDebugLog('PLAN', `Research plan created with ${plan.steps?.length || 0} steps`);
+        addDebugLog(`[PLAN] Research plan created with ${plan.steps?.length || 0} steps`);
       },
       onVerificationUpdate: (verifications) => {
         setAgentVerifications(verifications);
@@ -169,7 +176,7 @@ export const useResearchEngine = () => {
         description: `Analyzing: ${query.substring(0, 50)}...`,
       });
 
-      addDebugLog('EXEC', 'Executing research agent pipeline');
+      addDebugLog('[EXEC] Executing research agent pipeline');
 
       // Execute the full agent pipeline
       const { results, report, quality, verifications, plan, searchEngineInfo, webSourcesUsed, warnings } = await researchAgent.execute(
@@ -182,13 +189,13 @@ export const useResearchEngine = () => {
 
       // Log warnings
       if (warnings && warnings.length > 0) {
-        warnings.forEach(w => addDebugLog('WARN', w));
+        warnings.forEach(w => addDebugLog(`[WARN] ${w}`));
       }
 
       // Store search engine info
       if (searchEngineInfo) {
         setAgentSearchEngines(searchEngineInfo);
-        addDebugLog('SEARCH', `Engines used: ${searchEngineInfo.engines.join(', ')}`);
+        addDebugLog(`[SEARCH] Engines used: ${searchEngineInfo.engines.join(', ')}`);
       }
 
       // Calculate consolidation data
@@ -201,7 +208,7 @@ export const useResearchEngine = () => {
         consolidatedData: consolidatedResult.data || {},
       });
 
-      addDebugLog('CONSOLIDATE', `Discrepancies: ${consolidatedResult.discrepancies.length}, Quality: ${(consolidatedResult.qualityMetrics.overallScore * 100).toFixed(1)}%`);
+      addDebugLog(`[CONSOLIDATE] Discrepancies: ${consolidatedResult.discrepancies.length}, Quality: ${(consolidatedResult.qualityMetrics.overallScore * 100).toFixed(1)}%`);
 
       // Create report object
       const reportObj: Report = {
@@ -234,24 +241,22 @@ export const useResearchEngine = () => {
       addReport(reportObj);
       setSearchQuery('');
       
-      // Persist to last successful report
-      setLastSuccessfulReport({
-        report: reportObj,
-        query,
-        completedAt: new Date(),
-        webSourcesUsed: webSourcesUsed || false,
-      });
+      // Persist to last successful report - use correct Report type
+      setLastSuccessfulReport(reportObj);
 
-      // Update run history
+      // Update run history with correct structure
+      const duration = Date.now() - startTime;
       updateRunHistory(runId, {
         status: 'completed',
-        completedAt: new Date(),
-        reportId: reportObj.id,
-        sourcesCount: results.length,
-        webSourcesUsed: webSourcesUsed || false,
+        duration,
+        outputs: {
+          reportContent: report.substring(0, 500),
+          sourcesCount: results.length,
+          qualityScore: quality.overall,
+        },
       });
 
-      addDebugLog('COMPLETE', `Research complete. Quality: ${(quality.overall * 100).toFixed(0)}%, Sources: ${results.length}`);
+      addDebugLog(`[COMPLETE] Research complete. Quality: ${(quality.overall * 100).toFixed(0)}%, Sources: ${results.length}`);
 
       toast({
         title: "Research Complete",
@@ -263,17 +268,18 @@ export const useResearchEngine = () => {
       console.error('Research error:', error);
       
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      addDebugLog('FATAL', errorMessage);
+      addDebugLog(`[FATAL] ${errorMessage}`);
       
       updateTask(taskId, {
         status: 'failed',
         progress: 0,
       });
 
-      // Update run history with failure
+      // Update run history with failure - use correct structure
+      const duration = Date.now() - startTime;
       updateRunHistory(runId, {
         status: 'failed',
-        completedAt: new Date(),
+        duration,
         error: errorMessage,
       });
       
