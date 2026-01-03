@@ -57,7 +57,7 @@ interface PersistedHistoryEntry {
 }
 
 export const EnhancedHistory = ({ onSelectTask, onRerunQuery }: EnhancedHistoryProps) => {
-  const { tasks, currentTask, clearTasks, reports } = useResearchStore();
+  const { tasks, currentTask, clearTasks, removeTask, reports } = useResearchStore();
   const { t, isRTL, language } = useLanguage();
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
@@ -209,6 +209,15 @@ export const EnhancedHistory = ({ onSelectTask, onRerunQuery }: EnhancedHistoryP
     clearTasks();
     setPersistedHistory([]);
     localStorage.removeItem(HISTORY_STORAGE_KEY);
+  };
+
+  const handleDeleteTask = (taskId: string) => {
+    // Remove from store
+    removeTask(taskId);
+    // Remove from persisted history
+    const updatedHistory = persistedHistory.filter(h => h.id !== taskId);
+    setPersistedHistory(updatedHistory);
+    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(updatedHistory));
   };
 
   // Stats
@@ -415,6 +424,18 @@ export const EnhancedHistory = ({ onSelectTask, onRerunQuery }: EnhancedHistoryP
                                 title="View results"
                               >
                                 <ChevronRight className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 hover:text-destructive"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteTask(task.id);
+                                }}
+                                title="Delete from history"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
                               </Button>
                             </div>
                           </div>

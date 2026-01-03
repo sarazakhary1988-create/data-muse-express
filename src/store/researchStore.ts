@@ -268,6 +268,7 @@ interface ResearchStore {
   updateSource: (id: string, updates: Partial<DeepVerifySourceConfig>) => void;
   deleteSource: (id: string) => void;
   clearTasks: () => void;
+  removeTask: (taskId: string) => void;
   setReportFormat: (format: ReportFormat) => void;
   setTimeFrameFilter: (filter: TimeFrameValue) => void;
   setCountryFilter: (country: string) => void;
@@ -347,6 +348,7 @@ export const useResearchStore = create<ResearchStore>()(
       setSearchQuery: (query) => set({ searchQuery: query }),
       
       addTask: (task) => set((state) => ({
+        tasks: [task, ...state.tasks.filter(t => t.id !== task.id)].slice(0, 100), // Add to tasks array, avoid duplicates, keep last 100
         currentTask: task 
       })),
       
@@ -413,6 +415,12 @@ export const useResearchStore = create<ResearchStore>()(
       })),
       
       clearTasks: () => set({ tasks: [], currentTask: null, reports: [] }),
+      
+      removeTask: (taskId) => set((state) => ({
+        tasks: state.tasks.filter(t => t.id !== taskId),
+        reports: state.reports.filter(r => r.taskId !== taskId),
+        currentTask: state.currentTask?.id === taskId ? null : state.currentTask,
+      })),
       
       setReportFormat: (format) => set({ reportFormat: format }),
       
@@ -529,6 +537,15 @@ export const useResearchStore = create<ResearchStore>()(
         researchSettings: state.researchSettings,
         lastSuccessfulReport: state.lastSuccessfulReport,
         runHistory: state.runHistory.slice(0, 20), // Persist last 20 runs
+        tasks: state.tasks.slice(0, 50).map(t => ({
+          ...t,
+          createdAt: t.createdAt instanceof Date ? t.createdAt.toISOString() : t.createdAt,
+          completedAt: t.completedAt instanceof Date ? t.completedAt.toISOString() : t.completedAt,
+        })), // Persist last 50 tasks
+        reports: state.reports.slice(0, 50).map(r => ({
+          ...r,
+          createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
+        })), // Persist last 50 reports
       }),
     }
   )
