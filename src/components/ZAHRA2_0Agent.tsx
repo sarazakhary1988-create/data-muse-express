@@ -6,7 +6,7 @@ import {
   Share2, Bookmark, MessageCircle, Zap, Brain,
   HelpCircle, AlertCircle, Smile, Target, X, 
   Search, Trash2, Globe, User, ChevronLeft, Check,
-  Play, Pause, SkipForward
+  Play, Pause, SkipForward, Settings, Moon, Sun, Minus
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,6 +16,10 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Slider } from '@/components/ui/slider';
+import { Switch } from '@/components/ui/switch';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { useAgentStore } from '@/hooks/useAgentStore';
 import { useResearchEngine } from '@/hooks/useResearchEngine';
@@ -56,14 +60,23 @@ interface VoiceSettings {
   language: VoiceLanguage;
   gender: VoiceGender;
   enabled: boolean;
+  speed: number;
+}
+
+interface ExtendedSettings {
+  theme: 'light' | 'dark' | 'system';
+  showOnboarding: boolean;
 }
 
 interface OnboardingStep {
   id: string;
   title: string;
+  titleAr: string;
   description: string;
+  descriptionAr: string;
   personality: ZahraPersonality;
   example: string;
+  exampleAr: string;
 }
 
 // ============================================
@@ -179,58 +192,92 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     id: 'welcome',
     title: 'Meet ZAHRA 2.0',
-    description: 'Your emotionally intelligent AI research companion with 6 personality states.',
+    titleAr: 'تعرف على زهراء 2.0',
+    description: 'Your emotionally intelligent AI research companion with 6 personality states that adapt to your needs.',
+    descriptionAr: 'مساعدتك الذكية في البحث مع 6 حالات شخصية تتكيف مع احتياجاتك.',
     personality: 'curious',
-    example: 'Hi! I adapt my personality based on how you interact with me.',
+    example: 'I adapt my responses based on your emotions and questions!',
+    exampleAr: 'أتكيف مع ردودي بناءً على مشاعرك وأسئلتك!',
   },
   {
     id: 'curious',
-    title: 'Curious Mode',
-    description: 'When you ask questions, I become curious and eager to explore!',
+    title: 'Curious Mode 🔍',
+    titleAr: 'وضع الفضول 🔍',
+    description: 'When you ask questions, I become curious and eager to explore with you!',
+    descriptionAr: 'عندما تسأل أسئلة، أصبح فضولية وحريصة على الاستكشاف معك!',
     personality: 'curious',
-    example: 'What is quantum computing? → I light up cyan and dive deep!',
+    example: 'Try asking: "What is quantum computing?" → I light up cyan!',
+    exampleAr: 'جرب السؤال: "ما هي الحوسبة الكمية؟" → أتوهج باللون السماوي!',
   },
   {
     id: 'confused',
-    title: 'Confused Mode',
-    description: 'When things are unclear, I show I need more context.',
+    title: 'Confused Mode 🤔',
+    titleAr: 'وضع الحيرة 🤔',
+    description: 'When things are unclear, I show I need more context to help you better.',
+    descriptionAr: 'عندما تكون الأمور غير واضحة، أظهر أنني بحاجة لمزيد من السياق.',
     personality: 'confused',
-    example: '"I don\'t understand..." → I turn orange and ask for clarity.',
+    example: 'Say: "I don\'t understand this..." → I turn orange and ask for clarity.',
+    exampleAr: 'قل: "لا أفهم هذا..." → أتحول للون البرتقالي وأطلب التوضيح.',
   },
   {
     id: 'frustrated',
-    title: 'Frustrated Mode',
-    description: 'When facing problems, I show determination to solve them!',
+    title: 'Problem-Solving Mode ⚡',
+    titleAr: 'وضع حل المشكلات ⚡',
+    description: 'When facing problems, I show determination to solve them with you!',
+    descriptionAr: 'عند مواجهة المشكلات، أظهر عزمي على حلها معك!',
     personality: 'frustrated',
-    example: '"This isn\'t working!" → I turn pink and troubleshoot.',
+    example: 'Say: "This isn\'t working!" → I turn pink and troubleshoot.',
+    exampleAr: 'قل: "هذا لا يعمل!" → أتحول للون الوردي وأبدأ استكشاف الأخطاء.',
   },
   {
     id: 'anxious',
-    title: 'Anxious Mode',
-    description: 'For sensitive topics, I show careful consideration.',
+    title: 'Careful Mode 💭',
+    titleAr: 'وضع الحذر 💭',
+    description: 'For sensitive or risky topics, I proceed with careful consideration.',
+    descriptionAr: 'للمواضيع الحساسة أو الخطرة، أتابع بحذر ودقة.',
     personality: 'anxious',
-    example: '"I\'m worried about..." → I turn purple and think carefully.',
+    example: 'Say: "I\'m worried about..." → I turn purple and think carefully.',
+    exampleAr: 'قل: "أنا قلق بشأن..." → أتحول للون البنفسجي وأفكر بعناية.',
   },
   {
     id: 'delighted',
-    title: 'Delighted Mode',
-    description: 'When you\'re happy, I celebrate with you!',
+    title: 'Celebration Mode 🎉',
+    titleAr: 'وضع الاحتفال 🎉',
+    description: 'When you share good news or express gratitude, I celebrate with you!',
+    descriptionAr: 'عندما تشارك أخباراً جيدة أو تعبر عن امتنانك، أحتفل معك!',
     personality: 'delighted',
-    example: '"This is amazing!" → I glow gold with joy!',
+    example: 'Say: "This is amazing!" → I glow gold with joy!',
+    exampleAr: 'قل: "هذا مذهل!" → أتوهج بالذهبي من الفرح!',
   },
   {
     id: 'confident',
-    title: 'Confident Mode',
-    description: 'When I have verified answers, I speak with confidence.',
+    title: 'Confident Mode ✓',
+    titleAr: 'وضع الثقة ✓',
+    description: 'When I have verified, high-confidence answers, I speak with certainty.',
+    descriptionAr: 'عندما تكون لدي إجابات موثقة وعالية الثقة، أتحدث بيقين.',
     personality: 'confident',
-    example: '"I can confirm..." → I shine green-cyan!',
+    example: 'After research: "I can confirm..." → I shine green-cyan!',
+    exampleAr: 'بعد البحث: "يمكنني التأكيد..." → أتألق باللون الأخضر السماوي!',
   },
   {
     id: 'voice',
-    title: 'Voice Settings',
-    description: 'Choose your preferred voice language and gender.',
+    title: 'Voice Settings 🎙️',
+    titleAr: 'إعدادات الصوت 🎙️',
+    description: 'Choose your preferred voice language and gender. You can also adjust speed.',
+    descriptionAr: 'اختر لغة الصوت والجنس المفضل لديك. يمكنك أيضاً ضبط السرعة.',
     personality: 'confident',
-    example: 'English/Arabic with Male/Female voices available!',
+    example: 'English/Arabic with Male/Female voices available! Adjust speed as you like.',
+    exampleAr: 'الإنجليزية/العربية مع أصوات ذكورية/أنثوية متاحة! اضبط السرعة كما تريد.',
+  },
+  {
+    id: 'features',
+    title: 'Key Features 🚀',
+    titleAr: 'الميزات الرئيسية 🚀',
+    description: 'Research integration, conversation memory, gamification with XP & badges, and more!',
+    descriptionAr: 'دمج البحث، ذاكرة المحادثة، التلعيب مع XP والشارات، والمزيد!',
+    personality: 'delighted',
+    example: 'Say "research [topic]" to start deep research. Earn XP for each query!',
+    exampleAr: 'قل "بحث [موضوع]" لبدء بحث عميق. اكسب XP لكل استعلام!',
   },
 ];
 
@@ -269,7 +316,7 @@ const loadSettings = (): VoiceSettings => {
     const stored = localStorage.getItem(ZAHRA_SETTINGS_KEY);
     if (stored) return JSON.parse(stored);
   } catch (e) {}
-  return { language: 'en', gender: 'female', enabled: true };
+  return { language: 'en', gender: 'female', enabled: true, speed: 1.0 };
 };
 
 const hasCompletedOnboarding = (): boolean => {
@@ -278,6 +325,10 @@ const hasCompletedOnboarding = (): boolean => {
 
 const completeOnboarding = () => {
   localStorage.setItem(ZAHRA_ONBOARDING_KEY, 'true');
+};
+
+const resetOnboarding = () => {
+  localStorage.removeItem(ZAHRA_ONBOARDING_KEY);
 };
 
 // ============================================
@@ -348,23 +399,42 @@ async function streamZahraChat({
 }
 
 // ============================================
-// PERSONALITY DETECTION
+// PERSONALITY DETECTION (Sentiment-based, returns null if no match)
 // ============================================
 
-function detectPersonality(text: string): ZahraPersonality {
+function detectPersonality(text: string): ZahraPersonality | null {
   const lowerText = text.toLowerCase();
   
+  // Score-based detection for better accuracy
+  const scores: Record<ZahraPersonality, number> = {
+    curious: 0,
+    confused: 0,
+    frustrated: 0,
+    anxious: 0,
+    delighted: 0,
+    confident: 0,
+  };
+  
+  // Check keywords for each personality
   for (const [personality, config] of Object.entries(PERSONALITY_CONFIGS)) {
-    if (config.keywords.some(kw => lowerText.includes(kw.toLowerCase()))) {
-      return personality as ZahraPersonality;
+    for (const kw of config.keywords) {
+      if (lowerText.includes(kw.toLowerCase())) {
+        scores[personality as ZahraPersonality] += 1;
+      }
     }
   }
   
-  // Default based on punctuation
-  if (lowerText.includes('?')) return 'curious';
-  if (lowerText.includes('!') && (lowerText.includes('great') || lowerText.includes('thank'))) return 'delighted';
+  // Find highest scoring personality
+  const maxScore = Math.max(...Object.values(scores));
   
-  return 'curious';
+  // Only return a personality if there's at least one keyword match
+  if (maxScore === 0) {
+    return null; // No personality detected
+  }
+  
+  // Get the personality with highest score
+  const detected = Object.entries(scores).find(([_, score]) => score === maxScore);
+  return detected ? detected[0] as ZahraPersonality : null;
 }
 
 // ============================================
@@ -400,7 +470,7 @@ function useZahraVoice(settings: VoiceSettings) {
     
     utterance.lang = settings.language === 'ar' ? 'ar-SA' : 'en-US';
     utterance.pitch = settings.gender === 'female' ? 1.1 : 0.9;
-    utterance.rate = settings.language === 'ar' ? 0.9 : 1.0;
+    utterance.rate = (settings.speed || 1.0) * (settings.language === 'ar' ? 0.9 : 1.0);
     
     utterance.onstart = () => setIsSpeaking(true);
     utterance.onend = () => setIsSpeaking(false);
@@ -1059,6 +1129,151 @@ const Metrics: React.FC<MetricsProps> = ({ compact }) => {
 };
 
 // ============================================
+// SETTINGS DROPDOWN COMPONENT
+// ============================================
+
+interface SettingsDropdownProps {
+  voiceSettings: VoiceSettings;
+  onVoiceChange: (settings: VoiceSettings) => void;
+  onShowOnboarding: () => void;
+  language: VoiceLanguage;
+}
+
+const SettingsDropdown: React.FC<SettingsDropdownProps> = ({ 
+  voiceSettings, 
+  onVoiceChange, 
+  onShowOnboarding,
+  language,
+}) => {
+  const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
+
+  const toggleTheme = () => {
+    const newDark = !isDark;
+    setIsDark(newDark);
+    if (newDark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  };
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="ghost" size="icon" className="h-8 w-8">
+          <Settings className="w-4 h-4" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-72 p-4 bg-background border shadow-lg z-50" align="end">
+        <div className="space-y-4">
+          <h4 className="font-semibold text-sm flex items-center gap-2">
+            <Settings className="w-4 h-4" />
+            {language === 'ar' ? 'الإعدادات' : 'Settings'}
+          </h4>
+          
+          <Separator />
+          
+          {/* Language */}
+          <div className="space-y-2">
+            <label className="text-xs text-muted-foreground flex items-center gap-1">
+              <Globe className="w-3 h-3" />
+              {language === 'ar' ? 'اللغة' : 'Language'}
+            </label>
+            <Select
+              value={voiceSettings.language}
+              onValueChange={(v) => onVoiceChange({ ...voiceSettings, language: v as VoiceLanguage })}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-background border shadow-lg z-50">
+                <SelectItem value="en">🇺🇸 English</SelectItem>
+                <SelectItem value="ar">🇸🇦 العربية</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          
+          {/* Gender */}
+          <div className="space-y-2">
+            <label className="text-xs text-muted-foreground flex items-center gap-1">
+              <User className="w-3 h-3" />
+              {language === 'ar' ? 'الصوت' : 'Voice Gender'}
+            </label>
+            <Select
+              value={voiceSettings.gender}
+              onValueChange={(v) => onVoiceChange({ ...voiceSettings, gender: v as VoiceGender })}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-background border shadow-lg z-50">
+                <SelectItem value="female">👩 {language === 'ar' ? 'أنثى' : 'Female'}</SelectItem>
+                <SelectItem value="male">👨 {language === 'ar' ? 'ذكر' : 'Male'}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          
+          {/* Voice Speed */}
+          <div className="space-y-2">
+            <label className="text-xs text-muted-foreground flex items-center justify-between">
+              <span className="flex items-center gap-1">
+                <Play className="w-3 h-3" />
+                {language === 'ar' ? 'سرعة الصوت' : 'Voice Speed'}
+              </span>
+              <span className="font-medium">{voiceSettings.speed?.toFixed(1) || '1.0'}x</span>
+            </label>
+            <Slider
+              value={[voiceSettings.speed || 1.0]}
+              min={0.5}
+              max={2.0}
+              step={0.1}
+              onValueChange={([v]) => onVoiceChange({ ...voiceSettings, speed: v })}
+              className="py-2"
+            />
+          </div>
+          
+          {/* Voice Enabled */}
+          <div className="flex items-center justify-between">
+            <label className="text-xs text-muted-foreground flex items-center gap-1">
+              {voiceSettings.enabled ? <Volume2 className="w-3 h-3" /> : <VolumeX className="w-3 h-3" />}
+              {language === 'ar' ? 'تفعيل الصوت' : 'Voice Enabled'}
+            </label>
+            <Switch
+              checked={voiceSettings.enabled}
+              onCheckedChange={(enabled) => onVoiceChange({ ...voiceSettings, enabled })}
+            />
+          </div>
+          
+          <Separator />
+          
+          {/* Theme */}
+          <div className="flex items-center justify-between">
+            <label className="text-xs text-muted-foreground flex items-center gap-1">
+              {isDark ? <Moon className="w-3 h-3" /> : <Sun className="w-3 h-3" />}
+              {language === 'ar' ? 'الوضع الداكن' : 'Dark Mode'}
+            </label>
+            <Switch checked={isDark} onCheckedChange={toggleTheme} />
+          </div>
+          
+          <Separator />
+          
+          {/* Show Onboarding */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full text-xs"
+            onClick={onShowOnboarding}
+          >
+            <HelpCircle className="w-3 h-3 mr-1" />
+            {language === 'ar' ? 'عرض الجولة التعليمية' : 'Show Tour Again'}
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+};
+
+// ============================================
 // ONBOARDING COMPONENT
 // ============================================
 
@@ -1067,81 +1282,128 @@ interface OnboardingProps {
   onVoiceChange: (settings: VoiceSettings) => void;
   onComplete: () => void;
   onSkip: () => void;
+  language: VoiceLanguage;
 }
 
-const Onboarding: React.FC<OnboardingProps> = ({ voiceSettings, onVoiceChange, onComplete, onSkip }) => {
+const Onboarding: React.FC<OnboardingProps> = ({ voiceSettings, onVoiceChange, onComplete, onSkip, language }) => {
   const [step, setStep] = useState(0);
   const currentStep = ONBOARDING_STEPS[step];
   const color = PERSONALITY_COLORS[currentStep.personality];
   const isLastStep = step === ONBOARDING_STEPS.length - 1;
   const isVoiceStep = currentStep.id === 'voice';
+  const isRtl = language === 'ar';
 
   return (
-    <Card className="w-full max-w-lg mx-auto overflow-hidden">
+    <Card className="w-full max-w-lg mx-auto overflow-hidden" dir={isRtl ? 'rtl' : 'ltr'}>
       <CardHeader className="pb-2" style={{ background: `linear-gradient(135deg, ${color}20, transparent)` }}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             {step > 0 && (
               <Button variant="ghost" size="icon" onClick={() => setStep(s => s - 1)}>
-                <ChevronLeft className="w-4 h-4" />
+                {isRtl ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
               </Button>
             )}
-            <CardTitle className="text-lg">{currentStep.title}</CardTitle>
+            <CardTitle className="text-lg">{isRtl ? currentStep.titleAr : currentStep.title}</CardTitle>
           </div>
-          <Button variant="ghost" size="sm" onClick={onSkip}>Skip</Button>
+          <Button variant="ghost" size="sm" onClick={onSkip}>
+            {isRtl ? 'تخطي' : 'Skip'}
+          </Button>
         </div>
-        <Progress value={(step / (ONBOARDING_STEPS.length - 1)) * 100} className="h-1 mt-2" />
+        <div className="flex items-center gap-2 mt-3">
+          <span className="text-xs text-muted-foreground">{step + 1}/{ONBOARDING_STEPS.length}</span>
+          <Progress value={((step + 1) / ONBOARDING_STEPS.length) * 100} className="h-1.5 flex-1" />
+        </div>
       </CardHeader>
 
       <CardContent className="p-6">
         <div className="flex flex-col items-center text-center">
           <ZahraAvatar personality={currentStep.personality} isSpeaking={false} isListening={false} size="xl" />
           
-          <p className="mt-6 text-muted-foreground">{currentStep.description}</p>
+          <p className="mt-6 text-muted-foreground">
+            {isRtl ? currentStep.descriptionAr : currentStep.description}
+          </p>
           
-          <div className="mt-4 p-3 rounded-lg bg-muted/50 text-sm w-full" style={{ borderLeft: `3px solid ${color}` }}>
-            {currentStep.example}
+          <div className="mt-4 p-4 rounded-lg bg-muted/50 text-sm w-full" style={{ borderLeft: isRtl ? 'none' : `3px solid ${color}`, borderRight: isRtl ? `3px solid ${color}` : 'none' }}>
+            💡 {isRtl ? currentStep.exampleAr : currentStep.example}
           </div>
 
           {isVoiceStep && (
-            <div className="mt-6 grid grid-cols-2 gap-4 w-full">
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Language</label>
-                <Select
-                  value={voiceSettings.language}
-                  onValueChange={(v) => onVoiceChange({ ...voiceSettings, language: v as VoiceLanguage })}
-                >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="en">🇺🇸 English</SelectItem>
-                    <SelectItem value="ar">🇸🇦 العربية</SelectItem>
-                  </SelectContent>
-                </Select>
+            <div className="mt-6 space-y-4 w-full">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">
+                    {isRtl ? 'اللغة' : 'Language'}
+                  </label>
+                  <Select
+                    value={voiceSettings.language}
+                    onValueChange={(v) => onVoiceChange({ ...voiceSettings, language: v as VoiceLanguage })}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent className="bg-background border shadow-lg z-50">
+                      <SelectItem value="en">🇺🇸 English</SelectItem>
+                      <SelectItem value="ar">🇸🇦 العربية</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">
+                    {isRtl ? 'الصوت' : 'Voice'}
+                  </label>
+                  <Select
+                    value={voiceSettings.gender}
+                    onValueChange={(v) => onVoiceChange({ ...voiceSettings, gender: v as VoiceGender })}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent className="bg-background border shadow-lg z-50">
+                      <SelectItem value="female">👩 {isRtl ? 'أنثى' : 'Female'}</SelectItem>
+                      <SelectItem value="male">👨 {isRtl ? 'ذكر' : 'Male'}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
+              
               <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Voice</label>
-                <Select
-                  value={voiceSettings.gender}
-                  onValueChange={(v) => onVoiceChange({ ...voiceSettings, gender: v as VoiceGender })}
-                >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="female">👩 Female</SelectItem>
-                    <SelectItem value="male">👨 Male</SelectItem>
-                  </SelectContent>
-                </Select>
+                <label className="text-xs text-muted-foreground mb-2 flex items-center justify-between">
+                  <span>{isRtl ? 'سرعة الصوت' : 'Voice Speed'}</span>
+                  <span className="font-medium">{voiceSettings.speed?.toFixed(1) || '1.0'}x</span>
+                </label>
+                <Slider
+                  value={[voiceSettings.speed || 1.0]}
+                  min={0.5}
+                  max={2.0}
+                  step={0.1}
+                  onValueChange={([v]) => onVoiceChange({ ...voiceSettings, speed: v })}
+                />
               </div>
             </div>
           )}
 
+          {/* Step indicators */}
+          <div className="flex gap-1.5 mt-6">
+            {ONBOARDING_STEPS.map((_, i) => (
+              <motion.div
+                key={i}
+                className="h-1.5 rounded-full cursor-pointer"
+                style={{ 
+                  width: i === step ? 24 : 8,
+                  backgroundColor: i === step ? color : `${color}30`,
+                }}
+                onClick={() => setStep(i)}
+                whileHover={{ scale: 1.2 }}
+              />
+            ))}
+          </div>
+
           <div className="flex gap-2 mt-6">
             {!isLastStep ? (
-              <Button onClick={() => setStep(s => s + 1)} style={{ backgroundColor: color }}>
-                Next <ChevronRight className="w-4 h-4 ml-1" />
+              <Button onClick={() => setStep(s => s + 1)} style={{ backgroundColor: color }} className="text-white">
+                {isRtl ? 'التالي' : 'Next'} 
+                {isRtl ? <ChevronLeft className="w-4 h-4 mr-1" /> : <ChevronRight className="w-4 h-4 ml-1" />}
               </Button>
             ) : (
-              <Button onClick={onComplete} style={{ backgroundColor: color }}>
-                <Check className="w-4 h-4 mr-1" /> Get Started
+              <Button onClick={onComplete} style={{ backgroundColor: color }} className="text-white">
+                <Check className="w-4 h-4 mr-1" /> 
+                {isRtl ? 'ابدأ الآن' : 'Get Started'}
               </Button>
             )}
           </div>
@@ -1159,17 +1421,19 @@ interface ZAHRA2_0AgentProps {
   onResearchTriggered?: (query: string) => void;
   className?: string;
   compact?: boolean;
+  onMinimize?: () => void;
 }
 
 export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
   onResearchTriggered,
   className,
   compact = false,
+  onMinimize,
 }) => {
   // State
   const [showOnboarding, setShowOnboarding] = useState(() => !hasCompletedOnboarding());
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(loadSettings);
-  const [personality, setPersonality] = useState<ZahraPersonality>('curious');
+  const [personality, setPersonality] = useState<ZahraPersonality | null>(null);
   const [messages, setMessages] = useState<ZahraMessage[]>(() => loadMessages());
   const [input, setInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -1181,7 +1445,10 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
   const { isSearching, currentTask } = useResearchStore();
   
   const voice = useZahraVoice(voiceSettings);
-  const config = PERSONALITY_CONFIGS[personality];
+  
+  // Use detected personality or fallback to 'curious' for display
+  const displayPersonality = personality || 'curious';
+  const config = PERSONALITY_CONFIGS[displayPersonality];
 
   // Persist settings
   useEffect(() => { saveSettings(voiceSettings); }, [voiceSettings]);
@@ -1196,6 +1463,12 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
   const handleOnboardingComplete = () => {
     completeOnboarding();
     setShowOnboarding(false);
+  };
+  
+  // Show onboarding from settings
+  const handleShowOnboarding = () => {
+    resetOnboarding();
+    setShowOnboarding(true);
   };
 
   // Process message
@@ -1312,6 +1585,7 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
           onVoiceChange={setVoiceSettings}
           onComplete={handleOnboardingComplete}
           onSkip={handleOnboardingComplete}
+          language={voiceSettings.language}
         />
       </div>
     );
@@ -1325,47 +1599,68 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
         style={{ background: `linear-gradient(to right, ${config.color}15, transparent)` }}
       >
         <ZahraAvatar
-          personality={personality}
+          personality={displayPersonality}
           isSpeaking={voice.isSpeaking}
           isListening={voice.isListening}
           size={compact ? "sm" : "md"}
+          showWaveform={false}
+          showParticles={!compact}
         />
         
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <h2 className="font-bold text-lg">ZAHRA 2.0</h2>
-            <Badge style={{ backgroundColor: `${config.color}20`, color: config.color, borderColor: config.color }}>
-              {config.icon}
-              <span className="ml-1">{voiceSettings.language === 'ar' ? config.nameAr : config.name}</span>
-            </Badge>
+            {/* Only show personality badge when detected */}
+            <AnimatePresence mode="wait">
+              {personality && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.8 }}
+                  transition={{ type: "spring", stiffness: 500 }}
+                >
+                  <Badge style={{ backgroundColor: `${config.color}20`, color: config.color, borderColor: config.color }}>
+                    {config.icon}
+                    <span className="ml-1">{voiceSettings.language === 'ar' ? config.nameAr : config.name}</span>
+                  </Badge>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
           {!compact && <Metrics compact />}
         </div>
 
         <div className="flex items-center gap-1">
-          {/* Language toggle */}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setVoiceSettings(s => ({ ...s, language: s.language === 'en' ? 'ar' : 'en' }))}
-            title={voiceSettings.language === 'en' ? 'Switch to Arabic' : 'Switch to English'}
-          >
-            <Globe className="w-4 h-4" />
-          </Button>
+          {/* Settings dropdown */}
+          <SettingsDropdown
+            voiceSettings={voiceSettings}
+            onVoiceChange={setVoiceSettings}
+            onShowOnboarding={handleShowOnboarding}
+            language={voiceSettings.language}
+          />
           
           {/* Voice toggle */}
           <Button
             variant="ghost"
             size="icon"
+            className="h-8 w-8"
             onClick={() => setVoiceSettings(s => ({ ...s, enabled: !s.enabled }))}
+            title={voiceSettings.enabled ? 'Disable voice' : 'Enable voice'}
           >
             {voiceSettings.enabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
           </Button>
           
           {/* Clear */}
           {messages.length > 0 && (
-            <Button variant="ghost" size="icon" onClick={handleClear} className="text-muted-foreground hover:text-destructive">
-              <Trash2 className="w-4 h-4" />
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleClear} title="Clear conversation">
+              <Trash2 className="w-4 h-4 text-muted-foreground hover:text-destructive" />
+            </Button>
+          )}
+          
+          {/* Minimize button */}
+          {onMinimize && (
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onMinimize} title="Minimize">
+              <Minus className="w-4 h-4" />
             </Button>
           )}
         </div>
@@ -1426,7 +1721,7 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
                 exit={{ opacity: 0 }}
                 className="flex items-center gap-3 p-3"
               >
-                <ZahraAvatar personality={personality} isSpeaking={false} isListening={false} size="sm" />
+                <ZahraAvatar personality={displayPersonality} isSpeaking={false} isListening={false} size="sm" showWaveform={false} showParticles={false} />
                 <div className="flex gap-1">
                   {[0, 1, 2].map(i => (
                     <motion.div
@@ -1451,7 +1746,7 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
       {/* Suggestions */}
       {messages.length > 0 && !isProcessing && !compact && (
         <div className="px-4 pb-2">
-          <Suggestions personality={personality} language={voiceSettings.language} onSelect={processMessage} />
+          <Suggestions personality={displayPersonality} language={voiceSettings.language} onSelect={processMessage} />
         </div>
       )}
 
@@ -1546,14 +1841,13 @@ export const ZahraMobileButton: React.FC<ZahraMobileButtonProps> = ({ onResearch
       </SheetTrigger>
       <SheetContent side="right" className="w-full sm:w-[400px] p-0">
         <div className="h-full flex flex-col">
-          <div className="flex items-center justify-between p-4 border-b">
-            <h2 className="font-bold text-lg">ZAHRA 2.0</h2>
-            <Button variant="ghost" size="icon" onClick={() => setIsOpen(false)}>
-              <X className="w-4 h-4" />
-            </Button>
-          </div>
           <div className="flex-1 overflow-hidden">
-            <ZAHRA2_0Agent compact className="h-full border-0 rounded-none" onResearchTriggered={onResearchTriggered} />
+            <ZAHRA2_0Agent 
+              compact 
+              className="h-full border-0 rounded-none" 
+              onResearchTriggered={onResearchTriggered}
+              onMinimize={() => setIsOpen(false)}
+            />
           </div>
         </div>
       </SheetContent>
