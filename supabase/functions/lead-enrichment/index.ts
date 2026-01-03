@@ -573,6 +573,13 @@ Generate enhanced sections with specific, evidence-based content.`;
       };
     }
 
+    console.log(`[lead-enrichment] AI enhancement successful for ${entityName}:`, {
+      profileSummaryLength: (parsed.profileSummary || '').length,
+      keyInsightsCount: (parsed.keyInsights || []).length,
+      strengthsCount: (parsed.strengths || []).length,
+      recommendationsCount: Array.isArray(parsed.recommendations) ? parsed.recommendations.length : parsed.recommendations ? 1 : 0,
+    });
+
     return {
       profileSummary: parsed.profileSummary || baseData.overview || baseData.profileSummary || '',
       keyInsights: parsed.keyInsights || baseData.keyInsights || [],
@@ -1439,6 +1446,9 @@ Generate the COMPLETE detailed company profile JSON with ALL sections populated.
       });
       
       if (fallbackData) {
+        // Generate tailored report for fallback data too
+        const tailoredReport = await generateTailoredReport(fallbackData, 'company', []);
+        
         return {
           success: true,
           data: {
@@ -1446,6 +1456,8 @@ Generate the COMPLETE detailed company profile JSON with ALL sections populated.
             name: request.companyName,
             type: 'company',
             fallbackUsed: true,
+            tailoredReport,
+            findings: formatEnrichmentForFindings(fallbackData, 'company'),
           }
         };
       }

@@ -795,14 +795,34 @@ export const LeadEnrichment = () => {
       </div>
 
       <div className="p-6 space-y-6">
-        {/* AI Profile Summary */}
-        {result.aiProfileSummary && (
+        {/* Confidence Score Badge */}
+        {result.tailoredReport?.confidenceScore !== undefined && (
+          <div className="flex items-center gap-2">
+            <Badge 
+              variant={result.tailoredReport.confidenceScore >= 70 ? "default" : result.tailoredReport.confidenceScore >= 40 ? "secondary" : "outline"}
+              className="gap-1"
+            >
+              <Target className="w-3 h-3" />
+              {result.tailoredReport.confidenceScore}% Data Confidence
+            </Badge>
+            {result.tailoredReport.enrichmentTimestamp && (
+              <span className="text-xs text-muted-foreground">
+                Generated: {new Date(result.tailoredReport.enrichmentTimestamp).toLocaleString()}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* AI Profile Summary - prioritize tailoredReport */}
+        {(result.tailoredReport?.profileSummary || result.aiProfileSummary || result.profileSummary) && (
           <div className="p-4 rounded-lg bg-gradient-to-r from-primary/10 to-accent/10 border border-primary/20">
             <h5 className="font-semibold text-sm mb-2 flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-primary" />
               AI Profile Summary
             </h5>
-            <p className="text-sm text-muted-foreground whitespace-pre-wrap">{result.aiProfileSummary}</p>
+            <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+              {result.tailoredReport?.profileSummary || result.aiProfileSummary || result.profileSummary}
+            </p>
           </div>
         )}
 
@@ -866,17 +886,17 @@ export const LeadEnrichment = () => {
           </div>
         )}
 
-        {/* Key Insights */}
-        {result.keyInsights && result.keyInsights.length > 0 && (
+        {/* Key Insights - prioritize tailoredReport */}
+        {((result.tailoredReport?.keyInsights && result.tailoredReport.keyInsights.length > 0) || (result.keyInsights && result.keyInsights.length > 0)) && (
           <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
             <h5 className="font-semibold text-sm mb-3 flex items-center gap-2">
               <Lightbulb className="w-4 h-4 text-amber-500" />
-              Key Insights ({result.keyInsights.length})
+              Key Insights (AI Analysis)
             </h5>
             <ul className="space-y-2">
-              {result.keyInsights.map((insight, i) => (
+              {(result.tailoredReport?.keyInsights || result.keyInsights || []).map((insight, i) => (
                 <li key={i} className="text-sm text-muted-foreground flex items-start gap-2 p-2 rounded bg-background/50">
-                  <span className="text-amber-500 mt-0.5 font-bold">{i + 1}.</span>
+                  <span className="text-amber-500 mt-0.5">💡</span>
                   {insight}
                 </li>
               ))}
@@ -884,15 +904,15 @@ export const LeadEnrichment = () => {
           </div>
         )}
 
-        {/* Strengths */}
-        {result.strengths && result.strengths.length > 0 && (
+        {/* Strengths - prioritize tailoredReport */}
+        {((result.tailoredReport?.strengths && result.tailoredReport.strengths.length > 0) || (result.strengths && result.strengths.length > 0)) && (
           <div className="p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
             <h5 className="font-semibold text-sm mb-3 flex items-center gap-2">
               <ThumbsUp className="w-4 h-4 text-emerald-500" />
-              Key Strengths
+              Strengths & Advantages
             </h5>
             <ul className="space-y-2">
-              {result.strengths.map((strength, i) => (
+              {(result.tailoredReport?.strengths || result.strengths || []).map((strength, i) => (
                 <li key={i} className="text-sm text-muted-foreground flex items-start gap-2 p-2 rounded bg-background/50">
                   <span className="text-emerald-500 mt-0.5">✓</span>
                   {strength}
@@ -902,15 +922,15 @@ export const LeadEnrichment = () => {
           </div>
         )}
 
-        {/* Recommendations */}
-        {result.recommendations && result.recommendations.length > 0 && (
+        {/* Recommendations - prioritize tailoredReport */}
+        {((result.tailoredReport?.recommendations && result.tailoredReport.recommendations.length > 0) || (result.recommendations && result.recommendations.length > 0)) && (
           <div className="p-4 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
             <h5 className="font-semibold text-sm mb-3 flex items-center gap-2">
               <Zap className="w-4 h-4 text-cyan-500" />
               Engagement Recommendations
             </h5>
             <ul className="space-y-2">
-              {result.recommendations.map((rec, i) => (
+              {(result.tailoredReport?.recommendations || result.recommendations || []).map((rec, i) => (
                 <li key={i} className="text-sm text-muted-foreground flex items-start gap-2 p-2 rounded bg-background/50">
                   <span className="text-cyan-500 mt-0.5">→</span>
                   {rec}
