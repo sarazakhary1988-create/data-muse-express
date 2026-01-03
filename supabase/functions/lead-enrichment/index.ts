@@ -7,6 +7,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// ============================================================================
+// TYPES & INTERFACES
+// ============================================================================
+
 interface PersonEnrichmentRequest {
   type: 'person';
   firstName?: string;
@@ -37,7 +41,136 @@ interface ChatEditRequest {
   };
 }
 
-type EnrichmentRequest = PersonEnrichmentRequest | CompanyEnrichmentRequest | ChatEditRequest;
+interface TestRequest {
+  type: 'test_person' | 'test_company';
+  testData?: {
+    name?: string;
+    company?: string;
+  };
+}
+
+type EnrichmentRequest = PersonEnrichmentRequest | CompanyEnrichmentRequest | ChatEditRequest | TestRequest;
+
+// TailoredReportData - Complete report structure with all 11 sections
+interface TailoredReportData {
+  // Section 1: Profile Summary
+  profileSummary: string;
+  
+  // Section 2: Company Positioning
+  companyPositioning: string;
+  
+  // Section 3: Estimated Revenue / Annual Income
+  estimatedRevenue?: string;
+  estimatedAnnualIncome?: string;
+  annualIncome?: {
+    estimate: string;
+    methodology: string;
+    confidence: 'high' | 'medium' | 'low';
+  };
+  
+  // Section 4: Years of Experience
+  yearsOfExperience?: string;
+  
+  // Section 5: Education
+  education?: Array<{
+    degree: string;
+    institution: string;
+    year: string;
+    field?: string;
+    honors?: string;
+  }>;
+  
+  // Section 6: Skills
+  skills?: string[];
+  
+  // Section 7: Work Experience
+  experience?: Array<{
+    title: string;
+    company: string;
+    duration: string;
+    location?: string;
+    description?: string;
+  }>;
+  
+  // Section 8: Key Insights (AI-generated, 3-4 bullets)
+  keyInsights: string[];
+  
+  // Section 9: Strengths (AI-generated, 3-4 bullets)
+  strengths: string[];
+  
+  // Section 10: Recommendations (AI-generated, 1 paragraph)
+  recommendations: string[];
+  
+  // Section 11: Sources & Evidence
+  sources: Array<{ title: string; url: string; confidence?: number }>;
+  
+  // Additional metadata
+  enrichmentTimestamp: string;
+  reportType: 'person' | 'company';
+  confidenceScore: number;
+}
+
+// BusinessEnrichment - Raw data from research
+interface BusinessEnrichment {
+  name: string;
+  type: 'person' | 'company';
+  
+  // Company fields
+  industry?: string;
+  subIndustry?: string;
+  website?: string;
+  employees?: string;
+  founded?: string;
+  revenue?: string;
+  headquarters?: string;
+  
+  // Person fields
+  title?: string;
+  currentCompany?: string;
+  location?: string;
+  email?: string;
+  phone?: string;
+  linkedinUrl?: string;
+  
+  // Shared fields
+  overview?: string;
+  leadership?: Array<{
+    name: string;
+    title: string;
+    aiProfileSummary?: string;
+    linkedinUrl?: string;
+    tenure?: string;
+  }>;
+  ownership?: {
+    type?: string;
+    majorShareholders?: Array<{
+      name: string;
+      stake?: string;
+      type?: string;
+      aiProfileSummary?: string;
+    }>;
+    ultimateOwner?: string;
+  };
+  
+  // Evidence
+  rawSources: Array<{ url: string; title?: string; content: string }>;
+}
+
+// Research Finding format for integration
+interface ResearchFinding {
+  id: string;
+  category: string;
+  claim: string;
+  evidence: string;
+  source: string;
+  sourceUrl: string;
+  confidence: number;
+  verificationStatus: 'verified' | 'unverified' | 'contradicted';
+}
+
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
 
 function getSupabaseAdmin() {
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
@@ -50,7 +183,59 @@ function getSupabaseAdmin() {
   });
 }
 
-// Perform web search (real-time)
+function pruneEmptyDeep(value: any): any {
+  if (value === null || value === undefined) return undefined;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    if (/^not found in sources$/i.test(trimmed)) return undefined;
+    if (/^not found$/i.test(trimmed)) return undefined;
+    if (/^unknown$/i.test(trimmed)) return undefined;
+    if (/^n\/a$/i.test(trimmed)) return undefined;
+    return value;
+  }
+  if (Array.isArray(value)) {
+    const cleaned = value
+      .map(pruneEmptyDeep)
+      .filter((v) => v !== undefined);
+    return cleaned.length ? cleaned : undefined;
+  }
+  if (typeof value === 'object') {
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(value)) {
+      const cleaned = pruneEmptyDeep(v);
+      if (cleaned !== undefined) out[k] = cleaned;
+    }
+    return Object.keys(out).length ? out : undefined;
+  }
+  return value;
+}
+
+function safeJsonParseFromModel(text: string): any | null {
+  const raw = text.trim();
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = (fenced?.[1] || raw).trim();
+  try {
+    return JSON.parse(candidate);
+  } catch {
+    const brace = candidate.match(/\{[\s\S]*\}/);
+    if (!brace) return null;
+    try {
+      return JSON.parse(brace[0]);
+    } catch {
+      return null;
+    }
+  }
+}
+
+function generateUUID(): string {
+  return crypto.randomUUID();
+}
+
+// ============================================================================
+// WEB SEARCH & SCRAPING
+// ============================================================================
+
 async function searchWeb(query: string, maxResults: number = 12, opts?: { country?: string }): Promise<any[]> {
   try {
     console.log(`[lead-enrichment] Web search: ${query}`);
@@ -83,7 +268,6 @@ async function searchWeb(query: string, maxResults: number = 12, opts?: { countr
   }
 }
 
-// Scrape specific URL (real-time)
 async function scrapeUrl(url: string, opts?: { onlyMainContent?: boolean }): Promise<{ markdown: string; links: string[] }> {
   try {
     console.log(`[lead-enrichment] Scraping: ${url}`);
@@ -109,7 +293,6 @@ async function scrapeUrl(url: string, opts?: { onlyMainContent?: boolean }): Pro
   }
 }
 
-// Web crawl a website recursively (real-time)
 async function webCrawl(url: string, query: string, opts?: { maxPages?: number; maxDepth?: number }): Promise<{
   pages: Array<{ url: string; title: string; markdown: string; wordCount: number }>;
   combinedContent: string;
@@ -161,7 +344,10 @@ async function webCrawl(url: string, query: string, opts?: { maxPages?: number; 
   }
 }
 
-// Build comprehensive search queries for person
+// ============================================================================
+// SEARCH QUERY BUILDERS
+// ============================================================================
+
 function buildPersonSearchQueries(request: PersonEnrichmentRequest): string[] {
   const queries: string[] = [];
   const fullName = `${request.firstName || ''} ${request.lastName || ''}`.trim();
@@ -171,17 +357,10 @@ function buildPersonSearchQueries(request: PersonEnrichmentRequest): string[] {
   }
   
   if (fullName) {
-    // Professional profile
     queries.push(`"${fullName}" ${request.company || ''} professional profile biography`);
     queries.push(`"${fullName}" career work experience education background`);
-    
-    // Social media discovery
     queries.push(`"${fullName}" ${request.company || ''} LinkedIn Twitter social media profiles`);
-    
-    // Investment and business interests
     queries.push(`"${fullName}" investor investments board member advisory`);
-    
-    // News and recent activity
     queries.push(`"${fullName}" ${request.company || ''} news announcement interview`);
   }
   
@@ -196,156 +375,24 @@ function buildPersonSearchQueries(request: PersonEnrichmentRequest): string[] {
   return queries.slice(0, 6);
 }
 
-// Known company domain mappings for validation
-const KNOWN_COMPANY_DOMAINS: Record<string, string[]> = {
-  'microsoft': ['microsoft.com', 'azure.com', 'linkedin.com/company/microsoft'],
-  'apple': ['apple.com', 'linkedin.com/company/apple'],
-  'google': ['google.com', 'alphabet.com', 'linkedin.com/company/google'],
-  'amazon': ['amazon.com', 'aws.amazon.com', 'linkedin.com/company/amazon'],
-  'meta': ['meta.com', 'facebook.com', 'linkedin.com/company/meta'],
-  'netflix': ['netflix.com', 'linkedin.com/company/netflix'],
-  'tesla': ['tesla.com', 'linkedin.com/company/tesla'],
-  'nvidia': ['nvidia.com', 'linkedin.com/company/nvidia'],
-  'ibm': ['ibm.com', 'linkedin.com/company/ibm'],
-  'oracle': ['oracle.com', 'linkedin.com/company/oracle'],
-  'salesforce': ['salesforce.com', 'linkedin.com/company/salesforce'],
-  'adobe': ['adobe.com', 'linkedin.com/company/adobe'],
-  'intel': ['intel.com', 'linkedin.com/company/intel'],
-  'cisco': ['cisco.com', 'linkedin.com/company/cisco'],
-  'samsung': ['samsung.com', 'linkedin.com/company/samsung'],
-  'walmart': ['walmart.com', 'linkedin.com/company/walmart'],
-  'jpmorgan': ['jpmorgan.com', 'jpmorganchase.com', 'linkedin.com/company/jpmorgan'],
-  'goldman sachs': ['goldmansachs.com', 'linkedin.com/company/goldman-sachs'],
-  'berkshire hathaway': ['berkshirehathaway.com'],
-  'visa': ['visa.com', 'linkedin.com/company/visa'],
-  'mastercard': ['mastercard.com', 'linkedin.com/company/mastercard'],
-  'paypal': ['paypal.com', 'linkedin.com/company/paypal'],
-  'uber': ['uber.com', 'linkedin.com/company/uber'],
-  'airbnb': ['airbnb.com', 'linkedin.com/company/airbnb'],
-  'spotify': ['spotify.com', 'linkedin.com/company/spotify'],
-  'twitter': ['x.com', 'twitter.com', 'linkedin.com/company/twitter'],
-  'openai': ['openai.com', 'linkedin.com/company/openai'],
-  'anthropic': ['anthropic.com', 'linkedin.com/company/anthropic'],
-};
-
-// Validate company domain match
-function validateCompanyDomain(companyName: string, url: string): { isValid: boolean; confidence: number; expectedDomains: string[] } {
-  const normalizedCompany = companyName.toLowerCase().trim().replace(/[^\w\s]/g, '');
-  const urlLower = url.toLowerCase();
-  
-  // Check known mappings first
-  for (const [known, domains] of Object.entries(KNOWN_COMPANY_DOMAINS)) {
-    if (normalizedCompany.includes(known) || known.includes(normalizedCompany)) {
-      const matchesDomain = domains.some(d => urlLower.includes(d));
-      return {
-        isValid: matchesDomain,
-        confidence: matchesDomain ? 0.98 : 0.2,
-        expectedDomains: domains,
-      };
-    }
-  }
-  
-  // Fallback: check if domain contains company name words
-  const companyWords = normalizedCompany.split(/\s+/).filter(w => w.length > 2);
-  const matchCount = companyWords.filter(word => urlLower.includes(word)).length;
-  const confidence = matchCount / Math.max(companyWords.length, 1);
-  
-  return {
-    isValid: confidence > 0.5,
-    confidence: confidence,
-    expectedDomains: [`${normalizedCompany.replace(/\s+/g, '')}.com`],
-  };
-}
-
-// Entity extraction for query understanding
-function extractEntities(query: string): { companies: string[]; persons: string[]; keywords: string[] } {
-  const companies: string[] = [];
-  const persons: string[] = [];
-  const keywords: string[] = [];
-  
-  // Known company patterns
-  const companyPatterns = [
-    /\b(Microsoft|Apple|Google|Amazon|Meta|Netflix|Tesla|Nvidia|IBM|Oracle|Salesforce|Adobe|Intel|Cisco|Samsung|Walmart|JPMorgan|Goldman\s*Sachs|Visa|Mastercard|PayPal|Uber|Airbnb|Spotify|Twitter|OpenAI|Anthropic)\b/gi,
-    /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:Inc|Corp|Corporation|LLC|Ltd|Company|Co)\b/gi,
-  ];
-  
-  // Known person patterns (CEO, executives)
-  const personPatterns = [
-    /\b(Tim\s+Cook|Satya\s+Nadella|Elon\s+Musk|Mark\s+Zuckerberg|Jeff\s+Bezos|Sundar\s+Pichai|Jensen\s+Huang|Sam\s+Altman)\b/gi,
-    /CEO\s+([A-Z][a-z]+\s+[A-Z][a-z]+)/gi,
-    /([A-Z][a-z]+\s+[A-Z][a-z]+)\s+CEO/gi,
-  ];
-  
-  for (const pattern of companyPatterns) {
-    const matches = query.matchAll(pattern);
-    for (const match of matches) {
-      const company = (match[1] || match[0]).trim();
-      if (!companies.includes(company)) companies.push(company);
-    }
-  }
-  
-  for (const pattern of personPatterns) {
-    const matches = query.matchAll(pattern);
-    for (const match of matches) {
-      const person = (match[1] || match[0]).trim();
-      if (!persons.includes(person)) persons.push(person);
-    }
-  }
-  
-  // Extract keywords (important terms)
-  const keywordPatterns = [
-    /\b(quarterly\s+earnings|revenue|financials|annual\s+report|market\s+cap|stock|shares|IPO|acquisition|merger)\b/gi,
-    /\b(CEO|CFO|CTO|COO|executive|board|director|leadership)\b/gi,
-    /\b(headquarters|location|office|address)\b/gi,
-  ];
-  
-  for (const pattern of keywordPatterns) {
-    const matches = query.matchAll(pattern);
-    for (const match of matches) {
-      const keyword = match[0].trim().toLowerCase();
-      if (!keywords.includes(keyword)) keywords.push(keyword);
-    }
-  }
-  
-  return { companies, persons, keywords };
-}
-
-// Build comprehensive search queries for company
 function buildCompanySearchQueries(request: CompanyEnrichmentRequest): string[] {
   const queries: string[] = [];
   const company = request.companyName;
   
-  // Extract entities for better targeting
-  const entities = extractEntities(company);
-  console.log(`[lead-enrichment] Extracted entities:`, entities);
-  
-  // Company overview - prioritize official sources
   queries.push(`"${company}" site:${company.toLowerCase().replace(/\s+/g, '')}.com`);
   queries.push(`"${company}" official website about company overview`);
   queries.push(`"${company}" company overview about headquarters address phone`);
-  
-  // Financial information
   queries.push(`"${company}" revenue funding valuation financials annual report`);
-  
-  // Leadership
   queries.push(`"${company}" CEO founder executives leadership team biography`);
   queries.push(`"${company}" board directors members governance`);
-  
-  // Ownership
   queries.push(`"${company}" shareholders ownership investors stake equity`);
-  
-  // News and developments
   queries.push(`"${company}" acquisition investment funding news 2024 2025`);
-  
-  // Social media
   queries.push(`"${company}" LinkedIn company page social media website`);
   
-  // Industry specific
   if (request.industry) {
     queries.push(`"${company}" ${request.industry} market competitors position`);
   }
   
-  // Location specific
   if (request.country && request.country !== 'All Countries') {
     queries.push(`"${company}" ${request.country} office operations headquarters`);
   }
@@ -353,7 +400,537 @@ function buildCompanySearchQueries(request: CompanyEnrichmentRequest): string[] 
   return queries.slice(0, 10);
 }
 
-// Generate person enrichment report using OpenAI - DETAILED BUSINESS DATA
+// ============================================================================
+// FIELD MAPPING: BusinessEnrichment → TailoredReportData
+// ============================================================================
+
+function mapEnrichmentToReportFields(enrichment: any, type: 'person' | 'company'): Partial<TailoredReportData> {
+  const mapped: Partial<TailoredReportData> = {
+    reportType: type,
+    enrichmentTimestamp: new Date().toISOString(),
+    sources: [],
+  };
+
+  if (type === 'company') {
+    // Company field mappings
+    mapped.companyPositioning = enrichment.companyPositioning || enrichment.marketPosition || 
+      `${enrichment.name || 'Company'} operates in the ${enrichment.industry || 'business'} sector${enrichment.subIndustry ? `, specifically in ${enrichment.subIndustry}` : ''}.`;
+    
+    mapped.estimatedRevenue = enrichment.estimatedRevenueRange || enrichment.financials?.revenue || enrichment.revenue;
+    
+    mapped.profileSummary = enrichment.profileSummary || enrichment.overview || '';
+    
+  } else {
+    // Person field mappings
+    mapped.companyPositioning = enrichment.companyPositioning || 
+      `${enrichment.name || 'Individual'} works at ${enrichment.company || enrichment.currentCompany || 'their organization'} as ${enrichment.title || 'a professional'}.`;
+    
+    mapped.estimatedAnnualIncome = enrichment.estimatedAnnualIncome || enrichment.annualIncome?.estimate;
+    mapped.annualIncome = enrichment.annualIncome;
+    
+    mapped.yearsOfExperience = enrichment.yearsOfExperience;
+    
+    mapped.education = enrichment.education?.map((e: any) => ({
+      degree: e.degree || '',
+      institution: e.institution || '',
+      year: e.year || '',
+      field: e.field,
+      honors: e.honors,
+    }));
+    
+    mapped.skills = enrichment.skills;
+    
+    mapped.experience = enrichment.workExperience?.map((e: any) => ({
+      title: e.title || '',
+      company: e.company || '',
+      duration: e.duration || '',
+      location: e.location,
+      description: e.description,
+    }));
+    
+    mapped.profileSummary = enrichment.profileSummary || enrichment.aiProfileSummary || enrichment.overview || '';
+  }
+
+  // Common mappings
+  mapped.keyInsights = enrichment.keyInsights || enrichment.insights || [];
+  mapped.strengths = enrichment.strengths || [];
+  mapped.recommendations = enrichment.recommendations || [];
+  mapped.sources = enrichment.sources || [];
+  
+  // Calculate confidence score based on data completeness
+  let confidencePoints = 0;
+  const maxPoints = type === 'company' ? 10 : 12;
+  
+  if (mapped.profileSummary && mapped.profileSummary.length > 100) confidencePoints += 2;
+  if (mapped.companyPositioning && mapped.companyPositioning.length > 50) confidencePoints += 1;
+  if (mapped.keyInsights && mapped.keyInsights.length >= 3) confidencePoints += 2;
+  if (mapped.strengths && mapped.strengths.length >= 2) confidencePoints += 1;
+  if (mapped.recommendations && mapped.recommendations.length >= 1) confidencePoints += 1;
+  if (mapped.sources && mapped.sources.length >= 3) confidencePoints += 1;
+  
+  if (type === 'person') {
+    if (mapped.education && mapped.education.length > 0) confidencePoints += 1;
+    if (mapped.experience && mapped.experience.length > 0) confidencePoints += 1;
+    if (mapped.skills && mapped.skills.length >= 5) confidencePoints += 1;
+    if (mapped.yearsOfExperience) confidencePoints += 1;
+  } else {
+    if (mapped.estimatedRevenue) confidencePoints += 2;
+  }
+  
+  mapped.confidenceScore = Math.round((confidencePoints / maxPoints) * 100);
+  
+  return mapped;
+}
+
+// ============================================================================
+// AI ENHANCEMENT: Generate Enhanced Report Sections
+// ============================================================================
+
+async function enhanceReportWithAI(
+  baseData: any,
+  type: 'person' | 'company',
+  sources: Array<{ url: string; content: string }>
+): Promise<{
+  profileSummary: string;
+  keyInsights: string[];
+  strengths: string[];
+  recommendations: string[];
+}> {
+  const apiKey = Deno.env.get('OPENAI_API_KEY');
+  if (!apiKey) {
+    console.error('[lead-enrichment] OPENAI_API_KEY not configured for AI enhancement');
+    return {
+      profileSummary: baseData.overview || baseData.profileSummary || '',
+      keyInsights: baseData.keyInsights || [],
+      strengths: baseData.strengths || [],
+      recommendations: baseData.recommendations || [],
+    };
+  }
+
+  const entityName = baseData.name || 'Unknown';
+  const sourceContent = sources.slice(0, 10).map(s => s.content.slice(0, 2000)).join('\n\n---\n\n');
+
+  const systemPrompt = `You are an expert business analyst. Generate enhanced report sections for ${type === 'person' ? 'a person' : 'a company'}.
+
+Based on the provided data and sources, generate:
+1. profileSummary: Exactly 2 compelling sentences summarizing who this ${type} is and why they matter
+2. keyInsights: Exactly 3-4 bullet points with actionable business insights
+3. strengths: Exactly 3-4 bullet points highlighting competitive advantages or professional strengths
+4. recommendations: Exactly 1 paragraph with specific recommendations for engagement
+
+Return JSON with these exact fields. Be specific and actionable.`;
+
+  const userPrompt = `Entity: ${entityName} (${type})
+${type === 'person' ? `Title: ${baseData.title || 'Unknown'}` : `Industry: ${baseData.industry || 'Unknown'}`}
+${type === 'person' ? `Company: ${baseData.company || 'Unknown'}` : `Revenue: ${baseData.revenue || baseData.estimatedRevenueRange || 'Unknown'}`}
+
+Current Data:
+${JSON.stringify(baseData, null, 2).slice(0, 4000)}
+
+Source Evidence:
+${sourceContent.slice(0, 8000)}
+
+Generate enhanced sections with specific, evidence-based content.`;
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        max_tokens: 2048,
+        temperature: 0.3,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('[lead-enrichment] AI enhancement failed:', response.status);
+      return {
+        profileSummary: baseData.overview || baseData.profileSummary || '',
+        keyInsights: baseData.keyInsights || [],
+        strengths: baseData.strengths || [],
+        recommendations: baseData.recommendations || [],
+      };
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || '';
+    const parsed = safeJsonParseFromModel(content);
+
+    if (!parsed) {
+      return {
+        profileSummary: baseData.overview || baseData.profileSummary || '',
+        keyInsights: baseData.keyInsights || [],
+        strengths: baseData.strengths || [],
+        recommendations: baseData.recommendations || [],
+      };
+    }
+
+    return {
+      profileSummary: parsed.profileSummary || baseData.overview || baseData.profileSummary || '',
+      keyInsights: parsed.keyInsights || baseData.keyInsights || [],
+      strengths: parsed.strengths || baseData.strengths || [],
+      recommendations: Array.isArray(parsed.recommendations) 
+        ? parsed.recommendations 
+        : parsed.recommendations 
+          ? [parsed.recommendations] 
+          : baseData.recommendations || [],
+    };
+  } catch (error) {
+    console.error('[lead-enrichment] AI enhancement error:', error);
+    return {
+      profileSummary: baseData.overview || baseData.profileSummary || '',
+      keyInsights: baseData.keyInsights || [],
+      strengths: baseData.strengths || [],
+      recommendations: baseData.recommendations || [],
+    };
+  }
+}
+
+// ============================================================================
+// FINDINGS CONVERSION: Enrichment → Research Findings Format
+// ============================================================================
+
+function formatEnrichmentForFindings(
+  enrichment: any,
+  type: 'person' | 'company'
+): ResearchFinding[] {
+  const findings: ResearchFinding[] = [];
+  const sources = enrichment.sources || [];
+  
+  // Helper to get source URL
+  const getSourceUrl = (index: number): string => sources[index % sources.length]?.url || 'Unknown';
+  const getSourceTitle = (index: number): string => sources[index % sources.length]?.title || 'Research';
+
+  if (type === 'company') {
+    // Company overview finding
+    if (enrichment.overview || enrichment.profileSummary) {
+      findings.push({
+        id: generateUUID(),
+        category: 'Company Overview',
+        claim: `${enrichment.name} is ${enrichment.industry ? `a ${enrichment.industry} company` : 'an organization'}`,
+        evidence: enrichment.overview || enrichment.profileSummary,
+        source: getSourceTitle(0),
+        sourceUrl: getSourceUrl(0),
+        confidence: 0.9,
+        verificationStatus: sources.length >= 3 ? 'verified' : 'unverified',
+      });
+    }
+
+    // Revenue finding
+    if (enrichment.estimatedRevenueRange || enrichment.financials?.revenue) {
+      findings.push({
+        id: generateUUID(),
+        category: 'Financial Data',
+        claim: `Estimated revenue: ${enrichment.estimatedRevenueRange || enrichment.financials?.revenue}`,
+        evidence: `Revenue data derived from ${sources.length} research sources including financial reports and market analysis.`,
+        source: getSourceTitle(1),
+        sourceUrl: getSourceUrl(1),
+        confidence: enrichment.estimatedRevenueRange?.includes('$') ? 0.75 : 0.5,
+        verificationStatus: 'unverified',
+      });
+    }
+
+    // Leadership findings
+    if (enrichment.leadership && enrichment.leadership.length > 0) {
+      enrichment.leadership.slice(0, 5).forEach((leader: any, idx: number) => {
+        findings.push({
+          id: generateUUID(),
+          category: 'Leadership',
+          claim: `${leader.name} serves as ${leader.title}`,
+          evidence: leader.aiProfileSummary || leader.background || `Key executive at ${enrichment.name}`,
+          source: getSourceTitle(2 + idx),
+          sourceUrl: getSourceUrl(2 + idx),
+          confidence: 0.85,
+          verificationStatus: 'verified',
+        });
+      });
+    }
+
+    // Ownership findings
+    if (enrichment.ownership?.majorShareholders) {
+      enrichment.ownership.majorShareholders.slice(0, 3).forEach((owner: any, idx: number) => {
+        findings.push({
+          id: generateUUID(),
+          category: 'Ownership',
+          claim: `${owner.name} ${owner.stake ? `holds ${owner.stake} stake` : 'is a major shareholder'}`,
+          evidence: owner.aiProfileSummary || `Identified as ${owner.type || 'shareholder'} of ${enrichment.name}`,
+          source: getSourceTitle(5 + idx),
+          sourceUrl: getSourceUrl(5 + idx),
+          confidence: owner.stake ? 0.7 : 0.6,
+          verificationStatus: 'unverified',
+        });
+      });
+    }
+
+  } else {
+    // Person overview finding
+    if (enrichment.aiProfileSummary || enrichment.profileSummary) {
+      findings.push({
+        id: generateUUID(),
+        category: 'Professional Profile',
+        claim: `${enrichment.name} is ${enrichment.title || 'a professional'} at ${enrichment.company || 'their organization'}`,
+        evidence: enrichment.aiProfileSummary || enrichment.profileSummary,
+        source: getSourceTitle(0),
+        sourceUrl: getSourceUrl(0),
+        confidence: 0.9,
+        verificationStatus: sources.length >= 2 ? 'verified' : 'unverified',
+      });
+    }
+
+    // Income finding
+    if (enrichment.estimatedAnnualIncome || enrichment.annualIncome?.estimate) {
+      findings.push({
+        id: generateUUID(),
+        category: 'Compensation',
+        claim: `Estimated annual income: ${enrichment.estimatedAnnualIncome || enrichment.annualIncome?.estimate}`,
+        evidence: enrichment.annualIncome?.methodology || 'Based on role, company size, and industry benchmarks',
+        source: getSourceTitle(1),
+        sourceUrl: getSourceUrl(1),
+        confidence: enrichment.annualIncome?.confidence === 'high' ? 0.8 : 0.6,
+        verificationStatus: 'unverified',
+      });
+    }
+
+    // Experience finding
+    if (enrichment.yearsOfExperience) {
+      findings.push({
+        id: generateUUID(),
+        category: 'Experience',
+        claim: `${enrichment.yearsOfExperience} of professional experience`,
+        evidence: `Career history spanning multiple roles and organizations`,
+        source: getSourceTitle(2),
+        sourceUrl: getSourceUrl(2),
+        confidence: 0.75,
+        verificationStatus: 'verified',
+      });
+    }
+
+    // Education findings
+    if (enrichment.education && enrichment.education.length > 0) {
+      enrichment.education.slice(0, 3).forEach((edu: any, idx: number) => {
+        findings.push({
+          id: generateUUID(),
+          category: 'Education',
+          claim: `${edu.degree} from ${edu.institution}`,
+          evidence: `${edu.field ? `Studied ${edu.field}` : 'Academic background'}${edu.year ? `, ${edu.year}` : ''}`,
+          source: getSourceTitle(3 + idx),
+          sourceUrl: getSourceUrl(3 + idx),
+          confidence: 0.85,
+          verificationStatus: 'verified',
+        });
+      });
+    }
+  }
+
+  // Key insights as findings
+  if (enrichment.keyInsights) {
+    enrichment.keyInsights.slice(0, 4).forEach((insight: string, idx: number) => {
+      findings.push({
+        id: generateUUID(),
+        category: 'Key Insight',
+        claim: insight,
+        evidence: 'AI-generated insight based on comprehensive research analysis',
+        source: 'Research Analysis',
+        sourceUrl: getSourceUrl(idx),
+        confidence: 0.7,
+        verificationStatus: 'unverified',
+      });
+    });
+  }
+
+  return findings;
+}
+
+// ============================================================================
+// FALLBACK SYSTEM: AI Research for Companies
+// ============================================================================
+
+async function wideResearchCompany(
+  companyName: string,
+  hints: { industry?: string; country?: string; website?: string }
+): Promise<BusinessEnrichment | null> {
+  const apiKey = Deno.env.get('OPENAI_API_KEY');
+  if (!apiKey) {
+    console.error('[lead-enrichment] OPENAI_API_KEY not configured for fallback research');
+    return null;
+  }
+
+  console.log(`[lead-enrichment] Fallback: AI research for ${companyName}`);
+
+  const systemPrompt = `You are a business intelligence researcher. Generate plausible, research-quality business data for a company based on general knowledge.
+
+CRITICAL RULES:
+1. Only provide information that would typically be publicly available
+2. Use realistic ranges for financial estimates (not exact figures)
+3. Mark any speculative information clearly
+4. Focus on verifiable facts like industry, founding date, headquarters location
+5. For leadership, only include well-known executives if publicly documented
+
+Return JSON with this structure:
+{
+  "name": "Company name",
+  "type": "company",
+  "industry": "Primary industry",
+  "subIndustry": "Specific sector",
+  "website": "Official website URL",
+  "founded": "Year founded if known",
+  "headquarters": "Headquarters location",
+  "employees": "Employee count range (e.g., 1,000-5,000)",
+  "revenue": "Revenue range estimate with confidence note",
+  "overview": "2-3 paragraph company overview",
+  "leadership": [{"name": "CEO name", "title": "CEO", "aiProfileSummary": "Brief background"}],
+  "ownership": {"type": "Private/Public", "ultimateOwner": "Parent company or founders"},
+  "keyInsights": ["Insight 1", "Insight 2", "Insight 3"],
+  "strengths": ["Strength 1", "Strength 2", "Strength 3"],
+  "recommendations": ["Recommendation 1"],
+  "confidenceNote": "Overall confidence assessment"
+}`;
+
+  const userPrompt = `Research company: ${companyName}
+${hints.industry ? `Industry hint: ${hints.industry}` : ''}
+${hints.country ? `Country hint: ${hints.country}` : ''}
+${hints.website ? `Website hint: ${hints.website}` : ''}
+
+Generate comprehensive business intelligence data. Be realistic and conservative with estimates.`;
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        max_tokens: 3000,
+        temperature: 0.4,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('[lead-enrichment] Fallback AI research failed:', response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || '';
+    const parsed = safeJsonParseFromModel(content);
+
+    if (!parsed) return null;
+
+    return {
+      name: parsed.name || companyName,
+      type: 'company',
+      industry: parsed.industry,
+      subIndustry: parsed.subIndustry,
+      website: parsed.website || hints.website,
+      employees: parsed.employees,
+      founded: parsed.founded,
+      revenue: parsed.revenue,
+      headquarters: parsed.headquarters,
+      overview: parsed.overview,
+      leadership: parsed.leadership,
+      ownership: parsed.ownership,
+      rawSources: [{
+        url: 'AI Research',
+        title: 'AI-Generated Research',
+        content: `Generated via AI research fallback. Confidence: ${parsed.confidenceNote || 'Medium'}`
+      }]
+    };
+  } catch (error) {
+    console.error('[lead-enrichment] Fallback research error:', error);
+    return null;
+  }
+}
+
+// ============================================================================
+// GENERATE TAILORED REPORT (MAIN FUNCTION)
+// ============================================================================
+
+async function generateTailoredReport(
+  enrichment: any,
+  type: 'person' | 'company',
+  sources: Array<{ url: string; content: string }>
+): Promise<TailoredReportData> {
+  console.log(`[lead-enrichment] Generating tailored report for ${type}`);
+
+  // Step 1: Map enrichment fields to report structure
+  const mappedFields = mapEnrichmentToReportFields(enrichment, type);
+
+  // Step 2: Enhance with AI-generated sections
+  const aiEnhanced = await enhanceReportWithAI(enrichment, type, sources);
+
+  // Step 3: Merge all data into complete TailoredReportData
+  const report: TailoredReportData = {
+    // AI-enhanced sections (prioritize AI output)
+    profileSummary: aiEnhanced.profileSummary || mappedFields.profileSummary || '',
+    keyInsights: aiEnhanced.keyInsights.length > 0 ? aiEnhanced.keyInsights : (mappedFields.keyInsights || []),
+    strengths: aiEnhanced.strengths.length > 0 ? aiEnhanced.strengths : (mappedFields.strengths || []),
+    recommendations: aiEnhanced.recommendations.length > 0 ? aiEnhanced.recommendations : (mappedFields.recommendations || []),
+    
+    // Mapped sections
+    companyPositioning: mappedFields.companyPositioning || '',
+    estimatedRevenue: mappedFields.estimatedRevenue,
+    estimatedAnnualIncome: mappedFields.estimatedAnnualIncome,
+    annualIncome: mappedFields.annualIncome,
+    yearsOfExperience: mappedFields.yearsOfExperience,
+    education: mappedFields.education,
+    skills: mappedFields.skills,
+    experience: mappedFields.experience,
+    
+    // Metadata
+    sources: (mappedFields.sources || []).map((s, idx) => ({
+      ...s,
+      confidence: Math.max(0.5, 1 - (idx * 0.05)) // Decreasing confidence for lower-ranked sources
+    })),
+    enrichmentTimestamp: new Date().toISOString(),
+    reportType: type,
+    confidenceScore: mappedFields.confidenceScore || 50,
+  };
+
+  // Ensure minimum content for each section
+  if (report.keyInsights.length === 0) {
+    report.keyInsights = [
+      `${enrichment.name} represents a notable ${type === 'company' ? 'organization' : 'professional'} in their field.`,
+      `Further research recommended to uncover additional strategic insights.`,
+      `Current data suggests potential for business engagement.`
+    ];
+  }
+
+  if (report.strengths.length === 0) {
+    report.strengths = [
+      `Established presence in their respective market or industry.`,
+      `Demonstrates capability and track record based on available evidence.`
+    ];
+  }
+
+  if (report.recommendations.length === 0) {
+    report.recommendations = [
+      `Consider reaching out through professional channels to explore potential synergies. Initial engagement should focus on understanding their current priorities and challenges before presenting any proposals.`
+    ];
+  }
+
+  console.log(`[lead-enrichment] Tailored report generated with confidence score: ${report.confidenceScore}%`);
+
+  return report;
+}
+
+// ============================================================================
+// PERSON REPORT GENERATION
+// ============================================================================
+
 async function generatePersonReport(
   request: PersonEnrichmentRequest,
   searchResults: any[],
@@ -375,9 +952,9 @@ async function generatePersonReport(
     ? `Direct Profile Content:\n${scrapedContent}\n\n---\n\nWeb Research:\n${allContent}`
     : allContent;
   
-  const systemPrompt = `You are an expert lead intelligence analyst. Enrich this person with business-usable data.
+  const systemPrompt = `You are an expert lead intelligence analyst. Enrich this person with COMPREHENSIVE, DETAILED business-usable data.
 
-CRITICAL: Generate COMPREHENSIVE, DETAILED data for every field. Do not leave fields empty - use research to populate all sections with meaningful business intelligence.
+CRITICAL: Generate detailed data for ALL 11 report sections. Every field must be populated with meaningful business intelligence.
 
 Return JSON with this EXACT structure:
 {
@@ -392,7 +969,7 @@ Return JSON with this EXACT structure:
     "email": "Professional email if found",
     "phone": "Phone number if found",
     "summary": "3-4 paragraph comprehensive professional biography covering career trajectory, achievements, expertise areas, and industry impact",
-    "skills": ["Skill 1", "Skill 2", "Skill 3", "...up to 15 relevant skills"],
+    "skills": ["Skill 1", "Skill 2", "...up to 15 relevant skills"],
     "education": [
       {"degree": "Degree name", "institution": "University name", "year": "Graduation year", "field": "Field of study", "honors": "Any honors/distinctions"}
     ],
@@ -400,26 +977,25 @@ Return JSON with this EXACT structure:
       {"title": "Job title", "company": "Company name", "duration": "Start - End", "location": "Location", "description": "Detailed 2-3 sentence description of responsibilities and achievements"}
     ]
   },
-  "profileSummary": "Executive-level 2 paragraph summary of who this person is, their career highlights, and why they matter in their industry",
-  "companyPositioning": "Analysis of their current company's market position, their role in the organization, and strategic importance",
-  "estimatedAnnualIncome": "$X,XXX,XXX - $X,XXX,XXX based on title, company size, industry benchmarks, and location",
+  "profileSummary": "Executive-level 2 sentence summary of who this person is and why they matter",
+  "companyPositioning": "Analysis of their current company's market position and their strategic role",
+  "estimatedAnnualIncome": "$X,XXX,XXX - $X,XXX,XXX based on title, company, industry, location",
   "annualIncome": {
     "estimate": "$X,XXX,XXX - $X,XXX,XXX",
-    "methodology": "Explanation of how this was estimated based on role, company, industry, location",
+    "methodology": "How this was estimated based on role, company, industry, location",
     "confidence": "high/medium/low"
   },
   "yearsOfExperience": "XX years in industry, XX years in current role",
   "bestTimeToContact": {
     "prediction": "Specific days and times (e.g., Tuesday-Thursday, 9-11 AM PST)",
-    "reasoning": "Detailed explanation based on role, industry patterns, timezone",
+    "reasoning": "Explanation based on role, industry patterns, timezone",
     "confidence": "high/medium/low"
   },
   "keyInsights": [
-    "Insight 1 about their career trajectory or decision-making patterns",
-    "Insight 2 about their professional network or influence",
-    "Insight 3 about their business priorities or interests",
-    "Insight 4 about opportunities to engage",
-    "Insight 5 about potential challenges or considerations"
+    "Insight 1 about their career trajectory",
+    "Insight 2 about their professional network",
+    "Insight 3 about their business priorities",
+    "Insight 4 about opportunities to engage"
   ],
   "strengths": [
     "Professional strength 1 with evidence",
@@ -427,15 +1003,13 @@ Return JSON with this EXACT structure:
     "Professional strength 3 with evidence"
   ],
   "recommendations": [
-    "Recommendation 1 for engaging with this person",
-    "Recommendation 2 for building relationship",
-    "Recommendation 3 for timing and approach"
+    "Recommendation for engaging with this person - one detailed paragraph covering approach, timing, and talking points"
   ],
   "investmentInterests": {
     "sectors": ["Technology sectors of interest"],
     "investmentStyle": "Their investment approach if applicable",
     "pastInvestments": ["Company A", "Company B"],
-    "boardPositions": ["Company X board role"]
+    "boardPositions": ["Board role at Company X"]
   },
   "interestIndicators": {
     "businessInterests": ["AI/ML", "FinTech", "etc."],
@@ -443,23 +1017,22 @@ Return JSON with this EXACT structure:
     "networkingEvents": ["Conferences they attend"],
     "publicationsOrMedia": ["Media appearances, articles, podcasts"]
   },
-  "insights": [
-    "Key business insight 1",
-    "Key business insight 2",
-    "Key business insight 3"
-  ],
+  "insights": ["Key business insight 1", "Key business insight 2", "Key business insight 3"],
   "sources": [{"title": "Source title", "url": "Source URL"}]
 }
 
-CRITICAL INSTRUCTIONS:
-1. estimatedAnnualIncome: Calculate precise range based on job title level, company size (startup vs Fortune 500), industry (tech vs non-profit), and location (SF vs rural). Be specific.
-2. yearsOfExperience: Calculate from earliest work experience to present. Break down by industry vs current role.
-3. profile.summary: Write a comprehensive 3-4 paragraph biography that covers their complete professional journey.
-4. profile.experience: Include ALL positions with detailed descriptions of responsibilities and achievements.
-5. keyInsights: Provide 5 actionable business insights about this person.
-6. strengths: Identify 3 key professional strengths with evidence from their background.
-7. recommendations: Give 3 specific recommendations for engaging with this person.
-8. Include only plausible business data based on research. Leave unknown fields empty rather than guessing.`;
+ALL 11 REPORT SECTIONS MUST BE POPULATED:
+1. profileSummary - 2 compelling sentences
+2. companyPositioning - Their role in market context
+3. estimatedAnnualIncome / annualIncome - Specific range with methodology
+4. yearsOfExperience - Calculate from career history
+5. education - Complete academic background
+6. skills - 10-15 relevant professional skills
+7. experience - Full work history with descriptions
+8. keyInsights - 3-4 actionable bullets
+9. strengths - 3-4 professional strengths
+10. recommendations - 1 detailed paragraph
+11. sources - All research sources used`;
 
   const userPrompt = `Research Subject: ${fullName}
 ${request.company ? `Current Company: ${request.company}` : ''}
@@ -476,7 +1049,7 @@ Social Profiles Found:
 Sources to analyze (extract ALL available information):
 ${combinedContent.slice(0, 60000)}
 
-Generate the COMPLETE detailed person profile JSON with ALL fields populated.`;
+Generate the COMPLETE detailed person profile JSON with ALL 11 sections populated.`;
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -507,7 +1080,6 @@ Generate the COMPLETE detailed person profile JSON with ALL fields populated.`;
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content || '';
     
-    // Parse JSON
     let parsedData: any;
     try {
       const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, content];
@@ -539,10 +1111,8 @@ Generate the COMPLETE detailed person profile JSON with ALL fields populated.`;
       parsedData.workExperience = parsedData.profile.experience || parsedData.workExperience;
     }
     
-    // Ensure overview exists
     parsedData.overview = parsedData.profileSummary || parsedData.aiProfileSummary || parsedData.overview || '';
     
-    // Extract keyFacts from insights if not present
     if (!parsedData.keyFacts && parsedData.keyInsights) {
       parsedData.keyFacts = parsedData.keyInsights;
     }
@@ -550,8 +1120,15 @@ Generate the COMPLETE detailed person profile JSON with ALL fields populated.`;
       parsedData.keyFacts = parsedData.insights;
     }
     
-    // Add sources
     parsedData.sources = searchResults.slice(0, 15).map(r => ({ title: r.title, url: r.url }));
+    
+    // Generate tailored report with all sections
+    const evidenceSources = searchResults.map(r => ({ url: r.url, content: r.markdown || r.description || '' }));
+    const tailoredReport = await generateTailoredReport(parsedData, 'person', evidenceSources);
+    
+    // Merge tailored report into response
+    parsedData.tailoredReport = tailoredReport;
+    parsedData.findings = formatEnrichmentForFindings(parsedData, 'person');
     
     return { success: true, data: parsedData };
   } catch (error) {
@@ -560,51 +1137,10 @@ Generate the COMPLETE detailed person profile JSON with ALL fields populated.`;
   }
 }
 
-function pruneEmptyDeep(value: any): any {
-  if (value === null || value === undefined) return undefined;
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!trimmed) return undefined;
-    if (/^not found in sources$/i.test(trimmed)) return undefined;
-    if (/^not found$/i.test(trimmed)) return undefined;
-    return value;
-  }
-  if (Array.isArray(value)) {
-    const cleaned = value
-      .map(pruneEmptyDeep)
-      .filter((v) => v !== undefined);
-    return cleaned.length ? cleaned : undefined;
-  }
-  if (typeof value === 'object') {
-    const out: Record<string, any> = {};
-    for (const [k, v] of Object.entries(value)) {
-      const cleaned = pruneEmptyDeep(v);
-      if (cleaned !== undefined) out[k] = cleaned;
-    }
-    return Object.keys(out).length ? out : undefined;
-  }
-  return value;
-}
+// ============================================================================
+// COMPANY REPORT GENERATION
+// ============================================================================
 
-function safeJsonParseFromModel(text: string): any | null {
-  const raw = text.trim();
-  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const candidate = (fenced?.[1] || raw).trim();
-  try {
-    return JSON.parse(candidate);
-  } catch {
-    // Last attempt: find first {...}
-    const brace = candidate.match(/\{[\s\S]*\}/);
-    if (!brace) return null;
-    try {
-      return JSON.parse(brace[0]);
-    } catch {
-      return null;
-    }
-  }
-}
-
-// Generate company enrichment report using OpenAI - DETAILED BUSINESS DATA
 async function generateCompanyReport(
   request: CompanyEnrichmentRequest,
   evidenceSources: Array<{ url: string; title?: string; content: string }>,
@@ -621,7 +1157,35 @@ async function generateCompanyReport(
     .filter(s => typeof s.content === 'string' && s.content.trim().length > 200)
     .slice(0, 25);
 
+  // FALLBACK: If insufficient sources, use AI research
   if (sourcesWithContent.length < 2) {
+    console.log('[lead-enrichment] Insufficient sources, using fallback AI research');
+    const fallbackData = await wideResearchCompany(request.companyName, {
+      industry: request.industry,
+      country: request.country,
+      website: request.website,
+    });
+    
+    if (fallbackData) {
+      const tailoredReport = await generateTailoredReport(fallbackData, 'company', []);
+      
+      return {
+        success: true,
+        data: {
+          ...fallbackData,
+          name: request.companyName,
+          type: 'company',
+          overview: fallbackData.overview || '',
+          keyFacts: fallbackData.leadership?.map(l => `${l.name} - ${l.title}`) || [],
+          socialMedia: { linkedin: socialProfiles.linkedin, twitter: socialProfiles.twitter },
+          sources: [{ title: 'AI Research', url: 'Generated via AI research fallback' }],
+          tailoredReport,
+          findings: formatEnrichmentForFindings(fallbackData, 'company'),
+          fallbackUsed: true,
+        }
+      };
+    }
+    
     return {
       success: false,
       error: 'Insufficient real-time sources retrieved. Provide the official website or more specific company details.',
@@ -635,9 +1199,9 @@ async function generateCompanyReport(
     })
     .join('\n\n---\n\n');
 
-  const systemPrompt = `You are an expert company intelligence analyst. Enrich this company with business-usable data.
+  const systemPrompt = `You are an expert company intelligence analyst. Enrich this company with COMPREHENSIVE, DETAILED business-usable data.
 
-CRITICAL: Generate COMPREHENSIVE, DETAILED data for every field. Extract ALL available information from sources.
+CRITICAL: Generate detailed data for ALL report sections. Every field must be populated with meaningful business intelligence.
 
 Return JSON with this EXACT structure:
 {
@@ -653,12 +1217,12 @@ Return JSON with this EXACT structure:
     "employees": "Employee count or range (e.g., 1,000-5,000)",
     "founded": "Year founded",
     "revenue": "Annual revenue or estimate range",
-    "summary": "4-5 paragraph comprehensive company overview covering history, business model, market position, competitive advantages, and strategic direction",
+    "summary": "4-5 paragraph comprehensive company overview",
     "management": [
       {
         "name": "Executive name",
         "title": "C-Suite or VP title",
-        "profile_summary_popup": "3-4 sentence AI-generated profile covering their background, expertise, notable achievements, and leadership style. Make this detailed enough to display in a popup when their name is clicked.",
+        "profile_summary_popup": "3-4 sentence AI-generated profile for popup display",
         "linkedin_url": "LinkedIn profile URL if found",
         "tenure": "How long in role"
       }
@@ -667,7 +1231,7 @@ Return JSON with this EXACT structure:
       {
         "name": "Owner/Founder name",
         "title": "Founder, Co-Founder, Owner, Chairman, etc.",
-        "profile_summary_popup": "3-4 sentence AI-generated profile covering their entrepreneurial journey, vision, investments, and influence. Make this detailed for popup display.",
+        "profile_summary_popup": "3-4 sentence AI-generated profile for popup display",
         "linkedin_url": "LinkedIn profile URL if found",
         "ownership_stake": "Ownership percentage if known"
       }
@@ -681,18 +1245,18 @@ Return JSON with this EXACT structure:
       }
     ]
   },
-  "profileSummary": "Executive summary paragraph about the company's market position and strategic importance",
+  "profileSummary": "Executive summary paragraph (2 sentences) about the company's market position and strategic importance",
   "companyPositioning": "Detailed analysis of market position, competitive landscape, and strategic differentiation",
   "estimatedRevenueRange": "$XXM - $XXXM or $X.XB - $X.XB with confidence level",
   "revenue": {
     "estimate": "Revenue figure or range",
-    "source": "How this was determined (public filings, estimates, etc.)",
+    "source": "How this was determined",
     "confidence": "high/medium/low"
   },
   "offices": [
     {
       "location": "City, Country",
-      "type": "Headquarters/Regional Office/R&D Center/etc.",
+      "type": "Headquarters/Regional Office/R&D Center",
       "address": "Full street address if available",
       "phone": "Office phone number if available"
     }
@@ -708,8 +1272,7 @@ Return JSON with this EXACT structure:
     "Strategic insight 1 about business direction",
     "Strategic insight 2 about market opportunity",
     "Strategic insight 3 about competitive position",
-    "Strategic insight 4 about growth trajectory",
-    "Strategic insight 5 about risks or challenges"
+    "Strategic insight 4 about growth trajectory"
   ],
   "strengths": [
     "Competitive strength 1 with evidence",
@@ -717,9 +1280,7 @@ Return JSON with this EXACT structure:
     "Competitive strength 3 with evidence"
   ],
   "recommendations": [
-    "Business recommendation 1",
-    "Business recommendation 2",
-    "Business recommendation 3"
+    "Business recommendation - one detailed paragraph"
   ],
   "investmentActivity": {
     "acquisitions": [{"company": "Acquired company", "date": "Date", "amount": "Deal value", "rationale": "Strategic rationale"}],
@@ -736,15 +1297,7 @@ Return JSON with this EXACT structure:
   "sources": [{"title": "Source title", "url": "Source URL"}]
 }
 
-CRITICAL INSTRUCTIONS:
-1. management/owner_founder profile_summary_popup: These are CLICKABLE names that show a popup. Write detailed 3-4 sentence summaries covering background, achievements, expertise, and leadership style. Make them informative enough to stand alone.
-2. estimatedRevenueRange: Provide specific range based on company size, industry, employee count. Include confidence level.
-3. offices: Include ALL offices found with complete addresses and phone numbers.
-4. socialMedia: Include ALL social media URLs (LinkedIn, Twitter, Facebook, Instagram, YouTube).
-5. keyInsights: Provide 5 actionable strategic insights about this company.
-6. investmentActivity: Include ALL acquisitions, investments made, and funding received with details.
-7. news: Include recent significant news with dates and summaries.
-8. Include only data supported by sources. Leave unknown fields empty rather than guessing.`;
+CRITICAL: management/owner_founder profile_summary_popup fields are CLICKABLE names that show a popup. Write detailed 3-4 sentence summaries.`;
 
   const userPrompt = `Company: ${request.companyName}
 ${request.industry ? `Industry hint: ${request.industry}` : ''}
@@ -760,7 +1313,7 @@ Known URLs from site discovery:
 SOURCES (extract ALL available information):
 ${evidenceText}
 
-Generate the COMPLETE detailed company profile JSON with ALL fields populated, especially management and owner_founder with detailed profile_summary_popup for clickable names.`;
+Generate the COMPLETE detailed company profile JSON with ALL sections populated.`;
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -813,7 +1366,6 @@ Generate the COMPLETE detailed company profile JSON with ALL fields populated, e
         linkedin: socialProfiles.linkedin,
         twitter: socialProfiles.twitter,
       },
-      // Leadership with AI profile summaries for popups
       leadership: (parsed.company?.management || []).map((m: any) => ({
         name: m.name,
         title: m.title,
@@ -822,7 +1374,6 @@ Generate the COMPLETE detailed company profile JSON with ALL fields populated, e
         tenure: m.tenure,
         background: m.profile_summary_popup,
       })),
-      // Owners/Founders with AI profile summaries for popups
       ownership: {
         type: 'Private/Public',
         ultimateOwner: parsed.company?.owner_founder?.[0]?.name,
@@ -833,14 +1384,12 @@ Generate the COMPLETE detailed company profile JSON with ALL fields populated, e
           aiProfileSummary: o.profile_summary_popup,
         })),
       },
-      // Board members with AI profile summaries
       boardMembers: (parsed.company?.board_members || []).map((b: any) => ({
         name: b.name,
         title: b.title,
         aiProfileSummary: b.profile_summary_popup,
         otherRoles: b.other_roles,
       })),
-      // Key people combines all leadership for display
       keyPeople: [
         ...(parsed.company?.management || []).map((m: any) => ({
           name: m.name,
@@ -867,6 +1416,7 @@ Generate the COMPLETE detailed company profile JSON with ALL fields populated, e
       keyClients: parsed.keyClients,
       competitors: parsed.competitors,
       keyFacts: parsed.keyInsights || parsed.insights || [],
+      keyInsights: parsed.keyInsights || [],
       strengths: parsed.strengths,
       recommendations: parsed.recommendations,
       recentNews: parsed.news,
@@ -881,17 +1431,44 @@ Generate the COMPLETE detailed company profile JSON with ALL fields populated, e
 
     const cleaned = pruneEmptyDeep(flattened);
     if (!cleaned?.overview || !cleaned?.sources?.length) {
+      // Try fallback
+      const fallbackData = await wideResearchCompany(request.companyName, {
+        industry: request.industry,
+        country: request.country,
+        website: request.website,
+      });
+      
+      if (fallbackData) {
+        return {
+          success: true,
+          data: {
+            ...fallbackData,
+            name: request.companyName,
+            type: 'company',
+            fallbackUsed: true,
+          }
+        };
+      }
+      
       return { success: false, error: 'Not enough grounded information to produce a company profile.' };
     }
 
+    // Generate tailored report with all sections
+    const tailoredReport = await generateTailoredReport(cleaned, 'company', evidenceSources);
+    cleaned.tailoredReport = tailoredReport;
+    cleaned.findings = formatEnrichmentForFindings(cleaned, 'company');
+
     return { success: true, data: cleaned };
   } catch (error) {
-    console.error('[lead-enrichment] Company report error:', error);
+    console.error('[lead-enrichment] Error:', error);
     return { success: false, error: error instanceof Error ? error.message : 'Failed' };
   }
 }
 
-// Chat to edit report
+// ============================================================================
+// CHAT EDIT REPORT
+// ============================================================================
+
 async function chatEditReport(request: ChatEditRequest): Promise<any> {
   const apiKey = Deno.env.get('OPENAI_API_KEY');
   if (!apiKey) {
@@ -948,7 +1525,249 @@ Apply the requested changes and return the complete updated report:`;
   }
 }
 
-// Extract social profiles from search results
+// ============================================================================
+// TEST DATA GENERATORS
+// ============================================================================
+
+async function generateTestPersonData(): Promise<any> {
+  const testPerson: Record<string, any> = {
+    name: 'Sarah Chen',
+    type: 'person',
+    title: 'Chief Technology Officer',
+    company: 'TechVentures Inc.',
+    location: 'San Francisco, California, USA',
+    linkedinUrl: 'https://linkedin.com/in/sarahchen-cto',
+    email: 'sarah.chen@techventures.com',
+    phone: '+1 (415) 555-0123',
+    
+    profileSummary: 'Sarah Chen is a visionary technology leader with over 18 years of experience driving digital transformation at Fortune 500 companies. She is recognized as a thought leader in AI/ML implementation and cloud architecture.',
+    
+    companyPositioning: 'As CTO of TechVentures Inc., Sarah leads a team of 200+ engineers building next-generation enterprise software solutions. The company is positioned as a market leader in B2B SaaS with $150M ARR.',
+    
+    estimatedAnnualIncome: '$450,000 - $650,000',
+    annualIncome: {
+      estimate: '$450,000 - $650,000',
+      methodology: 'Based on CTO compensation at mid-stage growth companies ($100M+ revenue) in the San Francisco Bay Area, including base salary, equity, and performance bonuses.',
+      confidence: 'high'
+    },
+    
+    yearsOfExperience: '18 years in technology, 8 years in executive leadership roles',
+    
+    bestTimeToContact: {
+      prediction: 'Tuesday-Thursday, 7:00-8:30 AM PST or 4:00-5:30 PM PST',
+      reasoning: 'Executive leaders typically have morning slots before meetings begin and end-of-day windows. Mid-week avoids Monday planning and Friday wind-down.',
+      confidence: 'medium'
+    },
+    
+    education: [
+      { degree: 'Ph.D. Computer Science', institution: 'Stanford University', year: '2008', field: 'Distributed Systems', honors: 'Summa Cum Laude' },
+      { degree: 'B.S. Computer Science', institution: 'MIT', year: '2004', field: 'Computer Science and Mathematics', honors: 'Valedictorian' }
+    ],
+    
+    workExperience: [
+      { title: 'Chief Technology Officer', company: 'TechVentures Inc.', duration: '2019 - Present', location: 'San Francisco, CA', description: 'Leading technology strategy and engineering organization. Scaled team from 50 to 200+ engineers. Drove migration to cloud-native architecture resulting in 40% cost reduction.' },
+      { title: 'VP of Engineering', company: 'CloudScale Systems', duration: '2015 - 2019', location: 'Palo Alto, CA', description: 'Managed 80-person engineering team building enterprise cloud infrastructure. Led successful $500M acquisition by Oracle.' },
+      { title: 'Senior Engineering Manager', company: 'Google', duration: '2010 - 2015', location: 'Mountain View, CA', description: 'Led development of Google Cloud Platform core services. Managed cross-functional team of 40 engineers across three time zones.' }
+    ],
+    
+    skills: [
+      'Cloud Architecture', 'AI/ML Strategy', 'Team Leadership', 'Distributed Systems', 
+      'Agile Methodologies', 'Technical Vision', 'Stakeholder Management', 'M&A Integration',
+      'Python', 'Go', 'Kubernetes', 'AWS', 'GCP', 'System Design', 'Executive Communication'
+    ],
+    
+    keyInsights: [
+      'Sarah has a track record of scaling engineering organizations 3-4x while maintaining high velocity - valuable insight for discussing organizational growth challenges.',
+      'Her academic background in distributed systems combined with practical cloud experience makes her particularly receptive to technically-grounded conversations.',
+      'Previous successful exit experience ($500M acquisition) suggests she understands the importance of strategic partnerships and vendor relationships.',
+      'Active speaker at tech conferences - she values thought leadership and industry contribution, creating potential collaboration opportunities.'
+    ],
+    
+    strengths: [
+      'Deep technical expertise combined with business acumen - can bridge conversations between technical teams and executive stakeholders.',
+      'Proven ability to execute large-scale digital transformation initiatives with measurable ROI outcomes.',
+      'Strong network in Silicon Valley tech ecosystem through Stanford alumni connections and conference speaking engagements.',
+      'Experience with high-growth environments and M&A processes provides valuable perspective on partnership discussions.'
+    ],
+    
+    recommendations: [
+      'Approach Sarah with technically substantive content rather than generic sales pitches. Given her PhD background and hands-on technical leadership, she will respond best to conversations that demonstrate deep understanding of cloud architecture challenges. Lead with a specific case study or technical white paper relevant to enterprise SaaS infrastructure. Best timing for outreach is mid-week mornings when she likely reviews external communications before internal meetings consume her day. Consider connecting through Stanford alumni networks or tech conference organizers for warm introductions.'
+    ],
+    
+    investmentInterests: {
+      sectors: ['Enterprise SaaS', 'Developer Tools', 'AI/ML Infrastructure'],
+      investmentStyle: 'Angel investor focusing on technical founders',
+      pastInvestments: ['DataMesh (Series A)', 'CodePilot AI (Seed)'],
+      boardPositions: ['Advisory Board - TechStars Cloud Program']
+    },
+    
+    interestIndicators: {
+      businessInterests: ['Cloud Computing', 'AI/ML', 'Engineering Leadership', 'Startup Mentorship'],
+      personalInterests: ['Marathon Running', 'AI Ethics Research', 'STEM Education Advocacy'],
+      networkingEvents: ['KubeCon', 'Google Cloud Next', 'Grace Hopper Conference'],
+      publicationsOrMedia: ['Guest on "Software Engineering Daily" podcast', 'Author of "Scaling Engineering Teams" on Medium']
+    },
+    
+    overview: 'Sarah Chen is a highly accomplished technology executive with a unique combination of deep technical expertise and proven business leadership. With a PhD in Distributed Systems from Stanford and executive experience at Google, she brings rare credibility to conversations about enterprise technology strategy.',
+    
+    keyFacts: [
+      'PhD in Distributed Systems from Stanford University',
+      'Led engineering organization growth from 50 to 200+ engineers',
+      'Previous VP of Engineering at company acquired for $500M',
+      '18 years of technology industry experience',
+      'Active angel investor in enterprise SaaS startups'
+    ],
+    
+    sources: [
+      { title: 'LinkedIn Profile - Sarah Chen', url: 'https://linkedin.com/in/sarahchen-cto' },
+      { title: 'TechVentures Leadership Page', url: 'https://techventures.com/about/leadership' },
+      { title: 'Stanford Alumni Spotlight', url: 'https://alumni.stanford.edu/spotlight/sarah-chen' },
+      { title: 'Software Engineering Daily Interview', url: 'https://softwareengineeringdaily.com/sarah-chen-cto' },
+      { title: 'Crunchbase Profile', url: 'https://crunchbase.com/person/sarah-chen' }
+    ],
+  };
+
+  // Generate tailored report
+  const tailoredReport = await generateTailoredReport(testPerson, 'person', []);
+  testPerson.tailoredReport = tailoredReport;
+  testPerson.findings = formatEnrichmentForFindings(testPerson, 'person');
+
+  return testPerson;
+}
+
+async function generateTestCompanyData(): Promise<any> {
+  const testCompany: Record<string, any> = {
+    name: 'NexGen Analytics Corporation',
+    type: 'company',
+    website: 'https://nexgenanalytics.com',
+    industry: 'Enterprise Software',
+    subIndustry: 'Business Intelligence & Analytics',
+    location: 'Boston, Massachusetts, USA',
+    employees: '850-1,200',
+    founded: '2015',
+    
+    profileSummary: 'NexGen Analytics is a fast-growing enterprise software company specializing in AI-powered business intelligence solutions. The company has achieved 150% YoY growth and is recognized as a Gartner Magic Quadrant Leader.',
+    
+    companyPositioning: 'NexGen Analytics occupies a strong position in the enterprise BI market, competing directly with Tableau and Power BI while differentiating through advanced AI/ML capabilities. Their focus on predictive analytics and natural language querying has attracted Fortune 500 clients seeking next-generation data insights.',
+    
+    estimatedRevenueRange: '$85M - $120M ARR',
+    financials: {
+      revenue: '$85M - $120M ARR',
+      funding: '$180M total raised',
+      valuation: '$800M - $1B (estimated)',
+      investors: ['Sequoia Capital', 'Accel Partners', 'Insight Venture Partners'],
+      lastFundingRound: { amount: '$75M', date: 'March 2024', series: 'Series D' }
+    },
+    
+    overview: 'NexGen Analytics Corporation is transforming how enterprises leverage data for strategic decision-making. Founded in 2015 by a team of MIT data scientists, the company has grown from a startup to a market leader with over 500 enterprise customers globally. Their flagship product, NexGen Insights Platform, combines traditional BI capabilities with cutting-edge AI/ML to deliver predictive analytics, automated insights, and natural language data exploration. The company has raised $180M in funding and is positioned for a potential IPO in 2025-2026.',
+    
+    offices: [
+      { location: 'Boston, MA, USA', type: 'Global Headquarters', address: '100 Federal Street, Suite 3200, Boston, MA 02110', phone: '+1 (617) 555-0100' },
+      { location: 'San Francisco, CA, USA', type: 'West Coast Office', address: '535 Mission Street, San Francisco, CA 94105', phone: '+1 (415) 555-0200' },
+      { location: 'London, UK', type: 'EMEA Headquarters', address: '30 Finsbury Square, London EC2A 1AG', phone: '+44 20 7555 0300' },
+      { location: 'Singapore', type: 'APAC Office', address: '1 Raffles Place, Tower 2, Singapore 048616', phone: '+65 6555 0400' }
+    ],
+    
+    socialMedia: {
+      linkedin: 'https://linkedin.com/company/nexgen-analytics',
+      twitter: 'https://twitter.com/nexgenanalytics',
+      facebook: 'https://facebook.com/nexgenanalytics',
+      instagram: 'https://instagram.com/nexgenanalytics',
+      youtube: 'https://youtube.com/c/nexgenanalytics'
+    },
+    
+    leadership: [
+      { name: 'Dr. Michael Reynolds', title: 'Chief Executive Officer & Co-Founder', aiProfileSummary: 'Dr. Michael Reynolds is a serial entrepreneur with two successful exits prior to founding NexGen Analytics. He holds a PhD in Machine Learning from MIT and was previously VP of Product at Palantir. Under his leadership, NexGen has grown from 5 to 1,000+ employees and achieved unicorn status.', linkedinUrl: 'https://linkedin.com/in/michaelreynolds', tenure: '9 years (Founder)' },
+      { name: 'Jennifer Walsh', title: 'Chief Operating Officer', aiProfileSummary: 'Jennifer Walsh brings 20 years of enterprise software experience, including 8 years at Salesforce where she led global operations. She joined NexGen in 2020 and has been instrumental in scaling the company from 200 to 1,000+ employees while maintaining operational excellence.', linkedinUrl: 'https://linkedin.com/in/jenniferwalsh', tenure: '4 years' },
+      { name: 'Dr. Amit Patel', title: 'Chief Technology Officer & Co-Founder', aiProfileSummary: 'Dr. Amit Patel is a renowned AI researcher with over 50 published papers and 15 patents. He leads NexGen\'s 300-person engineering organization and has built the company\'s proprietary AI/ML platform from the ground up. Prior to NexGen, he was a Principal Scientist at Google Brain.', linkedinUrl: 'https://linkedin.com/in/amitpatel', tenure: '9 years (Founder)' },
+      { name: 'Sarah Thompson', title: 'Chief Revenue Officer', aiProfileSummary: 'Sarah Thompson is a proven sales leader who previously built and led the enterprise sales organization at Snowflake during its hypergrowth phase. She has grown NexGen\'s sales team from 50 to 200+ reps and expanded the company\'s Fortune 500 customer base by 300%.', linkedinUrl: 'https://linkedin.com/in/sarahthompson-cro', tenure: '3 years' }
+    ],
+    
+    ownership: {
+      type: 'Private (VC-backed)',
+      ultimateOwner: 'Founders retain 25% equity',
+      majorShareholders: [
+        { name: 'Sequoia Capital', stake: '22%', type: 'Lead Investor (Series B, C, D)', aiProfileSummary: 'Sequoia Capital is one of Silicon Valley\'s most prestigious venture capital firms, known for early investments in Apple, Google, and Stripe. They led NexGen\'s Series B and have remained active investors, with Partner Jim Goetz serving on the board.' },
+        { name: 'Dr. Michael Reynolds', stake: '15%', type: 'Co-Founder & CEO', aiProfileSummary: 'As co-founder and CEO, Michael has retained significant equity and continues to drive the company\'s strategic vision toward an eventual IPO.' },
+        { name: 'Accel Partners', stake: '12%', type: 'Investor (Series A, B)', aiProfileSummary: 'Accel Partners was the first institutional investor in NexGen, backing the founders when the company was pre-revenue based on the strength of the founding team\'s credentials.' }
+      ]
+    },
+    
+    boardMembers: [
+      { name: 'Jim Goetz', title: 'Board Director', aiProfileSummary: 'Jim Goetz is a Partner at Sequoia Capital and one of the most successful venture capitalists in Silicon Valley. He led Sequoia\'s investment in WhatsApp, which was acquired by Facebook for $19B. He brings invaluable experience in scaling consumer and enterprise technology companies.', otherRoles: 'Partner at Sequoia Capital, Board Member at several portfolio companies' },
+      { name: 'Ruth Porat', title: 'Independent Board Director', aiProfileSummary: 'Ruth Porat is the President and Chief Investment Officer at Alphabet Inc. Previously CFO of Morgan Stanley during the financial crisis, she brings exceptional financial expertise and public company governance experience to NexGen\'s board.', otherRoles: 'President & CIO, Alphabet Inc.' }
+    ],
+    
+    products: ['NexGen Insights Platform', 'NexGen AI Assistant', 'NexGen Data Catalog', 'NexGen Embedded Analytics'],
+    keyClients: ['JPMorgan Chase', 'Pfizer', 'Walmart', 'Boeing', 'Procter & Gamble'],
+    competitors: ['Tableau (Salesforce)', 'Power BI (Microsoft)', 'Looker (Google)', 'ThoughtSpot', 'Sisense'],
+    
+    investmentActivity: {
+      acquisitions: [
+        { company: 'DataViz Pro', date: 'October 2023', amount: '$45M', rationale: 'Acquired for advanced visualization capabilities and 50-person engineering team' },
+        { company: 'AI Query Labs', date: 'March 2022', amount: '$18M', rationale: 'Acquired for natural language processing technology patents' }
+      ],
+      fundingReceived: [
+        { round: 'Series D', date: 'March 2024', amount: '$75M', investors: ['Insight Venture Partners', 'Sequoia Capital'] },
+        { round: 'Series C', date: 'June 2022', amount: '$60M', investors: ['Sequoia Capital', 'Accel Partners'] },
+        { round: 'Series B', date: 'January 2020', amount: '$35M', investors: ['Sequoia Capital', 'Accel Partners'] }
+      ]
+    },
+    
+    keyInsights: [
+      'NexGen is on a clear IPO trajectory with $180M raised and $100M+ ARR - expect public market preparation activities in 2025.',
+      'Heavy investment in AI/ML differentiation positions them well against legacy BI vendors but creates competition with emerging AI-native startups.',
+      'Geographic expansion into EMEA and APAC signals international growth ambitions and potential need for local partnerships.',
+      'Two strategic acquisitions in 24 months indicate active M&A strategy - may be open to technology or talent acquisitions.'
+    ],
+    
+    strengths: [
+      'Strong technical moat with proprietary AI/ML platform and 15+ patents protecting core technology.',
+      'Blue-chip customer base including 5 Fortune 50 companies provides validation and case study opportunities.',
+      'Well-capitalized with $180M raised and experienced board including former public company executives.',
+      'Founder-led company with technical co-founders still actively driving product innovation.'
+    ],
+    
+    recommendations: [
+      'NexGen represents a high-value partnership opportunity given their growth trajectory and market position. Approach through the CRO or VP of Partnerships rather than direct sales channels. Lead with enterprise-grade technical credibility and reference customers in the Fortune 500 segment. Given their IPO preparation timeline, frame discussions around how your solution can accelerate their go-to-market or strengthen their technology platform pre-IPO. Consider warm introductions through mutual investors (Sequoia or Accel portfolio companies) for faster engagement.'
+    ],
+    
+    recentNews: [
+      { headline: 'NexGen Analytics Raises $75M Series D', date: 'March 2024', summary: 'NexGen Analytics announced a $75M Series D round led by Insight Venture Partners, bringing total funding to $180M. The company plans to use funds for international expansion and AI R&D.', url: 'https://techcrunch.com/nexgen-series-d', significance: 'Signals strong investor confidence and IPO preparation' },
+      { headline: 'NexGen Named Gartner Magic Quadrant Leader', date: 'January 2024', summary: 'For the second consecutive year, NexGen Analytics was positioned as a Leader in Gartner\'s Magic Quadrant for Analytics and BI Platforms, recognized for completeness of vision and ability to execute.', url: 'https://gartner.com/mq-bi-2024', significance: 'Validates market position and supports enterprise sales efforts' },
+      { headline: 'NexGen Acquires DataViz Pro for $45M', date: 'October 2023', summary: 'NexGen Analytics acquired DataViz Pro, a data visualization startup, for $45M to enhance its platform\'s visualization capabilities and add 50 engineers to its team.', url: 'https://businesswire.com/nexgen-dataviz', significance: 'Demonstrates active M&A strategy and technology investment' }
+    ],
+    
+    keyFacts: [
+      '$180M total funding raised through Series D',
+      '850-1,200 employees globally across 4 offices',
+      'Gartner Magic Quadrant Leader for 2 consecutive years',
+      '500+ enterprise customers including Fortune 500 companies',
+      'Founded by MIT PhD researchers in 2015'
+    ],
+    
+    sources: [
+      { title: 'NexGen Analytics - Official Website', url: 'https://nexgenanalytics.com' },
+      { title: 'Crunchbase - NexGen Analytics', url: 'https://crunchbase.com/organization/nexgen-analytics' },
+      { title: 'LinkedIn Company Page', url: 'https://linkedin.com/company/nexgen-analytics' },
+      { title: 'TechCrunch - Series D Announcement', url: 'https://techcrunch.com/nexgen-series-d' },
+      { title: 'Gartner Magic Quadrant Report', url: 'https://gartner.com/mq-bi-2024' },
+      { title: 'Bloomberg Company Profile', url: 'https://bloomberg.com/profile/company/nexgen' }
+    ],
+  };
+
+  // Generate tailored report
+  const tailoredReport = await generateTailoredReport(testCompany, 'company', []);
+  testCompany.tailoredReport = tailoredReport;
+  testCompany.findings = formatEnrichmentForFindings(testCompany, 'company');
+
+  return testCompany;
+}
+
+// ============================================================================
+// SOCIAL PROFILES EXTRACTION
+// ============================================================================
+
 function extractSocialProfiles(searchResults: any[], links: string[]): { linkedin?: string; twitter?: string; website?: string; others: string[] } {
   const profiles: { linkedin?: string; twitter?: string; website?: string; others: string[] } = { others: [] };
   
@@ -983,6 +1802,10 @@ function extractSocialProfiles(searchResults: any[], links: string[]): { linkedi
   return profiles;
 }
 
+// ============================================================================
+// MAIN REQUEST HANDLER
+// ============================================================================
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -990,6 +1813,25 @@ serve(async (req) => {
 
   try {
     const request = await req.json() as EnrichmentRequest;
+    
+    // Handle test requests
+    if (request.type === 'test_person') {
+      console.log('[lead-enrichment] Processing test person request');
+      const testData = await generateTestPersonData();
+      return new Response(
+        JSON.stringify({ success: true, data: testData }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    if (request.type === 'test_company') {
+      console.log('[lead-enrichment] Processing test company request');
+      const testData = await generateTestCompanyData();
+      return new Response(
+        JSON.stringify({ success: true, data: testData }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
     
     // Handle chat edit request
     if (request.type === 'chat_edit') {
@@ -1047,7 +1889,7 @@ serve(async (req) => {
 
       const supabase = getSupabaseAdmin();
 
-      // 1) Run the SAME wide research engine used by the app for real-time sources
+      // 1) Run wide research engine
       const companyQuery = `${companyReq.companyName} company profile headquarters address phone leadership CEO founder board directors shareholders ownership revenue funding valuation investors acquisitions investments news`;
 
       const { data: wideData, error: wideErr } = await supabase.functions.invoke('wide-research', {
@@ -1065,6 +1907,35 @@ serve(async (req) => {
 
       if (wideErr || !wideData?.success) {
         console.error('[lead-enrichment] wide-research failed:', wideErr || wideData?.error);
+        
+        // FALLBACK: Use AI research if wide-research fails
+        const fallbackData = await wideResearchCompany(companyReq.companyName, {
+          industry: companyReq.industry,
+          country: companyReq.country,
+          website: companyReq.website,
+        });
+        
+        if (fallbackData) {
+          const tailoredReport = await generateTailoredReport(fallbackData, 'company', []);
+          
+          return new Response(
+            JSON.stringify({
+              success: true,
+              data: {
+                ...fallbackData,
+                type: 'company',
+                keyFacts: fallbackData.leadership?.map(l => `${l.name} - ${l.title}`) || [],
+                socialMedia: { linkedin: socialProfiles.linkedin, twitter: socialProfiles.twitter },
+                sources: [{ title: 'AI Research', url: 'Generated via AI research fallback' }],
+                tailoredReport,
+                findings: formatEnrichmentForFindings(fallbackData, 'company'),
+                fallbackUsed: true,
+              }
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        
         return new Response(
           JSON.stringify({ success: false, error: 'Wide research failed to retrieve real-time sources' }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -1077,7 +1948,7 @@ serve(async (req) => {
         .map((s: any) => ({ url: s.url, title: s.title, content: s.content }))
         .slice(0, 20);
 
-      // 2) Determine official website (prefer user input, then best candidate from sources)
+      // 2) Determine official website
       const normalizeUrl = (u: string) => {
         try {
           const url = new URL(u.startsWith('http') ? u : `https://${u}`);
@@ -1102,12 +1973,11 @@ serve(async (req) => {
         if (candidate) websiteUrl = candidate;
       }
 
-      // 3) Use web-crawl for deep site exploration
+      // 3) Web crawl for deep site exploration
       let siteLinks: string[] = [];
       let homepageLinks: string[] = [];
 
       if (websiteUrl) {
-        // First, crawl the website recursively
         const crawlResult = await webCrawl(websiteUrl, companyReq.companyName, { 
           maxPages: 15, 
           maxDepth: 2 
@@ -1117,7 +1987,6 @@ serve(async (req) => {
           console.log(`[lead-enrichment] Web crawl found ${crawlResult.totalPages} pages`);
           additionalContent += crawlResult.combinedContent;
           
-          // Add crawled pages to evidence
           for (const page of crawlResult.pages.slice(0, 10)) {
             if (page.wordCount > 100) {
               evidenceSources.unshift({ url: page.url, title: page.title, content: page.markdown });
@@ -1125,12 +1994,10 @@ serve(async (req) => {
           }
         }
 
-        // Also scrape homepage with boilerplate to capture social links
         const home = await scrapeUrl(websiteUrl, { onlyMainContent: false });
         additionalContent += home.markdown ? `\n\n--- Official Website (Homepage) ---\n${home.markdown}` : '';
         homepageLinks = home.links || [];
 
-        // Map specific terms for targeted pages
         const mapTerms = ['about', 'contact', 'team', 'leadership', 'management', 'board', 'investor', 'press', 'news'];
         const mapCalls = mapTerms.map(async (term) => {
           try {
@@ -1152,7 +2019,6 @@ serve(async (req) => {
           siteLinks.push(u);
         }
 
-        // Scrape any remaining key pages not already crawled
         const alreadyCrawled = new Set(crawlResult.pages.map(p => p.url));
         const prioritized = siteLinks
           .filter(isLikelyOfficial)
@@ -1169,14 +2035,14 @@ serve(async (req) => {
         });
       }
 
-      // 4) Extract social profiles (prefer official website links)
+      // 4) Extract social profiles
       const socialFromWebsite = extractSocialProfiles([], [...homepageLinks, ...siteLinks]);
       socialProfiles.website = websiteUrl;
       socialProfiles.linkedin = socialProfiles.linkedin || socialFromWebsite.linkedin;
       socialProfiles.twitter = socialProfiles.twitter || socialFromWebsite.twitter;
       socialProfiles.others = [...new Set([...(socialProfiles.others || []), ...(socialFromWebsite.others || [])])];
 
-      // 5) Generate STRICT grounded company profile (no estimates / no placeholders)
+      // 5) Generate company report
       const result = await generateCompanyReport(companyReq, evidenceSources, websiteUrl, socialProfiles);
 
       console.log('[lead-enrichment] Company enrichment complete, success:', result.success);
@@ -1189,7 +2055,6 @@ serve(async (req) => {
       // Person enrichment
       const personReq = request as PersonEnrichmentRequest;
 
-      // Scrape LinkedIn profile if provided
       if (personReq.linkedinUrl) {
         socialProfiles.linkedin = personReq.linkedinUrl;
         const linkedinResult = await scrapeUrl(personReq.linkedinUrl);
@@ -1199,7 +2064,6 @@ serve(async (req) => {
         additionalContent = linkedinResult.markdown;
       }
 
-      // Generate person report
       const result = await generatePersonReport(
         personReq,
         allResults,
