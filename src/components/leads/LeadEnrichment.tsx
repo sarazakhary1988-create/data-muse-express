@@ -44,6 +44,54 @@ interface CompanySearchForm {
   website: string;
 }
 
+// Research finding format from the backend
+interface ResearchFinding {
+  id: string;
+  category: string;
+  claim: string;
+  evidence: string;
+  source: string;
+  sourceUrl: string;
+  confidence: number;
+  verificationStatus: 'verified' | 'unverified' | 'contradicted';
+}
+
+// Tailored report with all 11 sections
+interface TailoredReport {
+  profileSummary: string;
+  companyPositioning: string;
+  estimatedRevenue?: string;
+  estimatedAnnualIncome?: string;
+  annualIncome?: {
+    estimate: string;
+    methodology: string;
+    confidence: 'high' | 'medium' | 'low';
+  };
+  yearsOfExperience?: string;
+  education?: Array<{
+    degree: string;
+    institution: string;
+    year: string;
+    field?: string;
+    honors?: string;
+  }>;
+  skills?: string[];
+  experience?: Array<{
+    title: string;
+    company: string;
+    duration: string;
+    location?: string;
+    description?: string;
+  }>;
+  keyInsights: string[];
+  strengths: string[];
+  recommendations: string[];
+  sources: Array<{ title: string; url: string; confidence?: number }>;
+  enrichmentTimestamp: string;
+  reportType: 'person' | 'company';
+  confidenceScore: number;
+}
+
 interface EnrichedResult {
   type: 'person' | 'company';
   name: string;
@@ -98,6 +146,11 @@ interface EnrichedResult {
   industry?: string;
   subIndustry?: string;
   website?: string;
+  
+  // New fields from Phase 2
+  tailoredReport?: TailoredReport;
+  findings?: ResearchFinding[];
+  fallbackUsed?: boolean;
   employees?: string;
   founded?: string;
   estimatedRevenueRange?: string;
@@ -462,6 +515,124 @@ export const LeadEnrichment = () => {
     });
     setResults([]);
     setChatMessages([]);
+  };
+
+  // Test person enrichment with sample data
+  const handleTestPersonEnrichment = async () => {
+    setSearchType('person');
+    setIsSearching(true);
+    setSearchProgress(5);
+    setProgressMessage('Loading test person data...');
+    setResults([]);
+    setChatMessages([]);
+    setShowChat(false);
+
+    const progressInterval = simulateProgress();
+
+    try {
+      const { data, error } = await supabase.functions.invoke('lead-enrichment', {
+        body: {
+          type: 'test_person',
+        },
+      });
+
+      clearInterval(progressInterval);
+
+      if (error || !data?.success) {
+        setSearchProgress(0);
+        toast({ 
+          title: "Test Failed", 
+          description: error?.message || data?.error || "Could not load test data", 
+          variant: "destructive" 
+        });
+        return;
+      }
+
+      const enrichedResult: EnrichedResult = {
+        ...data.data,
+        enrichedAt: new Date(),
+      };
+
+      setResults([enrichedResult]);
+      setSearchProgress(100);
+      setProgressMessage('Test data loaded!');
+      
+      toast({ 
+        title: "Test Person Enrichment Complete", 
+        description: `Sample profile loaded with ${data.data.sources?.length || 0} sources and ${data.data.findings?.length || 0} findings` 
+      });
+
+    } catch (error) {
+      clearInterval(progressInterval);
+      console.error('Test person enrichment failed:', error);
+      setSearchProgress(0);
+      toast({ 
+        title: "Test Failed", 
+        description: error instanceof Error ? error.message : "Could not load test data", 
+        variant: "destructive" 
+      });
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // Test company enrichment with sample data
+  const handleTestCompanyEnrichment = async () => {
+    setSearchType('company');
+    setIsSearching(true);
+    setSearchProgress(5);
+    setProgressMessage('Loading test company data...');
+    setResults([]);
+    setChatMessages([]);
+    setShowChat(false);
+
+    const progressInterval = simulateProgress();
+
+    try {
+      const { data, error } = await supabase.functions.invoke('lead-enrichment', {
+        body: {
+          type: 'test_company',
+        },
+      });
+
+      clearInterval(progressInterval);
+
+      if (error || !data?.success) {
+        setSearchProgress(0);
+        toast({ 
+          title: "Test Failed", 
+          description: error?.message || data?.error || "Could not load test data", 
+          variant: "destructive" 
+        });
+        return;
+      }
+
+      const enrichedResult: EnrichedResult = {
+        ...data.data,
+        enrichedAt: new Date(),
+      };
+
+      setResults([enrichedResult]);
+      setSearchProgress(100);
+      setProgressMessage('Test data loaded!');
+      
+      toast({ 
+        title: "Test Company Enrichment Complete", 
+        description: `Sample company loaded with ${data.data.sources?.length || 0} sources and ${data.data.findings?.length || 0} findings` 
+      });
+
+    } catch (error) {
+      clearInterval(progressInterval);
+      console.error('Test company enrichment failed:', error);
+      setSearchProgress(0);
+      toast({ 
+        title: "Test Failed", 
+        description: error instanceof Error ? error.message : "Could not load test data", 
+        variant: "destructive" 
+      });
+    } finally {
+      setIsSearching(false);
+    }
   };
 
   const exportResult = async (result: EnrichedResult, format: 'json' | 'markdown' | 'html' | 'pdf' = 'json') => {
@@ -1656,10 +1827,14 @@ export const LeadEnrichment = () => {
                 </div>
               )}
 
-              <div className="flex gap-3">
+              <div className="flex gap-3 flex-wrap">
                 <Button onClick={handlePersonSearch} disabled={isSearching} className="gap-2">
                   {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
                   Search & Enrich
+                </Button>
+                <Button variant="secondary" onClick={handleTestPersonEnrichment} disabled={isSearching} className="gap-2">
+                  <Sparkles className="w-4 h-4" />
+                  Test Person Enrichment
                 </Button>
                 <Button variant="outline" onClick={clearPersonForm} disabled={isSearching}>Clear</Button>
               </div>
@@ -1729,10 +1904,14 @@ export const LeadEnrichment = () => {
                 </div>
               )}
 
-              <div className="flex gap-3">
+              <div className="flex gap-3 flex-wrap">
                 <Button onClick={handleCompanySearch} disabled={isSearching} className="gap-2">
                   {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
                   Search & Enrich
+                </Button>
+                <Button variant="secondary" onClick={handleTestCompanyEnrichment} disabled={isSearching} className="gap-2">
+                  <Sparkles className="w-4 h-4" />
+                  Test Company Enrichment
                 </Button>
                 <Button variant="outline" onClick={clearCompanyForm} disabled={isSearching}>Clear</Button>
               </div>
