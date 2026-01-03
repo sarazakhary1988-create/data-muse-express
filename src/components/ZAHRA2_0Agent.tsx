@@ -27,6 +27,8 @@ type ResearchType = 'market' | 'competitor' | 'leads' | 'scraping' | 'hypothesis
 type SourceType = 'academic' | 'news' | 'social' | 'government' | 'corporate';
 type AnalysisDepth = 'quick' | 'standard' | 'deep';
 type WorkflowStep = 1 | 2 | 3 | 4 | 5 | 6;
+type AvatarPersona = 'researcher' | 'analyst' | 'expert' | 'specialist';
+type AvatarExpression = 'default' | 'active' | 'complete';
 
 interface ResearchWorkflowState {
   currentStep: WorkflowStep;
@@ -46,18 +48,62 @@ interface ZAHRA2_0AgentProps {
 }
 
 // ============================================
-// RESEARCH PERSONALITY STATES
+// AVATAR PERSONA CONFIGURATION
 // ============================================
 
-const RESEARCH_PERSONALITIES = {
-  analytical: { color: '#3B82F6', name: 'Analytical', icon: Brain },
-  curious: { color: '#00D9FF', name: 'Curious', icon: Search },
-  confident: { color: '#26C281', name: 'Confident', icon: Target },
-  thoughtful: { color: '#9C27B0', name: 'Thoughtful', icon: Lightbulb },
-  efficient: { color: '#FFD700', name: 'Efficient', icon: Zap },
+const AVATAR_PERSONAS = {
+  researcher: {
+    name: 'Dr. ZAHRA',
+    role: 'Professional Researcher',
+    description: 'Expert in comprehensive research methodology',
+    primaryColor: '#9333EA', // purple-600
+    secondaryColor: '#7C3AED', // primary purple
+    accentColor: '#C084FC', // purple-400
+  },
+  analyst: {
+    name: 'ZAHRA Analytics',
+    role: 'Data Analyst',
+    description: 'Precision-focused data specialist',
+    primaryColor: '#3B82F6', // blue-500
+    secondaryColor: '#06B6D4', // cyan-500
+    accentColor: '#67E8F9', // cyan-300
+  },
+  expert: {
+    name: 'ZAHRA Strategist',
+    role: 'Market Expert',
+    description: 'Strategic market intelligence',
+    primaryColor: '#8B5CF6', // violet-500
+    secondaryColor: '#EC4899', // pink-500
+    accentColor: '#F472B6', // pink-400
+  },
+  specialist: {
+    name: 'ZAHRA Scout',
+    role: 'Lead Specialist',
+    description: 'Methodical lead intelligence',
+    primaryColor: '#10B981', // emerald-500
+    secondaryColor: '#14B8A6', // teal-500
+    accentColor: '#5EEAD4', // teal-300
+  },
 } as const;
 
-type ResearchPersonality = keyof typeof RESEARCH_PERSONALITIES;
+// Map research types to appropriate avatar personas
+const RESEARCH_TYPE_AVATAR_MAP: Record<ResearchType, AvatarPersona> = {
+  market: 'expert',
+  competitor: 'researcher',
+  leads: 'specialist',
+  scraping: 'analyst',
+  hypothesis: 'analyst',
+};
+
+// Map workflow steps to default avatar personas
+const STEP_AVATAR_MAP: Record<WorkflowStep, AvatarPersona> = {
+  1: 'researcher',
+  2: 'researcher',
+  3: 'analyst',
+  4: 'analyst',
+  5: 'researcher',
+  6: 'expert',
+};
 
 // ============================================
 // STEP CONFIGURATION
@@ -198,43 +244,306 @@ const StepIndicator: React.FC<StepIndicatorProps> = ({ currentStep, totalSteps }
 };
 
 // ============================================
-// ZAHRA AVATAR COMPONENT
+// ILLUSTRATED AVATAR COMPONENT
 // ============================================
 
-interface ZahraAvatarProps {
-  personality: ResearchPersonality;
+interface ZahraIllustratedAvatarProps {
+  persona: AvatarPersona;
+  expression?: AvatarExpression;
   size?: 'sm' | 'md' | 'lg';
+  isHovered?: boolean;
 }
 
-const ZahraAvatar: React.FC<ZahraAvatarProps> = ({ personality, size = 'md' }) => {
-  const config = RESEARCH_PERSONALITIES[personality];
+const ZahraIllustratedAvatar: React.FC<ZahraIllustratedAvatarProps> = ({ 
+  persona, 
+  expression = 'default',
+  size = 'md',
+  isHovered = false,
+}) => {
+  const config = AVATAR_PERSONAS[persona];
+  const [localHover, setLocalHover] = useState(false);
+  const isActive = isHovered || localHover;
+  
   const sizes = {
-    sm: 'w-12 h-12 text-lg',
-    md: 'w-16 h-16 text-2xl',
-    lg: 'w-24 h-24 text-4xl',
+    sm: { container: 48, face: 32, badge: 16 },
+    md: { container: 64, face: 44, badge: 20 },
+    lg: { container: 96, face: 64, badge: 28 },
+  };
+  
+  const s = sizes[size];
+
+  // Expression-based eye states
+  const eyeStates = {
+    default: { scaleY: 1, translateY: 0 },
+    active: { scaleY: 0.8, translateY: 1 },
+    complete: { scaleY: 1.1, translateY: -0.5 },
+  };
+
+  const eyeState = eyeStates[expression];
+
+  // Persona-specific features
+  const renderPersonaFeatures = () => {
+    switch (persona) {
+      case 'researcher':
+        return (
+          <>
+            {/* Glasses */}
+            <motion.ellipse
+              cx="38"
+              cy="42"
+              rx="8"
+              ry="7"
+              fill="none"
+              stroke={config.accentColor}
+              strokeWidth="1.5"
+              opacity={0.9}
+            />
+            <motion.ellipse
+              cx="62"
+              cy="42"
+              rx="8"
+              ry="7"
+              fill="none"
+              stroke={config.accentColor}
+              strokeWidth="1.5"
+              opacity={0.9}
+            />
+            <motion.line x1="46" y1="42" x2="54" y2="42" stroke={config.accentColor} strokeWidth="1.5" opacity={0.9} />
+            {/* Book icon in corner */}
+            <motion.g transform="translate(70, 65)" animate={isActive ? { rotate: 5 } : { rotate: 0 }}>
+              <rect x="0" y="0" width="10" height="12" rx="1" fill={config.primaryColor} opacity={0.8} />
+              <line x1="5" y1="2" x2="5" y2="10" stroke="white" strokeWidth="0.5" opacity={0.6} />
+            </motion.g>
+          </>
+        );
+      case 'analyst':
+        return (
+          <>
+            {/* Headset */}
+            <motion.path
+              d="M28 38 Q28 25 50 25 Q72 25 72 38"
+              fill="none"
+              stroke={config.accentColor}
+              strokeWidth="2.5"
+              strokeLinecap="round"
+            />
+            <motion.circle cx="28" cy="42" r="5" fill={config.secondaryColor} opacity={0.9} />
+            <motion.circle cx="72" cy="42" r="5" fill={config.secondaryColor} opacity={0.9} />
+            {/* Data chart icon */}
+            <motion.g transform="translate(68, 64)" animate={isActive ? { scaleY: [1, 1.2, 1] } : {}}>
+              <rect x="0" y="6" width="3" height="6" fill={config.primaryColor} opacity={0.8} />
+              <rect x="4" y="3" width="3" height="9" fill={config.primaryColor} opacity={0.9} />
+              <rect x="8" y="0" width="3" height="12" fill={config.primaryColor} />
+            </motion.g>
+          </>
+        );
+      case 'expert':
+        return (
+          <>
+            {/* Confident expression lines */}
+            <motion.path
+              d="M32 36 L36 34"
+              stroke={config.accentColor}
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              opacity={0.6}
+            />
+            <motion.path
+              d="M64 34 L68 36"
+              stroke={config.accentColor}
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              opacity={0.6}
+            />
+            {/* Trending arrow */}
+            <motion.g transform="translate(66, 62)" animate={isActive ? { y: -2 } : { y: 0 }}>
+              <motion.path
+                d="M0 12 L6 6 L12 8 L18 0"
+                fill="none"
+                stroke={config.primaryColor}
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
+              <motion.polygon points="14,0 18,0 18,4" fill={config.primaryColor} />
+            </motion.g>
+          </>
+        );
+      case 'specialist':
+        return (
+          <>
+            {/* Focused eyebrows */}
+            <motion.line
+              x1="34" y1="32" x2="42" y2="34"
+              stroke={config.accentColor}
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+            <motion.line
+              x1="58" y1="34" x2="66" y2="32"
+              stroke={config.accentColor}
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+            {/* Target crosshair */}
+            <motion.g 
+              transform="translate(66, 62)" 
+              animate={isActive ? { scale: 1.1, rotate: 45 } : { scale: 1, rotate: 0 }}
+            >
+              <circle cx="8" cy="8" r="7" fill="none" stroke={config.primaryColor} strokeWidth="1.5" />
+              <circle cx="8" cy="8" r="3" fill={config.primaryColor} opacity={0.6} />
+              <line x1="8" y1="0" x2="8" y2="4" stroke={config.primaryColor} strokeWidth="1.5" />
+              <line x1="8" y1="12" x2="8" y2="16" stroke={config.primaryColor} strokeWidth="1.5" />
+              <line x1="0" y1="8" x2="4" y2="8" stroke={config.primaryColor} strokeWidth="1.5" />
+              <line x1="12" y1="8" x2="16" y2="8" stroke={config.primaryColor} strokeWidth="1.5" />
+            </motion.g>
+          </>
+        );
+    }
   };
 
   return (
     <motion.div
-      className={cn(
-        "relative rounded-full flex items-center justify-center font-bold text-white shadow-xl",
-        sizes[size]
-      )}
-      style={{
-        background: `linear-gradient(135deg, ${config.color}, ${config.color}dd)`,
-        boxShadow: `0 0 30px ${config.color}40`,
-      }}
-      animate={{ scale: [1, 1.02, 1] }}
-      transition={{ duration: 2, repeat: Infinity }}
+      className="relative cursor-pointer"
+      style={{ width: s.container, height: s.container }}
+      onMouseEnter={() => setLocalHover(true)}
+      onMouseLeave={() => setLocalHover(false)}
+      animate={isActive ? { scale: 1.05 } : { scale: 1 }}
+      transition={{ duration: 0.2 }}
     >
-      <span className="select-none drop-shadow-lg">Z</span>
+      {/* Glow effect */}
       <motion.div
-        className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-background border-2 flex items-center justify-center"
-        style={{ borderColor: config.color, color: config.color }}
-        initial={{ scale: 0 }}
-        animate={{ scale: 1 }}
+        className="absolute inset-0 rounded-full blur-xl"
+        style={{ background: config.primaryColor }}
+        animate={{ 
+          opacity: isActive ? 0.4 : 0.2,
+          scale: isActive ? 1.2 : 1,
+        }}
+        transition={{ duration: 0.3 }}
+      />
+      
+      {/* Main avatar SVG */}
+      <svg
+        viewBox="0 0 100 100"
+        className="relative z-10"
+        style={{ width: s.container, height: s.container }}
       >
-        <config.icon className="w-3 h-3" />
+        <defs>
+          <linearGradient id={`grad-${persona}`} x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor={config.primaryColor} />
+            <stop offset="100%" stopColor={config.secondaryColor} />
+          </linearGradient>
+          <radialGradient id={`shine-${persona}`} cx="30%" cy="30%" r="60%">
+            <stop offset="0%" stopColor="white" stopOpacity="0.3" />
+            <stop offset="100%" stopColor="white" stopOpacity="0" />
+          </radialGradient>
+        </defs>
+        
+        {/* Background circle */}
+        <motion.circle
+          cx="50"
+          cy="50"
+          r="46"
+          fill={`url(#grad-${persona})`}
+          animate={{ 
+            r: isActive ? 48 : 46,
+          }}
+          transition={{ duration: 0.3 }}
+        />
+        
+        {/* Shine overlay */}
+        <circle cx="50" cy="50" r="46" fill={`url(#shine-${persona})`} />
+        
+        {/* Face base */}
+        <ellipse cx="50" cy="52" rx="28" ry="30" fill="#FDF4E3" opacity={0.95} />
+        
+        {/* Eyes */}
+        <motion.g
+          animate={{ 
+            scaleY: eyeState.scaleY,
+            translateY: eyeState.translateY,
+          }}
+          style={{ originY: '42px' }}
+        >
+          <motion.ellipse
+            cx="40"
+            cy="44"
+            rx="4"
+            ry="5"
+            fill="#2D2D2D"
+            animate={isActive ? { scaleX: 1.1 } : { scaleX: 1 }}
+          />
+          <motion.ellipse
+            cx="60"
+            cy="44"
+            rx="4"
+            ry="5"
+            fill="#2D2D2D"
+            animate={isActive ? { scaleX: 1.1 } : { scaleX: 1 }}
+          />
+          {/* Eye highlights */}
+          <circle cx="42" cy="42" r="1.5" fill="white" opacity={0.9} />
+          <circle cx="62" cy="42" r="1.5" fill="white" opacity={0.9} />
+        </motion.g>
+        
+        {/* Smile */}
+        <motion.path
+          d={expression === 'complete' 
+            ? "M38 58 Q50 68 62 58" 
+            : expression === 'active'
+            ? "M40 60 Q50 64 60 60"
+            : "M42 58 Q50 62 58 58"
+          }
+          fill="none"
+          stroke="#2D2D2D"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+        
+        {/* Blush */}
+        <motion.ellipse
+          cx="32"
+          cy="54"
+          rx="5"
+          ry="3"
+          fill={config.accentColor}
+          opacity={isActive ? 0.4 : 0.2}
+        />
+        <motion.ellipse
+          cx="68"
+          cy="54"
+          rx="5"
+          ry="3"
+          fill={config.accentColor}
+          opacity={isActive ? 0.4 : 0.2}
+        />
+        
+        {/* Hair */}
+        <motion.path
+          d="M26 40 Q26 22 50 20 Q74 22 74 40 Q70 32 50 30 Q30 32 26 40"
+          fill={persona === 'analyst' ? '#4A5568' : persona === 'expert' ? '#744210' : persona === 'specialist' ? '#1A365D' : '#2D3748'}
+        />
+        
+        {/* Persona-specific features */}
+        {renderPersonaFeatures()}
+      </svg>
+      
+      {/* Status indicator badge */}
+      <motion.div
+        className="absolute -bottom-1 -right-1 rounded-full flex items-center justify-center shadow-lg"
+        style={{ 
+          width: s.badge, 
+          height: s.badge,
+          background: `linear-gradient(135deg, ${config.primaryColor}, ${config.secondaryColor})`,
+        }}
+        animate={isActive ? { scale: 1.2 } : { scale: 1 }}
+        transition={{ duration: 0.2 }}
+      >
+        <motion.div
+          animate={{ rotate: isActive ? 360 : 0 }}
+          transition={{ duration: 2, repeat: isActive ? Infinity : 0, ease: 'linear' }}
+        >
+          <Sparkles className="text-white" style={{ width: s.badge * 0.6, height: s.badge * 0.6 }} />
+        </motion.div>
       </motion.div>
     </motion.div>
   );
@@ -246,17 +555,29 @@ const ZahraAvatar: React.FC<ZahraAvatarProps> = ({ personality, size = 'md' }) =
 
 interface ZahraDialogPanelProps {
   step: WorkflowStep;
-  personality: ResearchPersonality;
+  persona: AvatarPersona;
+  expression: AvatarExpression;
   topic?: string;
 }
 
-const ZahraDialogPanel: React.FC<ZahraDialogPanelProps> = ({ step, personality, topic }) => {
+const ZahraDialogPanel: React.FC<ZahraDialogPanelProps> = ({ step, persona, expression, topic }) => {
   const dialog = ZAHRA_DIALOGS[step];
-  const config = RESEARCH_PERSONALITIES[personality];
+  const config = AVATAR_PERSONAS[persona];
+  const [isHovered, setIsHovered] = useState(false);
 
   return (
     <div className="flex items-start gap-4">
-      <ZahraAvatar personality={personality} size="md" />
+      <div 
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        <ZahraIllustratedAvatar 
+          persona={persona} 
+          expression={expression}
+          size="md" 
+          isHovered={isHovered}
+        />
+      </div>
       <div className="flex-1 space-y-2">
         <motion.div
           key={step}
@@ -264,10 +585,17 @@ const ZahraDialogPanel: React.FC<ZahraDialogPanelProps> = ({ step, personality, 
           animate={{ opacity: 1, y: 0 }}
           className="p-4 rounded-2xl rounded-tl-sm bg-gradient-to-br from-muted/50 to-muted/30 border border-border/50"
         >
+          {/* Persona info */}
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs font-semibold" style={{ color: config.primaryColor }}>
+              {config.name}
+            </span>
+            <span className="text-xs text-muted-foreground">• {config.role}</span>
+          </div>
           <p className="text-sm text-muted-foreground mb-2">
             {step === 2 && topic ? `Researching "${topic}"` : dialog.greeting}
           </p>
-          <p className="font-medium" style={{ color: config.color }}>
+          <p className="font-medium" style={{ color: config.primaryColor }}>
             {dialog.question}
           </p>
         </motion.div>
@@ -367,10 +695,15 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
     selectedTemplate: null,
   });
 
-  const [personality, setPersonality] = useState<ResearchPersonality>('curious');
+  const [avatarExpression, setAvatarExpression] = useState<AvatarExpression>('default');
   const [isListening, setIsListening] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState('');
   const recognitionRef = useRef<any>(null);
+
+  // Determine current persona based on research type selection or workflow step
+  const currentPersona: AvatarPersona = state.researchType 
+    ? RESEARCH_TYPE_AVATAR_MAP[state.researchType]
+    : STEP_AVATAR_MAP[state.currentStep];
 
   // Voice recognition setup
   const startListening = useCallback(() => {
@@ -392,6 +725,7 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
     recognition.onstart = () => {
       setIsListening(true);
       setInterimTranscript('');
+      setAvatarExpression('active');
     };
 
     recognition.onresult = (event: any) => {
@@ -419,6 +753,7 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
       console.error('Speech recognition error:', event.error);
       setIsListening(false);
       setInterimTranscript('');
+      setAvatarExpression('default');
       if (event.error === 'no-speech') {
         toast({
           title: "No speech detected",
@@ -430,6 +765,7 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
     recognition.onend = () => {
       setIsListening(false);
       setInterimTranscript('');
+      setAvatarExpression('default');
     };
 
     recognitionRef.current = recognition;
@@ -443,6 +779,7 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
     }
     setIsListening(false);
     setInterimTranscript('');
+    setAvatarExpression('default');
   }, []);
 
   const toggleVoiceInput = useCallback(() => {
@@ -453,18 +790,16 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
     }
   }, [isListening, startListening, stopListening]);
 
-  // Update personality based on step
+  // Update expression based on user activity
   useEffect(() => {
-    const personalityMap: Record<WorkflowStep, ResearchPersonality> = {
-      1: 'curious',
-      2: 'analytical',
-      3: 'thoughtful',
-      4: 'efficient',
-      5: 'analytical',
-      6: 'confident',
-    };
-    setPersonality(personalityMap[state.currentStep]);
-  }, [state.currentStep]);
+    if (state.currentStep === 6) {
+      setAvatarExpression('complete');
+    } else if (state.topic.length > 0 || state.researchType || state.sourcePreferences.length > 0) {
+      setAvatarExpression('active');
+    } else {
+      setAvatarExpression('default');
+    }
+  }, [state.currentStep, state.topic, state.researchType, state.sourcePreferences]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -849,7 +1184,8 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
           {/* ZAHRA Dialog */}
           <ZahraDialogPanel 
             step={state.currentStep} 
-            personality={personality}
+            persona={currentPersona}
+            expression={avatarExpression}
             topic={state.topic}
           />
 
