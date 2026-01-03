@@ -85,7 +85,12 @@ export const AgentOnboarding = ({ onComplete }: AgentOnboardingProps) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-background/95 backdrop-blur-md z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-transparent backdrop-blur-sm">
+      {/* No white/solid overlay — keep the app background visible */}
+      <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(135deg,_hsl(var(--primary)/0.10),_transparent_45%,_hsl(var(--accent)/0.10))]" />
+      <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_top,_hsl(var(--primary)/0.22),_transparent_55%)]" />
+      <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_bottom,_hsl(var(--accent)/0.18),_transparent_60%)]" />
+
       <AnimatePresence mode="wait">
         {step === 0 ? (
           <motion.div
