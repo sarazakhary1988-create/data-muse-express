@@ -4,7 +4,8 @@ import {
   Mic, MicOff, Volume2, VolumeX, Send, Sparkles, 
   Flame, Trophy, Star, Award, ChevronRight, Copy, 
   Share2, Bookmark, MessageCircle, Zap, Brain,
-  HelpCircle, AlertCircle, Heart, Smile, Target
+  HelpCircle, AlertCircle, Heart, Smile, Target,
+  X, Search, Trash2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -12,10 +13,57 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import { useVoice } from '@/hooks/useVoice';
 import { useAgentStore } from '@/hooks/useAgentStore';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { useResearchEngine } from '@/hooks/useResearchEngine';
+import { useResearchStore } from '@/store/researchStore';
+import { toast } from '@/hooks/use-toast';
+
+// ============================================
+// CONVERSATION MEMORY STORAGE
+// ============================================
+
+const ZAHRA_MEMORY_KEY = 'zahra-conversation-memory';
+
+interface StoredConversation {
+  messages: ZahraMessage[];
+  lastUpdated: string;
+}
+
+const saveConversation = (messages: ZahraMessage[]) => {
+  try {
+    const data: StoredConversation = {
+      messages: messages.slice(-50), // Keep last 50 messages
+      lastUpdated: new Date().toISOString(),
+    };
+    localStorage.setItem(ZAHRA_MEMORY_KEY, JSON.stringify(data));
+  } catch (e) {
+    console.warn('Failed to save conversation:', e);
+  }
+};
+
+const loadConversation = (): ZahraMessage[] => {
+  try {
+    const stored = localStorage.getItem(ZAHRA_MEMORY_KEY);
+    if (stored) {
+      const data: StoredConversation = JSON.parse(stored);
+      return data.messages.map(m => ({
+        ...m,
+        timestamp: new Date(m.timestamp),
+      }));
+    }
+  } catch (e) {
+    console.warn('Failed to load conversation:', e);
+  }
+  return [];
+};
+
+const clearConversation = () => {
+  localStorage.removeItem(ZAHRA_MEMORY_KEY);
+};
 
 // ============================================
 // TYPES & CONSTANTS
@@ -659,13 +707,17 @@ const ZahraVoiceControls: React.FC<ZahraVoiceControlsProps> = ({
 interface ZAHRA2_0AgentProps {
   onMessage?: (message: ZahraMessage) => void;
   onPersonalityChange?: (personality: ZahraPersonality) => void;
+  onResearchTriggered?: (query: string) => void;
   className?: string;
+  compact?: boolean;
 }
 
 export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
   onMessage,
   onPersonalityChange,
+  onResearchTriggered,
   className,
+  compact = false,
 }) => {
   const { t, isRTL } = useLanguage();
   const { 
@@ -680,22 +732,56 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
     toggleVoice,
   } = useVoice();
   const { addQuery, addXP } = useAgentStore();
+  
+  // Research engine integration
+  const { startResearch } = useResearchEngine();
+  const { isSearching, currentTask, reports } = useResearchStore();
 
-  // State
+  // State - load from memory on init
   const [personality, setPersonality] = useState<ZahraPersonality>('curious');
-  const [messages, setMessages] = useState<ZahraMessage[]>([]);
+  const [messages, setMessages] = useState<ZahraMessage[]>(() => loadConversation());
   const [inputValue, setInputValue] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorCount, setErrorCount] = useState(0);
   const [conversationCount, setConversationCount] = useState(0);
+  const [isResearching, setIsResearching] = useState(false);
 
   const config = PERSONALITY_CONFIGS[personality];
+
+  // Save conversation to memory whenever messages change
+  useEffect(() => {
+    if (messages.length > 0) {
+      saveConversation(messages);
+    }
+  }, [messages]);
 
   // Handle personality change
   const updatePersonality = useCallback((newPersonality: ZahraPersonality) => {
     setPersonality(newPersonality);
     onPersonalityChange?.(newPersonality);
   }, [onPersonalityChange]);
+
+  // Clear conversation history
+  const handleClearHistory = useCallback(() => {
+    clearConversation();
+    setMessages([]);
+    toast({
+      title: "Conversation cleared",
+      description: "ZAHRA's memory has been reset.",
+    });
+  }, []);
+
+  // Detect if user wants research
+  const detectResearchIntent = (content: string): boolean => {
+    const researchKeywords = [
+      'research', 'search', 'find', 'look up', 'investigate', 
+      'analyze', 'discover', 'explore', 'learn about', 'tell me about',
+      'what is', 'who is', 'how does', 'why does', 'when did',
+      'compare', 'explain', 'summarize'
+    ];
+    const lowerContent = content.toLowerCase();
+    return researchKeywords.some(keyword => lowerContent.includes(keyword));
+  };
 
   // Process user input and generate response
   const processMessage = useCallback(async (content: string) => {
@@ -713,12 +799,75 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
     setMessages(prev => [...prev, userMessage]);
     setInputValue('');
 
-    // Detect sentiment and update personality
+    // Detect sentiment and intent
     const sentiment = detectSentiment(content);
     const isNewTopic = messages.length === 0 || content.length > 50;
+    const wantsResearch = detectResearchIntent(content);
     
-    // Simulate processing with random confidence
-    const confidence = Math.random() * 0.4 + 0.5; // 0.5 - 0.9
+    // If user wants research, trigger the research engine
+    if (wantsResearch) {
+      updatePersonality('curious');
+      setIsResearching(true);
+      
+      // Add ZAHRA's acknowledgment message
+      const ackMessage: ZahraMessage = {
+        id: (Date.now() + 1).toString(),
+        role: 'zahra',
+        content: `🔍 Great question! I'm initiating a deep research on "${content.slice(0, 60)}${content.length > 60 ? '...' : ''}". This will search across multiple sources to find verified information for you.`,
+        timestamp: new Date(),
+        personality: 'curious',
+        confidence: 0.9,
+      };
+      setMessages(prev => [...prev, ackMessage]);
+      
+      try {
+        // Trigger actual research
+        onResearchTriggered?.(content);
+        await startResearch(content);
+        
+        // Get the latest report
+        const latestReport = reports[reports.length - 1];
+        
+        updatePersonality('confident');
+        
+        const successMessage: ZahraMessage = {
+          id: (Date.now() + 2).toString(),
+          role: 'zahra',
+          content: `✅ Research complete! I found comprehensive information about your query. ${latestReport ? `The report "${latestReport.title}" is now ready in the Results view.` : 'Check the Results view for the full report.'} Would you like me to summarize the key findings?`,
+          timestamp: new Date(),
+          personality: 'confident',
+          confidence: 0.95,
+        };
+        setMessages(prev => [...prev, successMessage]);
+        
+        addXP(25); // Bonus XP for research
+        
+        if (voiceEnabled) {
+          speak(successMessage.content);
+        }
+      } catch (error) {
+        updatePersonality('frustrated');
+        
+        const errorMessage: ZahraMessage = {
+          id: (Date.now() + 2).toString(),
+          role: 'zahra',
+          content: `😓 I encountered an issue while researching. ${error instanceof Error ? error.message : 'Please try again.'} Would you like to rephrase your question or try a different approach?`,
+          timestamp: new Date(),
+          personality: 'frustrated',
+          confidence: 0.3,
+        };
+        setMessages(prev => [...prev, errorMessage]);
+        setErrorCount(prev => prev + 1);
+      } finally {
+        setIsResearching(false);
+        setIsProcessing(false);
+      }
+      
+      return;
+    }
+    
+    // Regular conversation (non-research)
+    const confidence = Math.random() * 0.4 + 0.5;
     const success = confidence > 0.6;
 
     const newPersonality = detectPersonality({
@@ -738,16 +887,26 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
     updatePersonality(newPersonality);
 
     // Simulate response delay
-    await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 1000));
+    await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 800));
 
     // Generate Zahra's response
     const responseConfig = PERSONALITY_CONFIGS[newPersonality];
     const greeting = responseConfig.greetings[Math.floor(Math.random() * responseConfig.greetings.length)];
     
+    // Smart response generation based on context
+    let responseContent = greeting;
+    if (content.toLowerCase().includes('hello') || content.toLowerCase().includes('hi')) {
+      responseContent = "Hello! 👋 I'm ZAHRA 2.0, your intelligent research companion. Ask me to research any topic, and I'll search across multiple sources to find verified information for you!";
+    } else if (content.toLowerCase().includes('help')) {
+      responseContent = "I can help you with deep research! Just ask me to 'research [topic]', 'find information about [subject]', or 'tell me about [anything]'. I'll search the web and compile a comprehensive report for you.";
+    } else {
+      responseContent = `${greeting} To trigger a full research, try asking me to "research", "find", or "tell me about" something specific. I'll search across multiple sources to give you verified information.`;
+    }
+    
     const zahraMessage: ZahraMessage = {
       id: (Date.now() + 1).toString(),
       role: 'zahra',
-      content: `${greeting} Based on your question about "${content.slice(0, 50)}${content.length > 50 ? '...' : ''}", I've analyzed the available information and here's what I found...`,
+      content: responseContent,
       timestamp: new Date(),
       personality: newPersonality,
       confidence,
@@ -767,7 +926,7 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
     }
 
     onMessage?.(zahraMessage);
-  }, [messages.length, errorCount, voiceEnabled, speak, addQuery, addXP, onMessage, updatePersonality]);
+  }, [messages.length, errorCount, voiceEnabled, speak, addQuery, addXP, onMessage, updatePersonality, startResearch, reports, onResearchTriggered]);
 
   // Handle voice transcript
   useEffect(() => {
@@ -806,7 +965,10 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
   // Copy message
   const handleCopy = useCallback((content: string) => {
     navigator.clipboard.writeText(content);
+    toast({ title: "Copied to clipboard" });
   }, []);
+
+  const showResearchIndicator = isSearching || isResearching;
 
   return (
     <Card className={cn("flex flex-col h-full overflow-hidden", className)}>
@@ -819,13 +981,14 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
           personality={personality}
           isSpeaking={isSpeaking}
           isListening={isListening}
-          size="md"
+          size={compact ? "sm" : "md"}
         />
         
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-bold">ZAHRA 2.0</h2>
+            <h2 className="text-lg font-bold truncate">ZAHRA 2.0</h2>
             <Badge 
+              className="shrink-0"
               style={{ 
                 backgroundColor: `${config.color}20`,
                 color: config.color,
@@ -836,13 +999,46 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
               <span className="ml-1">{config.name}</span>
             </Badge>
           </div>
-          <p className="text-sm text-muted-foreground">
-            Your intelligent research companion
-          </p>
+          {!compact && (
+            <p className="text-sm text-muted-foreground truncate">
+              Your intelligent research companion
+            </p>
+          )}
         </div>
 
-        <ZahraMetrics compact />
+        <div className="flex items-center gap-2">
+          {!compact && <ZahraMetrics compact />}
+          {messages.length > 0 && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleClearHistory}
+              className="text-muted-foreground hover:text-destructive"
+              title="Clear conversation"
+            >
+              <Trash2 className="w-4 h-4" />
+            </Button>
+          )}
+        </div>
       </div>
+
+      {/* Research in progress indicator */}
+      <AnimatePresence>
+        {showResearchIndicator && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="px-4 py-2 bg-primary/10 border-b flex items-center gap-2"
+          >
+            <Search className="w-4 h-4 text-primary animate-pulse" />
+            <span className="text-sm font-medium text-primary">
+              Researching... {currentTask?.progress || 0}%
+            </span>
+            <Progress value={currentTask?.progress || 0} className="flex-1 h-1.5" />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Messages area */}
       <ScrollArea className="flex-1 p-4">
@@ -851,29 +1047,29 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="text-center py-12"
+              className="text-center py-8"
             >
               <ZahraAvatar 
                 personality={personality}
                 isSpeaking={isSpeaking}
                 isListening={isListening}
-                size="lg"
+                size={compact ? "md" : "lg"}
               />
-              <h3 className="mt-6 text-lg font-semibold">
+              <h3 className="mt-4 text-lg font-semibold">
                 Hi! I'm ZAHRA 2.0
               </h3>
-              <p className="text-muted-foreground mt-2 max-w-md mx-auto">
-                I'm your emotionally intelligent research assistant. Ask me anything and I'll help you discover insights with verified information.
+              <p className="text-muted-foreground mt-2 max-w-md mx-auto text-sm">
+                Your emotionally intelligent research assistant. Ask me to research any topic!
               </p>
               
-              <div className="mt-6">
+              <div className="mt-4">
                 <ZahraSuggestions 
                   personality={personality}
                   onSuggestionClick={handleSuggestionClick}
                   customSuggestions={[
-                    "Tell me about AI advancements",
-                    "Research market trends",
-                    "Explain quantum computing",
+                    "Research AI advancements in 2024",
+                    "Find information about climate tech",
+                    "Tell me about quantum computing",
                   ]}
                 />
               </div>
@@ -920,7 +1116,7 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
                       ))}
                     </div>
                     <span className="text-sm text-muted-foreground">
-                      ZAHRA is thinking...
+                      {isResearching ? 'ZAHRA is researching...' : 'ZAHRA is thinking...'}
                     </span>
                   </motion.div>
                 )}
@@ -931,7 +1127,7 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
       </ScrollArea>
 
       {/* Suggestions */}
-      {messages.length > 0 && !isProcessing && (
+      {messages.length > 0 && !isProcessing && !compact && (
         <div className="px-4 pb-2">
           <ZahraSuggestions 
             personality={personality}
@@ -972,7 +1168,7 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder="Ask ZAHRA anything..."
+            placeholder="Ask ZAHRA to research anything..."
             disabled={isProcessing || isListening}
             className="flex-1"
             dir={isRTL ? 'rtl' : 'ltr'}
@@ -991,11 +1187,68 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
         </div>
       </div>
 
-      {/* Metrics panel (expanded) */}
-      <div className="p-4 border-t">
-        <ZahraMetrics />
-      </div>
+      {/* Metrics panel (expanded) - only show if not compact */}
+      {!compact && (
+        <div className="p-4 border-t">
+          <ZahraMetrics />
+        </div>
+      )}
     </Card>
+  );
+};
+
+// ============================================
+// MOBILE FLOATING BUTTON + DRAWER
+// ============================================
+
+interface ZahraMobileButtonProps {
+  onResearchTriggered?: (query: string) => void;
+}
+
+export const ZahraMobileButton: React.FC<ZahraMobileButtonProps> = ({ onResearchTriggered }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <Sheet open={isOpen} onOpenChange={setIsOpen}>
+      <SheetTrigger asChild>
+        <motion.button
+          className="fixed bottom-6 right-6 z-50 xl:hidden w-14 h-14 rounded-full bg-gradient-to-br from-primary to-accent text-white shadow-lg flex items-center justify-center"
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.95 }}
+          animate={{
+            boxShadow: [
+              '0 4px 20px rgba(139, 92, 246, 0.3)',
+              '0 4px 30px rgba(139, 92, 246, 0.5)',
+              '0 4px 20px rgba(139, 92, 246, 0.3)',
+            ],
+          }}
+          transition={{ duration: 2, repeat: Infinity }}
+        >
+          <MessageCircle className="w-6 h-6" />
+        </motion.button>
+      </SheetTrigger>
+      <SheetContent side="right" className="w-full sm:w-[400px] p-0">
+        <div className="h-full flex flex-col">
+          <div className="flex items-center justify-between p-4 border-b">
+            <h2 className="font-bold text-lg">ZAHRA 2.0</h2>
+            <Button variant="ghost" size="icon" onClick={() => setIsOpen(false)}>
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <ZAHRA2_0Agent 
+              compact 
+              className="h-full border-0 rounded-none"
+              onResearchTriggered={(query) => {
+                onResearchTriggered?.(query);
+                // Optionally close drawer after triggering research
+                // setIsOpen(false);
+              }}
+            />
+          </div>
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 };
 
