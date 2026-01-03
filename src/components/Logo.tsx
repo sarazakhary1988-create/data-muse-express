@@ -18,7 +18,7 @@ export const Logo = () => {
         <img 
           src={orkestraIcon} 
           alt="ORKESTRA" 
-          className="h-10 w-10 object-contain drop-shadow-lg rounded-lg"
+          className="h-12 w-12 object-contain drop-shadow-lg"
         />
       </motion.div>
       
