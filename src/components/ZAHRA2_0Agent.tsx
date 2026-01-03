@@ -1146,6 +1146,7 @@ const SettingsDropdown: React.FC<SettingsDropdownProps> = ({
   language,
 }) => {
   const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
+  const [isPreviewing, setIsPreviewing] = useState(false);
 
   const toggleTheme = () => {
     const newDark = !isDark;
@@ -1155,6 +1156,40 @@ const SettingsDropdown: React.FC<SettingsDropdownProps> = ({
     } else {
       document.documentElement.classList.remove('dark');
     }
+  };
+
+  const previewVoice = () => {
+    if (isPreviewing) {
+      speechSynthesis.cancel();
+      setIsPreviewing(false);
+      return;
+    }
+
+    const previewText = voiceSettings.language === 'ar' 
+      ? 'مرحباً! أنا زهراء، مساعدتك الذكية في البحث.'
+      : "Hello! I'm ZAHRA, your intelligent research companion.";
+    
+    const utterance = new SpeechSynthesisUtterance(previewText);
+    
+    // Find matching voice
+    const voices = speechSynthesis.getVoices();
+    const langCode = voiceSettings.language === 'ar' ? 'ar' : 'en';
+    const matchingVoices = voices.filter(v => 
+      v.lang.startsWith(langCode) && 
+      (voiceSettings.gender === 'female' ? !v.name.toLowerCase().includes('male') : v.name.toLowerCase().includes('male'))
+    );
+    const voice = matchingVoices[0] || voices.find(v => v.lang.startsWith(langCode)) || voices[0];
+    
+    if (voice) utterance.voice = voice;
+    utterance.lang = voiceSettings.language === 'ar' ? 'ar-SA' : 'en-US';
+    utterance.pitch = voiceSettings.gender === 'female' ? 1.1 : 0.9;
+    utterance.rate = (voiceSettings.speed || 1.0) * (voiceSettings.language === 'ar' ? 0.9 : 1.0);
+    
+    utterance.onstart = () => setIsPreviewing(true);
+    utterance.onend = () => setIsPreviewing(false);
+    utterance.onerror = () => setIsPreviewing(false);
+    
+    speechSynthesis.speak(utterance);
   };
 
   return (
@@ -1231,6 +1266,26 @@ const SettingsDropdown: React.FC<SettingsDropdownProps> = ({
               className="py-2"
             />
           </div>
+          
+          {/* Voice Preview Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full text-xs"
+            onClick={previewVoice}
+          >
+            {isPreviewing ? (
+              <>
+                <Pause className="w-3 h-3 mr-1" />
+                {language === 'ar' ? 'إيقاف المعاينة' : 'Stop Preview'}
+              </>
+            ) : (
+              <>
+                <Volume2 className="w-3 h-3 mr-1" />
+                {language === 'ar' ? 'معاينة الصوت' : 'Preview Voice'}
+              </>
+            )}
+          </Button>
           
           {/* Voice Enabled */}
           <div className="flex items-center justify-between">
