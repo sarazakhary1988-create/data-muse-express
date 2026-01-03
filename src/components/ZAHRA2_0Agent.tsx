@@ -5,7 +5,8 @@ import {
   ChevronRight, ChevronLeft, Check, ArrowRight, X,
   BookOpen, Newspaper, Building2, Globe, Database,
   Zap, Clock, Target, FileText, Play, Minimize2,
-  LayoutTemplate, Brain, Settings2, RotateCcw, Mic, MicOff
+  LayoutTemplate, Brain, Settings2, RotateCcw, Mic, MicOff,
+  Volume2, VolumeX, Languages, User, UserCircle, Gauge
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -15,9 +16,21 @@ import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { ViewType } from '@/components/Sidebar';
 import { toast } from '@/hooks/use-toast';
+import { useAgentStore } from '@/hooks/useAgentStore';
 
 // ============================================
 // TYPES
@@ -1148,6 +1161,18 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
     }
   };
 
+  // Get agent settings from store
+  const { 
+    language, 
+    agentGender, 
+    voiceSpeed, 
+    preferences,
+    setLanguage,
+    setAgentGender,
+    setVoiceSpeed,
+    updatePreferences,
+  } = useAgentStore();
+
   return (
     <Card className={cn("flex flex-col h-full bg-card/95 backdrop-blur-xl border-border/50", className)}>
       {/* Header */}
@@ -1162,6 +1187,120 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
           </div>
         </div>
         <div className="flex items-center gap-1">
+          {/* Settings Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <Settings2 className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56 bg-popover border-border z-50">
+              <DropdownMenuLabel>ZAHRA Settings</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              
+              {/* Voice On/Off */}
+              <DropdownMenuItem 
+                onClick={() => updatePreferences({ voiceEnabled: !preferences.voiceEnabled })}
+                className="cursor-pointer"
+              >
+                {preferences.voiceEnabled ? (
+                  <Volume2 className="w-4 h-4 mr-2 text-primary" />
+                ) : (
+                  <VolumeX className="w-4 h-4 mr-2 text-muted-foreground" />
+                )}
+                <span>Voice {preferences.voiceEnabled ? 'On' : 'Off'}</span>
+                {preferences.voiceEnabled && (
+                  <Check className="w-4 h-4 ml-auto text-primary" />
+                )}
+              </DropdownMenuItem>
+              
+              <DropdownMenuSeparator />
+              
+              {/* Language Sub-menu */}
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <Languages className="w-4 h-4 mr-2" />
+                  <span>Language</span>
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="bg-popover border-border z-50">
+                  <DropdownMenuItem 
+                    onClick={() => setLanguage('en-US')}
+                    className="cursor-pointer"
+                  >
+                    <span className="mr-2">🇺🇸</span>
+                    English
+                    {language === 'en-US' && <Check className="w-4 h-4 ml-auto text-primary" />}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    onClick={() => setLanguage('ar-SA')}
+                    className="cursor-pointer"
+                  >
+                    <span className="mr-2">🇸🇦</span>
+                    العربية
+                    {language === 'ar-SA' && <Check className="w-4 h-4 ml-auto text-primary" />}
+                  </DropdownMenuItem>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              
+              {/* Gender Sub-menu */}
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <User className="w-4 h-4 mr-2" />
+                  <span>Voice Gender</span>
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="bg-popover border-border z-50">
+                  <DropdownMenuItem 
+                    onClick={() => setAgentGender('female')}
+                    className="cursor-pointer"
+                  >
+                    <UserCircle className="w-4 h-4 mr-2" />
+                    Female
+                    {agentGender === 'female' && <Check className="w-4 h-4 ml-auto text-primary" />}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    onClick={() => setAgentGender('male')}
+                    className="cursor-pointer"
+                  >
+                    <User className="w-4 h-4 mr-2" />
+                    Male
+                    {agentGender === 'male' && <Check className="w-4 h-4 ml-auto text-primary" />}
+                  </DropdownMenuItem>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              
+              {/* Voice Speed Sub-menu */}
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <Gauge className="w-4 h-4 mr-2" />
+                  <span>Voice Speed</span>
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="bg-popover border-border z-50">
+                  <DropdownMenuItem 
+                    onClick={() => setVoiceSpeed('slow')}
+                    className="cursor-pointer"
+                  >
+                    Slow
+                    {voiceSpeed === 'slow' && <Check className="w-4 h-4 ml-auto text-primary" />}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    onClick={() => setVoiceSpeed('normal')}
+                    className="cursor-pointer"
+                  >
+                    Normal
+                    {voiceSpeed === 'normal' && <Check className="w-4 h-4 ml-auto text-primary" />}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    onClick={() => setVoiceSpeed('fast')}
+                    className="cursor-pointer"
+                  >
+                    Fast
+                    {voiceSpeed === 'fast' && <Check className="w-4 h-4 ml-auto text-primary" />}
+                  </DropdownMenuItem>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={resetWorkflow}>
             <RotateCcw className="w-4 h-4" />
           </Button>
