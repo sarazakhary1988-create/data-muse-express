@@ -570,6 +570,76 @@ const VoiceWaveform: React.FC<VoiceWaveformProps> = ({ isActive, color, mode, au
 };
 
 // ============================================
+// PARTICLE EFFECT COMPONENT
+// ============================================
+
+interface ParticleProps {
+  color: string;
+  index: number;
+  isActive: boolean;
+}
+
+const Particle: React.FC<ParticleProps> = ({ color, index, isActive }) => {
+  const angle = (index / 12) * Math.PI * 2;
+  const radius = 60 + Math.random() * 20;
+  const duration = 2 + Math.random() * 2;
+  const size = 4 + Math.random() * 6;
+  
+  return (
+    <motion.div
+      className="absolute rounded-full pointer-events-none"
+      style={{
+        width: size,
+        height: size,
+        backgroundColor: color,
+        boxShadow: `0 0 ${size * 2}px ${color}`,
+        left: '50%',
+        top: '50%',
+      }}
+      initial={{ 
+        x: 0, 
+        y: 0, 
+        opacity: 0,
+        scale: 0 
+      }}
+      animate={isActive ? {
+        x: [0, Math.cos(angle) * radius, Math.cos(angle + 0.5) * (radius + 20), 0],
+        y: [0, Math.sin(angle) * radius, Math.sin(angle + 0.5) * (radius + 20), 0],
+        opacity: [0, 0.8, 0.6, 0],
+        scale: [0, 1.2, 0.8, 0],
+      } : {
+        x: Math.cos(angle) * 40,
+        y: Math.sin(angle) * 40,
+        opacity: 0.3,
+        scale: 0.5,
+      }}
+      transition={{
+        duration: isActive ? duration : 3,
+        repeat: Infinity,
+        delay: index * 0.15,
+        ease: "easeInOut",
+      }}
+    />
+  );
+};
+
+interface ParticleFieldProps {
+  color: string;
+  isActive: boolean;
+  particleCount?: number;
+}
+
+const ParticleField: React.FC<ParticleFieldProps> = ({ color, isActive, particleCount = 12 }) => {
+  return (
+    <div className="absolute inset-0 pointer-events-none overflow-visible">
+      {Array.from({ length: particleCount }).map((_, i) => (
+        <Particle key={i} color={color} index={i} isActive={isActive} />
+      ))}
+    </div>
+  );
+};
+
+// ============================================
 // ZAHRA AVATAR COMPONENT
 // ============================================
 
@@ -579,6 +649,7 @@ interface ZahraAvatarProps {
   isListening: boolean;
   size?: 'sm' | 'md' | 'lg' | 'xl';
   showWaveform?: boolean;
+  showParticles?: boolean;
 }
 
 const ZahraAvatar: React.FC<ZahraAvatarProps> = ({ 
@@ -586,15 +657,16 @@ const ZahraAvatar: React.FC<ZahraAvatarProps> = ({
   isSpeaking, 
   isListening, 
   size = 'lg',
-  showWaveform = true 
+  showWaveform = true,
+  showParticles = true
 }) => {
   const color = PERSONALITY_COLORS[personality];
   
   const sizes = {
-    sm: { outer: 'w-12 h-12', inner: 'w-10 h-10 text-sm' },
-    md: { outer: 'w-20 h-20', inner: 'w-16 h-16 text-xl' },
-    lg: { outer: 'w-28 h-28', inner: 'w-24 h-24 text-3xl' },
-    xl: { outer: 'w-36 h-36', inner: 'w-32 h-32 text-4xl' },
+    sm: { outer: 'w-12 h-12', inner: 'w-10 h-10 text-sm', particles: 6 },
+    md: { outer: 'w-20 h-20', inner: 'w-16 h-16 text-xl', particles: 8 },
+    lg: { outer: 'w-28 h-28', inner: 'w-24 h-24 text-3xl', particles: 12 },
+    xl: { outer: 'w-36 h-36', inner: 'w-32 h-32 text-4xl', particles: 16 },
   };
 
   const isActive = isSpeaking || isListening;
@@ -602,6 +674,15 @@ const ZahraAvatar: React.FC<ZahraAvatarProps> = ({
   return (
     <div className="flex flex-col items-center gap-2">
       <div className={cn("relative flex items-center justify-center", sizes[size].outer)}>
+        {/* Particle Effects */}
+        {showParticles && (
+          <ParticleField 
+            color={color} 
+            isActive={isActive} 
+            particleCount={sizes[size].particles}
+          />
+        )}
+        
         {/* Ripple effects */}
         {[0, 1, 2].map(i => (
           <motion.div
@@ -624,7 +705,7 @@ const ZahraAvatar: React.FC<ZahraAvatarProps> = ({
         {/* Main avatar */}
         <motion.div
           className={cn(
-            "relative rounded-full flex items-center justify-center font-bold text-white shadow-2xl",
+            "relative rounded-full flex items-center justify-center font-bold text-white shadow-2xl z-10",
             sizes[size].inner
           )}
           style={{
