@@ -444,6 +444,132 @@ function useZahraVoice(settings: VoiceSettings) {
 }
 
 // ============================================
+// VOICE WAVEFORM COMPONENT
+// ============================================
+
+interface VoiceWaveformProps {
+  isActive: boolean;
+  color: string;
+  mode: 'speaking' | 'listening';
+  audioLevels?: number[];
+}
+
+const VoiceWaveform: React.FC<VoiceWaveformProps> = ({ isActive, color, mode, audioLevels = [] }) => {
+  const [levels, setLevels] = useState<number[]>(Array(16).fill(0.1));
+  const animationRef = useRef<number>();
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+
+  useEffect(() => {
+    if (!isActive) {
+      setLevels(Array(16).fill(0.1));
+      return;
+    }
+
+    if (mode === 'listening') {
+      // Real microphone visualization
+      const setupMicrophoneAnalyser = async () => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          mediaStreamRef.current = stream;
+          
+          const audioContext = new AudioContext();
+          audioContextRef.current = audioContext;
+          
+          const source = audioContext.createMediaStreamSource(stream);
+          const analyser = audioContext.createAnalyser();
+          analyser.fftSize = 64;
+          analyser.smoothingTimeConstant = 0.4;
+          
+          source.connect(analyser);
+          analyserRef.current = analyser;
+          
+          const dataArray = new Uint8Array(analyser.frequencyBinCount);
+          
+          const updateLevels = () => {
+            if (!analyserRef.current) return;
+            
+            analyserRef.current.getByteFrequencyData(dataArray);
+            
+            const newLevels: number[] = [];
+            const step = Math.floor(dataArray.length / 16);
+            for (let i = 0; i < 16; i++) {
+              const value = dataArray[i * step] / 255;
+              newLevels.push(Math.max(0.1, value));
+            }
+            
+            setLevels(newLevels);
+            animationRef.current = requestAnimationFrame(updateLevels);
+          };
+          
+          updateLevels();
+        } catch (error) {
+          console.warn('Microphone access denied, using simulated visualization');
+          simulateWaveform();
+        }
+      };
+      
+      setupMicrophoneAnalyser();
+    } else {
+      // Simulated speaking visualization
+      simulateWaveform();
+    }
+
+    function simulateWaveform() {
+      const updateSimulated = () => {
+        setLevels(prev => 
+          prev.map((_, i) => {
+            const base = 0.3 + Math.sin(Date.now() / 200 + i * 0.5) * 0.3;
+            const random = Math.random() * 0.4;
+            return Math.min(1, base + random);
+          })
+        );
+        animationRef.current = requestAnimationFrame(updateSimulated);
+      };
+      updateSimulated();
+    }
+
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach(track => track.stop());
+      }
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+      }
+      analyserRef.current = null;
+    };
+  }, [isActive, mode]);
+
+  return (
+    <div className="flex items-center justify-center gap-0.5 h-12 px-2">
+      {levels.map((level, i) => (
+        <motion.div
+          key={i}
+          className="w-1 rounded-full"
+          style={{ 
+            backgroundColor: color,
+            boxShadow: `0 0 8px ${color}60`,
+          }}
+          animate={{ 
+            height: isActive ? level * 40 : 4,
+            opacity: isActive ? 0.6 + level * 0.4 : 0.3,
+          }}
+          transition={{ 
+            type: "spring",
+            stiffness: 400,
+            damping: 15,
+          }}
+        />
+      ))}
+    </div>
+  );
+};
+
+// ============================================
 // ZAHRA AVATAR COMPONENT
 // ============================================
 
@@ -452,9 +578,16 @@ interface ZahraAvatarProps {
   isSpeaking: boolean;
   isListening: boolean;
   size?: 'sm' | 'md' | 'lg' | 'xl';
+  showWaveform?: boolean;
 }
 
-const ZahraAvatar: React.FC<ZahraAvatarProps> = ({ personality, isSpeaking, isListening, size = 'lg' }) => {
+const ZahraAvatar: React.FC<ZahraAvatarProps> = ({ 
+  personality, 
+  isSpeaking, 
+  isListening, 
+  size = 'lg',
+  showWaveform = true 
+}) => {
   const color = PERSONALITY_COLORS[personality];
   
   const sizes = {
@@ -464,77 +597,87 @@ const ZahraAvatar: React.FC<ZahraAvatarProps> = ({ personality, isSpeaking, isLi
     xl: { outer: 'w-36 h-36', inner: 'w-32 h-32 text-4xl' },
   };
 
-  return (
-    <div className={cn("relative flex items-center justify-center", sizes[size].outer)}>
-      {/* Ripple effects */}
-      {[0, 1, 2].map(i => (
-        <motion.div
-          key={i}
-          className="absolute inset-0 rounded-full"
-          style={{ border: `2px solid ${color}` }}
-          animate={isSpeaking || isListening ? {
-            scale: [1, 1.3 + i * 0.15],
-            opacity: [0.4 - i * 0.1, 0],
-          } : { scale: 1, opacity: 0.2 - i * 0.05 }}
-          transition={{
-            duration: 1.5,
-            repeat: Infinity,
-            delay: i * 0.3,
-            ease: "easeOut",
-          }}
-        />
-      ))}
-      
-      {/* Main avatar */}
-      <motion.div
-        className={cn(
-          "relative rounded-full flex items-center justify-center font-bold text-white shadow-2xl",
-          sizes[size].inner
-        )}
-        style={{
-          background: `linear-gradient(135deg, ${color}, ${color}dd)`,
-          boxShadow: `0 0 40px ${color}50`,
-        }}
-        animate={{
-          scale: isSpeaking ? [1, 1.05, 1] : isListening ? [1, 1.02, 1] : 1,
-        }}
-        transition={{ duration: isSpeaking ? 0.4 : 2, repeat: Infinity }}
-      >
-        <span className="select-none drop-shadow-lg">Z</span>
-        
-        {/* Personality indicator */}
-        <motion.div
-          className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-background border-2 flex items-center justify-center"
-          style={{ borderColor: color, color }}
-          initial={{ scale: 0 }}
-          animate={{ scale: 1 }}
-          transition={{ type: "spring", stiffness: 500 }}
-        >
-          {PERSONALITY_CONFIGS[personality].icon}
-        </motion.div>
-      </motion.div>
+  const isActive = isSpeaking || isListening;
 
-      {/* Listening bars */}
-      <AnimatePresence>
-        {isListening && (
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div className={cn("relative flex items-center justify-center", sizes[size].outer)}>
+        {/* Ripple effects */}
+        {[0, 1, 2].map(i => (
           <motion.div
-            className="absolute -bottom-6 flex gap-1"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            key={i}
+            className="absolute inset-0 rounded-full"
+            style={{ border: `2px solid ${color}` }}
+            animate={isActive ? {
+              scale: [1, 1.3 + i * 0.15],
+              opacity: [0.4 - i * 0.1, 0],
+            } : { scale: 1, opacity: 0.2 - i * 0.05 }}
+            transition={{
+              duration: 1.5,
+              repeat: Infinity,
+              delay: i * 0.3,
+              ease: "easeOut",
+            }}
+          />
+        ))}
+        
+        {/* Main avatar */}
+        <motion.div
+          className={cn(
+            "relative rounded-full flex items-center justify-center font-bold text-white shadow-2xl",
+            sizes[size].inner
+          )}
+          style={{
+            background: `linear-gradient(135deg, ${color}, ${color}dd)`,
+            boxShadow: `0 0 40px ${color}50`,
+          }}
+          animate={{
+            scale: isSpeaking ? [1, 1.05, 1] : isListening ? [1, 1.02, 1] : 1,
+          }}
+          transition={{ duration: isSpeaking ? 0.4 : 2, repeat: Infinity }}
+        >
+          <span className="select-none drop-shadow-lg">Z</span>
+          
+          {/* Personality indicator */}
+          <motion.div
+            className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-background border-2 flex items-center justify-center"
+            style={{ borderColor: color, color }}
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ type: "spring", stiffness: 500 }}
           >
-            {[0, 1, 2, 3, 4].map(i => (
-              <motion.div
-                key={i}
-                className="w-1 rounded-full"
-                style={{ backgroundColor: color }}
-                animate={{ height: [8, 20, 8] }}
-                transition={{ duration: 0.5, repeat: Infinity, delay: i * 0.1 }}
-              />
-            ))}
+            {PERSONALITY_CONFIGS[personality].icon}
           </motion.div>
-        )}
-      </AnimatePresence>
+        </motion.div>
+      </div>
+
+      {/* Voice Waveform Visualization */}
+      {showWaveform && (
+        <AnimatePresence>
+          {isActive && (
+            <motion.div
+              initial={{ opacity: 0, y: -10, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.9 }}
+              className="w-full max-w-48"
+            >
+              <VoiceWaveform
+                isActive={isActive}
+                color={color}
+                mode={isListening ? 'listening' : 'speaking'}
+              />
+              <motion.p
+                className="text-xs text-center mt-1 font-medium"
+                style={{ color }}
+                animate={{ opacity: [0.6, 1, 0.6] }}
+                transition={{ duration: 1.5, repeat: Infinity }}
+              >
+                {isListening ? 'Listening...' : 'Speaking...'}
+              </motion.p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      )}
     </div>
   );
 };
