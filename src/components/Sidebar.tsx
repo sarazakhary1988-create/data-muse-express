@@ -6,7 +6,6 @@ import {
   FileText, 
   ChevronLeft,
   ChevronRight,
-  Sparkles,
   History as HistoryIcon,
   Link,
   LayoutTemplate,
@@ -139,9 +138,7 @@ export const Sidebar = ({ activeView, onViewChange }: SidebarProps) => {
                 exit={{ opacity: 0, scale: 0.8 }}
                 className="flex justify-center"
               >
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg shadow-primary/30">
-                  <Sparkles className="w-5 h-5 text-primary-foreground" />
-                </div>
+                <Logo compact size="sm" />
               </motion.div>
             ) : (
               <motion.div
