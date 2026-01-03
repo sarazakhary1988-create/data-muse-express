@@ -13,7 +13,7 @@ interface AgentOnboardingProps {
 export const AgentOnboarding = ({ onComplete }: AgentOnboardingProps) => {
   const { language, isRTL } = useLanguage();
   const [agentName, setAgentName] = useState('');
-  const [gender, setGender] = useState<AgentGender>('other');
+  const [gender, setGender] = useState<AgentGender>('female');
   const [step, setStep] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
 
@@ -31,7 +31,6 @@ export const AgentOnboarding = ({ onComplete }: AgentOnboardingProps) => {
       genderOptions: {
         male: 'Male Voice',
         female: 'Female Voice',
-        other: 'Neutral',
       },
       greeting: (name: string) => `Hello! I'm ${name}, and I'll be your research partner.`,
       features: [
@@ -53,7 +52,6 @@ export const AgentOnboarding = ({ onComplete }: AgentOnboardingProps) => {
       genderOptions: {
         male: 'صوت رجالي',
         female: 'صوت نسائي',
-        other: 'محايد',
       },
       greeting: (name: string) => `هلا والله! أنا ${name}، حاضر أساعدك في البحث.`,
       features: [
@@ -162,7 +160,7 @@ export const AgentOnboarding = ({ onComplete }: AgentOnboardingProps) => {
             <div className="space-y-3">
               <h3 className="text-lg font-medium">{t.genderQuestion}</h3>
               <div className="flex justify-center gap-3">
-                {(['male', 'female', 'other'] as AgentGender[]).map((g) => (
+                {(['male', 'female'] as AgentGender[]).map((g) => (
                   <button
                     key={g}
                     onClick={() => setGender(g)}
@@ -174,10 +172,8 @@ export const AgentOnboarding = ({ onComplete }: AgentOnboardingProps) => {
                   >
                     {g === 'male' ? (
                       <User className="w-5 h-5" />
-                    ) : g === 'female' ? (
-                      <UserCircle className="w-5 h-5" />
                     ) : (
-                      <Bot className="w-5 h-5" />
+                      <UserCircle className="w-5 h-5" />
                     )}
                     <span className="font-medium">{t.genderOptions[g]}</span>
                   </button>

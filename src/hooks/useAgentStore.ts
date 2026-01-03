@@ -1,12 +1,16 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type AgentGender = 'male' | 'female' | 'other';
+export type AgentGender = 'male' | 'female';
 export type AgentMood = 'happy' | 'excited' | 'thinking' | 'surprised' | 'celebratory' | 'helpful' | 'concerned' | 'tired';
+export type AgentLanguage = 'en-US' | 'ar-SA';
+export type VoiceSpeed = 'slow' | 'normal' | 'fast';
 
 interface AgentSettings {
   agentName: string;
   agentGender: AgentGender;
+  language: AgentLanguage;
+  voiceSpeed: VoiceSpeed;
   hasCompletedOnboarding: boolean;
   researchStreak: number;
   totalQueries: number;
@@ -27,6 +31,8 @@ interface AgentSettings {
 interface AgentStore extends AgentSettings {
   setAgentName: (name: string) => void;
   setAgentGender: (gender: AgentGender) => void;
+  setLanguage: (language: AgentLanguage) => void;
+  setVoiceSpeed: (speed: VoiceSpeed) => void;
   setMood: (mood: AgentMood) => void;
   completeOnboarding: () => void;
   incrementStreak: () => void;
@@ -44,7 +50,9 @@ const calculateLevel = (xp: number): number => {
 
 const defaultSettings: AgentSettings = {
   agentName: '',
-  agentGender: 'other',
+  agentGender: 'female',
+  language: 'en-US',
+  voiceSpeed: 'normal',
   hasCompletedOnboarding: false,
   researchStreak: 0,
   totalQueries: 0,
@@ -55,7 +63,7 @@ const defaultSettings: AgentSettings = {
   lastActiveDate: '',
   currentMood: 'happy',
   preferences: {
-    voiceEnabled: false,
+    voiceEnabled: true,
     predictionsEnabled: true,
     gamificationEnabled: true,
     emotionalFeedback: true,
@@ -70,6 +78,10 @@ export const useAgentStore = create<AgentStore>()(
       setAgentName: (name) => set({ agentName: name }),
 
       setAgentGender: (gender) => set({ agentGender: gender }),
+
+      setLanguage: (language) => set({ language }),
+
+      setVoiceSpeed: (speed) => set({ voiceSpeed: speed }),
 
       setMood: (mood) => set({ currentMood: mood }),
 
