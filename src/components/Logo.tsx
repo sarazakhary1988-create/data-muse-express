@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import orkestraLogo from '@/assets/orkestra-logo.png';
+import orkestraIcon from '@/assets/orkestra-icon.png';
 
 export const Logo = () => {
   return (
@@ -16,9 +16,9 @@ export const Logo = () => {
         transition={{ type: "spring", stiffness: 400, damping: 20 }}
       >
         <img 
-          src={orkestraLogo} 
+          src={orkestraIcon} 
           alt="ORKESTRA" 
-          className="h-10 w-10 object-contain drop-shadow-md"
+          className="h-10 w-10 object-contain drop-shadow-lg rounded-lg"
         />
       </motion.div>
       
