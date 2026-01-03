@@ -6,7 +6,8 @@ import {
   Share2, Bookmark, MessageCircle, Zap, Brain,
   HelpCircle, AlertCircle, Smile, Target, X, 
   Search, Trash2, Globe, User, ChevronLeft, Check,
-  Play, Pause, SkipForward, Settings, Moon, Sun, Minus
+  Play, Pause, SkipForward, Settings, Moon, Sun, Minus,
+  Clock, History, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -77,6 +78,13 @@ interface OnboardingStep {
   personality: ZahraPersonality;
   example: string;
   exampleAr: string;
+}
+
+interface PersonalityHistoryEntry {
+  id: string;
+  personality: ZahraPersonality;
+  timestamp: Date;
+  trigger: string; // The message that triggered this personality
 }
 
 // ============================================
@@ -288,6 +296,7 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
 const ZAHRA_MEMORY_KEY = 'zahra-v2-memory';
 const ZAHRA_SETTINGS_KEY = 'zahra-v2-settings';
 const ZAHRA_ONBOARDING_KEY = 'zahra-v2-onboarding';
+const ZAHRA_PERSONALITY_HISTORY_KEY = 'zahra-v2-personality-history';
 
 const saveMessages = (messages: ZahraMessage[]) => {
   try {
@@ -329,6 +338,28 @@ const completeOnboarding = () => {
 
 const resetOnboarding = () => {
   localStorage.removeItem(ZAHRA_ONBOARDING_KEY);
+};
+
+const savePersonalityHistory = (history: PersonalityHistoryEntry[]) => {
+  try {
+    localStorage.setItem(ZAHRA_PERSONALITY_HISTORY_KEY, JSON.stringify(history.slice(-50)));
+  } catch (e) {
+    console.warn('Failed to save personality history:', e);
+  }
+};
+
+const loadPersonalityHistory = (): PersonalityHistoryEntry[] => {
+  try {
+    const stored = localStorage.getItem(ZAHRA_PERSONALITY_HISTORY_KEY);
+    if (stored) {
+      return JSON.parse(stored).map((e: any) => ({ ...e, timestamp: new Date(e.timestamp) }));
+    }
+  } catch (e) {}
+  return [];
+};
+
+const clearPersonalityHistory = () => {
+  localStorage.removeItem(ZAHRA_PERSONALITY_HISTORY_KEY);
 };
 
 // ============================================
@@ -1329,6 +1360,238 @@ const SettingsDropdown: React.FC<SettingsDropdownProps> = ({
 };
 
 // ============================================
+// PERSONALITY TIMELINE COMPONENT
+// ============================================
+
+interface PersonalityTimelineProps {
+  history: PersonalityHistoryEntry[];
+  language: VoiceLanguage;
+  onClear: () => void;
+}
+
+const PersonalityTimeline: React.FC<PersonalityTimelineProps> = ({ history, language, onClear }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const isRtl = language === 'ar';
+
+  if (history.length === 0) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, height: 0 }}
+        animate={{ opacity: 1, height: 'auto' }}
+        className="px-4 py-3 bg-muted/30 border-b"
+      >
+        <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+          <History className="w-4 h-4" />
+          <span>{isRtl ? 'لم يتم اكتشاف أي تغيير في المزاج بعد' : 'No mood changes detected yet'}</span>
+        </div>
+      </motion.div>
+    );
+  }
+
+  // Get personality distribution
+  const distribution = history.reduce((acc, entry) => {
+    acc[entry.personality] = (acc[entry.personality] || 0) + 1;
+    return acc;
+  }, {} as Record<ZahraPersonality, number>);
+
+  const total = history.length;
+  const mostFrequent = Object.entries(distribution).sort(([,a], [,b]) => b - a)[0];
+  
+  const formatTime = (date: Date) => {
+    return date.toLocaleTimeString(isRtl ? 'ar-SA' : 'en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+  };
+
+  const displayedHistory = isExpanded ? history : history.slice(-5);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: 'auto' }}
+      className="border-b bg-gradient-to-r from-muted/30 to-transparent"
+    >
+      {/* Header */}
+      <div 
+        className="px-4 py-2 flex items-center justify-between cursor-pointer hover:bg-muted/20 transition-colors"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div className="flex items-center gap-2">
+          <Clock className="w-4 h-4 text-muted-foreground" />
+          <span className="text-sm font-medium">
+            {isRtl ? 'سجل المزاج' : 'Mood Timeline'}
+          </span>
+          <Badge variant="secondary" className="text-xs">
+            {history.length} {isRtl ? 'تغيير' : 'changes'}
+          </Badge>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          {/* Distribution mini-bar */}
+          <div className="hidden sm:flex items-center gap-0.5 h-2 w-24 rounded-full overflow-hidden bg-muted">
+            {Object.entries(distribution).map(([personality, count]) => (
+              <div
+                key={personality}
+                style={{ 
+                  width: `${(count / total) * 100}%`, 
+                  backgroundColor: PERSONALITY_COLORS[personality as ZahraPersonality] 
+                }}
+                className="h-full"
+                title={`${PERSONALITY_CONFIGS[personality as ZahraPersonality].name}: ${count}`}
+              />
+            ))}
+          </div>
+          
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={(e) => { e.stopPropagation(); onClear(); }}
+            title={isRtl ? 'مسح السجل' : 'Clear history'}
+          >
+            <Trash2 className="w-3 h-3 text-muted-foreground hover:text-destructive" />
+          </Button>
+          
+          {isExpanded ? (
+            <ChevronUp className="w-4 h-4 text-muted-foreground" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-muted-foreground" />
+          )}
+        </div>
+      </div>
+
+      {/* Timeline content */}
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="px-4 pb-3"
+          >
+            {/* Summary */}
+            <div className="flex flex-wrap items-center gap-2 mb-3 pb-3 border-b border-dashed">
+              <span className="text-xs text-muted-foreground">
+                {isRtl ? 'الأكثر شيوعاً:' : 'Most frequent:'}
+              </span>
+              {mostFrequent && (
+                <Badge 
+                  style={{ 
+                    backgroundColor: `${PERSONALITY_COLORS[mostFrequent[0] as ZahraPersonality]}20`, 
+                    color: PERSONALITY_COLORS[mostFrequent[0] as ZahraPersonality],
+                    borderColor: PERSONALITY_COLORS[mostFrequent[0] as ZahraPersonality]
+                  }}
+                >
+                  {PERSONALITY_CONFIGS[mostFrequent[0] as ZahraPersonality].icon}
+                  <span className="ml-1">
+                    {isRtl 
+                      ? PERSONALITY_CONFIGS[mostFrequent[0] as ZahraPersonality].nameAr 
+                      : PERSONALITY_CONFIGS[mostFrequent[0] as ZahraPersonality].name}
+                  </span>
+                  <span className="ml-1 opacity-60">({mostFrequent[1]}x)</span>
+                </Badge>
+              )}
+            </div>
+
+            {/* Timeline entries */}
+            <ScrollArea className="max-h-48">
+              <div className="relative space-y-1" dir={isRtl ? 'rtl' : 'ltr'}>
+                {/* Vertical line */}
+                <div 
+                  className="absolute top-2 bottom-2 w-0.5 bg-gradient-to-b from-muted via-muted-foreground/20 to-muted"
+                  style={{ [isRtl ? 'right' : 'left']: '7px' }}
+                />
+                
+                {displayedHistory.slice().reverse().map((entry, i) => {
+                  const config = PERSONALITY_CONFIGS[entry.personality];
+                  const color = PERSONALITY_COLORS[entry.personality];
+                  
+                  return (
+                    <motion.div
+                      key={entry.id}
+                      initial={{ opacity: 0, x: isRtl ? 10 : -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: i * 0.05 }}
+                      className="flex items-start gap-3 py-1.5 group"
+                    >
+                      {/* Timeline dot */}
+                      <motion.div
+                        className="relative z-10 w-4 h-4 rounded-full flex items-center justify-center shrink-0"
+                        style={{ backgroundColor: `${color}30`, border: `2px solid ${color}` }}
+                        whileHover={{ scale: 1.3 }}
+                      >
+                        <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
+                      </motion.div>
+                      
+                      {/* Content */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span 
+                            className="text-xs font-medium"
+                            style={{ color }}
+                          >
+                            {isRtl ? config.nameAr : config.name}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {formatTime(entry.timestamp)}
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate mt-0.5 opacity-70 group-hover:opacity-100 transition-opacity">
+                          "{entry.trigger.slice(0, 50)}{entry.trigger.length > 50 ? '...' : ''}"
+                        </p>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+            
+            {history.length > 5 && !isExpanded && (
+              <div className="text-center mt-2">
+                <span className="text-xs text-muted-foreground">
+                  +{history.length - 5} {isRtl ? 'المزيد' : 'more'}
+                </span>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Compact timeline bar when collapsed */}
+      {!isExpanded && (
+        <div className="px-4 pb-2">
+          <div className="flex items-center gap-1 overflow-x-auto pb-1">
+            {displayedHistory.map((entry, i) => (
+              <motion.div
+                key={entry.id}
+                initial={{ opacity: 0, scale: 0 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: i * 0.05 }}
+                className="flex items-center gap-1 shrink-0"
+              >
+                <div
+                  className="w-6 h-6 rounded-full flex items-center justify-center"
+                  style={{ backgroundColor: `${PERSONALITY_COLORS[entry.personality]}20` }}
+                  title={`${PERSONALITY_CONFIGS[entry.personality].name}: ${entry.trigger.slice(0, 30)}...`}
+                >
+                  <span className="text-xs" style={{ color: PERSONALITY_COLORS[entry.personality] }}>
+                    {PERSONALITY_CONFIGS[entry.personality].icon}
+                  </span>
+                </div>
+                {i < displayedHistory.length - 1 && (
+                  <div className="w-4 h-0.5 bg-muted" />
+                )}
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      )}
+    </motion.div>
+  );
+};
+
+// ============================================
 // ONBOARDING COMPONENT
 // ============================================
 
@@ -1490,6 +1753,8 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(loadSettings);
   const [personality, setPersonality] = useState<ZahraPersonality | null>(null);
   const [messages, setMessages] = useState<ZahraMessage[]>(() => loadMessages());
+  const [personalityHistory, setPersonalityHistory] = useState<PersonalityHistoryEntry[]>(() => loadPersonalityHistory());
+  const [showTimeline, setShowTimeline] = useState(false);
   const [input, setInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
@@ -1508,6 +1773,7 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
   // Persist settings
   useEffect(() => { saveSettings(voiceSettings); }, [voiceSettings]);
   useEffect(() => { saveMessages(messages); }, [messages]);
+  useEffect(() => { savePersonalityHistory(personalityHistory); }, [personalityHistory]);
   
   // Auto-scroll
   useEffect(() => {
@@ -1544,6 +1810,17 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
 
     const detectedPersonality = detectPersonality(content);
     setPersonality(detectedPersonality);
+    
+    // Track personality change in history
+    if (detectedPersonality) {
+      const historyEntry: PersonalityHistoryEntry = {
+        id: Date.now().toString(),
+        personality: detectedPersonality,
+        timestamp: new Date(),
+        trigger: content.trim(),
+      };
+      setPersonalityHistory(prev => [...prev, historyEntry]);
+    }
 
     // Check for research intent
     const wantsResearch = content.toLowerCase().includes('research') || 
@@ -1629,7 +1906,14 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
-  const handleClear = () => { setMessages([]); localStorage.removeItem(ZAHRA_MEMORY_KEY); };
+  const handleClear = () => { 
+    setMessages([]); 
+    localStorage.removeItem(ZAHRA_MEMORY_KEY); 
+  };
+  const handleClearHistory = () => {
+    setPersonalityHistory([]);
+    clearPersonalityHistory();
+  };
 
   // Show onboarding
   if (showOnboarding) {
@@ -1686,6 +1970,18 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
         </div>
 
         <div className="flex items-center gap-1">
+          {/* Timeline toggle */}
+          <Button
+            variant={showTimeline ? "default" : "ghost"}
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => setShowTimeline(!showTimeline)}
+            title={voiceSettings.language === 'ar' ? 'سجل المزاج' : 'Mood Timeline'}
+            style={showTimeline ? { backgroundColor: config.color } : undefined}
+          >
+            <History className="w-4 h-4" />
+          </Button>
+          
           {/* Settings dropdown */}
           <SettingsDropdown
             voiceSettings={voiceSettings}
@@ -1720,6 +2016,17 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
           )}
         </div>
       </div>
+
+      {/* Personality Timeline */}
+      <AnimatePresence>
+        {showTimeline && (
+          <PersonalityTimeline
+            history={personalityHistory}
+            language={voiceSettings.language}
+            onClear={handleClearHistory}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Research progress */}
       <AnimatePresence>
