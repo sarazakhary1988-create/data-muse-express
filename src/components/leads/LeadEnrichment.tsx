@@ -6,7 +6,7 @@ import {
   MapPin, Calendar, Award, TrendingUp, AlertCircle, GraduationCap,
   DollarSign, User, ChevronDown, ChevronUp, MessageSquare, Send,
   Clock, Target, PieChart, Twitter, Facebook, Instagram, Youtube,
-  Sparkles, XCircle, RefreshCw
+  Sparkles, XCircle, RefreshCw, Lightbulb, ThumbsUp, Zap, X
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -19,6 +19,7 @@ import { Progress } from '@/components/ui/progress';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import ReactMarkdown from 'react-markdown';
@@ -56,14 +57,25 @@ interface EnrichedResult {
   location?: string;
   estimatedAnnualIncome?: string;
   aiProfileSummary?: string;
+  profileSummary?: string;
+  companyPositioning?: string;
+  yearsOfExperience?: string;
+  annualIncome?: {
+    estimate: string;
+    methodology: string;
+    confidence: string;
+  };
   bestTimeToContact?: {
     prediction: string;
     reasoning: string;
     confidence: string;
   };
-  education?: Array<{ degree: string; institution: string; year: string; details?: string }>;
-  workExperience?: Array<{ title: string; company: string; duration: string; description?: string }>;
+  education?: Array<{ degree: string; institution: string; year: string; details?: string; field?: string; honors?: string }>;
+  workExperience?: Array<{ title: string; company: string; duration: string; description?: string; location?: string }>;
   skills?: string[];
+  keyInsights?: string[];
+  strengths?: string[];
+  recommendations?: string[];
   investmentInterests?: {
     sectors?: string[];
     investmentStyle?: string;
@@ -99,15 +111,15 @@ interface EnrichedResult {
   };
   ownership?: {
     type?: string;
-    majorShareholders?: Array<{ name: string; stake: string; type: string }>;
+    majorShareholders?: Array<{ name: string; stake?: string; type?: string; aiProfileSummary?: string }>;
     ultimateOwner?: string;
   };
   products?: string[];
   keyClients?: string[];
   competitors?: string[];
   investmentActivity?: {
-    acquisitions?: Array<{ company: string; date: string; amount?: string }>;
-    investments?: Array<{ company: string; date: string; amount?: string }>;
+    acquisitions?: Array<{ company: string; date: string; amount?: string; rationale?: string }>;
+    investments?: Array<{ company: string; date: string; amount?: string; stage?: string }>;
     fundingReceived?: Array<{ round: string; date: string; amount: string; investors?: string[] }>;
   };
   marketPosition?: string;
@@ -144,9 +156,19 @@ interface EnrichedResult {
     linkedinUrl?: string;
   }>;
   keyFacts: string[];
-  recentNews?: Array<{ headline: string; date?: string; summary?: string; url?: string } | string>;
+  recentNews?: Array<{ headline: string; date?: string; summary?: string; url?: string; significance?: string } | string>;
   sources: Array<{ title: string; url: string }>;
   enrichedAt: Date;
+}
+
+// Profile popup for clickable names
+interface ProfilePopupData {
+  name: string;
+  title?: string;
+  aiProfileSummary?: string;
+  linkedinUrl?: string;
+  tenure?: string;
+  stake?: string;
 }
 
 interface ChatMessage {
@@ -191,6 +213,9 @@ export const LeadEnrichment = () => {
   const [chatInput, setChatInput] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
   const chatScrollRef = useRef<HTMLDivElement>(null);
+  
+  // Profile popup state for clickable management/owner names
+  const [profilePopup, setProfilePopup] = useState<ProfilePopupData | null>(null);
   
   const [personForm, setPersonForm] = useState<LeadSearchForm>({
     firstName: '',
@@ -610,8 +635,8 @@ export const LeadEnrichment = () => {
           </div>
         )}
 
-        {/* Estimated Income & Best Time to Contact */}
-        <div className="grid md:grid-cols-2 gap-4">
+        {/* Key Stats Row */}
+        <div className="grid md:grid-cols-3 gap-4">
           {result.estimatedAnnualIncome && (
             <div className="p-4 rounded-lg bg-green-500/10 border border-green-500/20">
               <h5 className="font-semibold text-sm mb-2 flex items-center gap-2">
@@ -619,6 +644,19 @@ export const LeadEnrichment = () => {
                 Estimated Annual Income
               </h5>
               <p className="text-lg font-bold text-green-600">{result.estimatedAnnualIncome}</p>
+              {result.annualIncome?.methodology && (
+                <p className="text-xs text-muted-foreground mt-1">{result.annualIncome.methodology}</p>
+              )}
+            </div>
+          )}
+          
+          {result.yearsOfExperience && (
+            <div className="p-4 rounded-lg bg-purple-500/10 border border-purple-500/20">
+              <h5 className="font-semibold text-sm mb-2 flex items-center gap-2">
+                <Briefcase className="w-4 h-4 text-purple-500" />
+                Years of Experience
+              </h5>
+              <p className="text-lg font-bold text-purple-600">{result.yearsOfExperience}</p>
             </div>
           )}
           
@@ -635,6 +673,17 @@ export const LeadEnrichment = () => {
           )}
         </div>
 
+        {/* Company Positioning */}
+        {result.companyPositioning && (
+          <div className="p-4 rounded-lg bg-indigo-500/10 border border-indigo-500/20">
+            <h5 className="font-semibold text-sm mb-2 flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-indigo-500" />
+              Company Positioning
+            </h5>
+            <p className="text-sm text-muted-foreground whitespace-pre-wrap">{result.companyPositioning}</p>
+          </div>
+        )}
+
         {/* Overview */}
         {result.overview && (
           <div>
@@ -643,6 +692,60 @@ export const LeadEnrichment = () => {
               Professional Overview
             </h5>
             <p className="text-sm text-muted-foreground whitespace-pre-wrap">{result.overview}</p>
+          </div>
+        )}
+
+        {/* Key Insights */}
+        {result.keyInsights && result.keyInsights.length > 0 && (
+          <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
+            <h5 className="font-semibold text-sm mb-3 flex items-center gap-2">
+              <Lightbulb className="w-4 h-4 text-amber-500" />
+              Key Insights ({result.keyInsights.length})
+            </h5>
+            <ul className="space-y-2">
+              {result.keyInsights.map((insight, i) => (
+                <li key={i} className="text-sm text-muted-foreground flex items-start gap-2 p-2 rounded bg-background/50">
+                  <span className="text-amber-500 mt-0.5 font-bold">{i + 1}.</span>
+                  {insight}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Strengths */}
+        {result.strengths && result.strengths.length > 0 && (
+          <div className="p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+            <h5 className="font-semibold text-sm mb-3 flex items-center gap-2">
+              <ThumbsUp className="w-4 h-4 text-emerald-500" />
+              Key Strengths
+            </h5>
+            <ul className="space-y-2">
+              {result.strengths.map((strength, i) => (
+                <li key={i} className="text-sm text-muted-foreground flex items-start gap-2 p-2 rounded bg-background/50">
+                  <span className="text-emerald-500 mt-0.5">✓</span>
+                  {strength}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Recommendations */}
+        {result.recommendations && result.recommendations.length > 0 && (
+          <div className="p-4 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
+            <h5 className="font-semibold text-sm mb-3 flex items-center gap-2">
+              <Zap className="w-4 h-4 text-cyan-500" />
+              Engagement Recommendations
+            </h5>
+            <ul className="space-y-2">
+              {result.recommendations.map((rec, i) => (
+                <li key={i} className="text-sm text-muted-foreground flex items-start gap-2 p-2 rounded bg-background/50">
+                  <span className="text-cyan-500 mt-0.5">→</span>
+                  {rec}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 
@@ -1021,7 +1124,7 @@ export const LeadEnrichment = () => {
           </Collapsible>
         )}
 
-        {/* Ownership */}
+        {/* Ownership - Clickable names with AI profile popups */}
         {result.ownership && (
           <Collapsible open={expandedSections['ownership']} onOpenChange={() => toggleSection('ownership')}>
             <CollapsibleTrigger className="flex items-center justify-between w-full p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
@@ -1047,15 +1150,32 @@ export const LeadEnrichment = () => {
                 )}
                 {result.ownership.majorShareholders && result.ownership.majorShareholders.length > 0 && (
                   <div className="p-3 rounded-lg bg-muted/30">
-                    <div className="text-xs text-muted-foreground mb-2">Major Shareholders</div>
-                    <div className="space-y-2">
+                    <div className="text-xs text-muted-foreground mb-2">Major Shareholders / Owners / Founders</div>
+                    <div className="space-y-3">
                       {result.ownership.majorShareholders.map((sh, i) => (
-                        <div key={i} className="flex items-center justify-between">
-                          <span className="font-medium">{sh.name}</span>
-                          <div className="flex items-center gap-2">
-                            <Badge variant="secondary">{sh.stake}</Badge>
-                            <Badge variant="outline" className="text-xs">{sh.type}</Badge>
+                        <div key={i} className="p-3 rounded-lg bg-background/50 border border-border/50">
+                          <div className="flex items-center justify-between">
+                            <button
+                              onClick={() => setProfilePopup({
+                                name: sh.name,
+                                title: sh.type,
+                                aiProfileSummary: sh.aiProfileSummary,
+                                stake: sh.stake,
+                              })}
+                              className="font-medium text-primary hover:underline cursor-pointer flex items-center gap-1"
+                            >
+                              <User className="w-3 h-3" />
+                              {sh.name}
+                              {sh.aiProfileSummary && <Sparkles className="w-3 h-3 text-amber-500" />}
+                            </button>
+                            <div className="flex items-center gap-2">
+                              {sh.stake && <Badge variant="secondary">{sh.stake}</Badge>}
+                              {sh.type && <Badge variant="outline" className="text-xs">{sh.type}</Badge>}
+                            </div>
                           </div>
+                          {sh.aiProfileSummary && (
+                            <p className="text-xs text-muted-foreground mt-2 line-clamp-2">{sh.aiProfileSummary}</p>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -1066,7 +1186,7 @@ export const LeadEnrichment = () => {
           </Collapsible>
         )}
 
-        {/* Leadership */}
+        {/* Leadership - Clickable names */}
         {result.leadership && result.leadership.length > 0 && (
           <Collapsible open={expandedSections['leadership']} onOpenChange={() => toggleSection('leadership')}>
             <CollapsibleTrigger className="flex items-center justify-between w-full p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
@@ -1082,8 +1202,20 @@ export const LeadEnrichment = () => {
                   <div key={i} className="p-4 rounded-lg bg-muted/30 border border-border/50">
                     <div className="flex items-start justify-between">
                       <div>
-                        <div className="font-semibold">{leader.name}</div>
-                        <div className="text-sm text-primary">{leader.title}</div>
+                        <button
+                          onClick={() => setProfilePopup({
+                            name: leader.name,
+                            title: leader.title,
+                            aiProfileSummary: leader.aiProfileSummary || leader.background,
+                            linkedinUrl: leader.linkedinUrl,
+                            tenure: leader.tenure,
+                          })}
+                          className="font-semibold text-primary hover:underline cursor-pointer flex items-center gap-1"
+                        >
+                          {leader.name}
+                          {leader.aiProfileSummary && <Sparkles className="w-3 h-3 text-amber-500" />}
+                        </button>
+                        <div className="text-sm text-muted-foreground">{leader.title}</div>
                         {leader.tenure && <div className="text-xs text-muted-foreground">{leader.tenure}</div>}
                       </div>
                       {leader.linkedinUrl && (
@@ -1094,7 +1226,10 @@ export const LeadEnrichment = () => {
                     </div>
                     {leader.aiProfileSummary && (
                       <div className="mt-2 p-2 rounded bg-primary/5 border border-primary/10">
-                        <div className="text-xs text-primary font-medium mb-1">AI Profile Summary</div>
+                        <div className="text-xs text-primary font-medium mb-1 flex items-center gap-1">
+                          <Sparkles className="w-3 h-3" />
+                          AI Profile Summary
+                        </div>
                         <p className="text-sm text-muted-foreground">{leader.aiProfileSummary}</p>
                       </div>
                     )}
@@ -1108,7 +1243,7 @@ export const LeadEnrichment = () => {
           </Collapsible>
         )}
 
-        {/* Board Members */}
+        {/* Board Members - Clickable names */}
         {result.boardMembers && result.boardMembers.length > 0 && (
           <Collapsible open={expandedSections['board']} onOpenChange={() => toggleSection('board')}>
             <CollapsibleTrigger className="flex items-center justify-between w-full p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
@@ -1122,12 +1257,25 @@ export const LeadEnrichment = () => {
               <div className="grid md:grid-cols-2 gap-3">
                 {result.boardMembers.map((member, i) => (
                   <div key={i} className="p-3 rounded-lg bg-muted/30 border border-border/50">
-                    <div className="font-semibold">{member.name}</div>
-                    {member.title && <div className="text-sm text-primary">{member.title}</div>}
+                    <button
+                      onClick={() => setProfilePopup({
+                        name: member.name,
+                        title: member.title,
+                        aiProfileSummary: member.aiProfileSummary || member.background,
+                      })}
+                      className="font-semibold text-primary hover:underline cursor-pointer flex items-center gap-1"
+                    >
+                      {member.name}
+                      {member.aiProfileSummary && <Sparkles className="w-3 h-3 text-amber-500" />}
+                    </button>
+                    {member.title && <div className="text-sm text-muted-foreground">{member.title}</div>}
                     {member.otherRoles && <p className="text-xs text-muted-foreground mt-1">{member.otherRoles}</p>}
                     {member.aiProfileSummary && (
                       <div className="mt-2 p-2 rounded bg-primary/5 border border-primary/10">
-                        <div className="text-xs text-primary font-medium mb-1">AI Summary</div>
+                        <div className="text-xs text-primary font-medium mb-1 flex items-center gap-1">
+                          <Sparkles className="w-3 h-3" />
+                          AI Summary
+                        </div>
                         <p className="text-xs text-muted-foreground">{member.aiProfileSummary}</p>
                       </div>
                     )}
@@ -1708,6 +1856,65 @@ export const LeadEnrichment = () => {
           )}
         </AnimatePresence>
       </motion.div>
+      {/* Profile Popup Dialog for clickable management/owner names */}
+      <Dialog open={!!profilePopup} onOpenChange={() => setProfilePopup(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <User className="w-5 h-5 text-primary" />
+              {profilePopup?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {profilePopup?.title && (
+              <div>
+                <div className="text-xs text-muted-foreground">Title / Role</div>
+                <div className="font-medium">{profilePopup.title}</div>
+              </div>
+            )}
+            
+            {profilePopup?.tenure && (
+              <div>
+                <div className="text-xs text-muted-foreground">Tenure</div>
+                <div className="font-medium">{profilePopup.tenure}</div>
+              </div>
+            )}
+            
+            {profilePopup?.stake && (
+              <div>
+                <div className="text-xs text-muted-foreground">Ownership Stake</div>
+                <Badge variant="secondary">{profilePopup.stake}</Badge>
+              </div>
+            )}
+            
+            {profilePopup?.aiProfileSummary ? (
+              <div className="p-4 rounded-lg bg-gradient-to-r from-primary/10 to-accent/10 border border-primary/20">
+                <h5 className="font-semibold text-sm mb-2 flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-primary" />
+                  AI-Generated Profile Summary
+                </h5>
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap">{profilePopup.aiProfileSummary}</p>
+              </div>
+            ) : (
+              <div className="p-4 rounded-lg bg-muted/50 text-center">
+                <p className="text-sm text-muted-foreground">No AI profile summary available for this person.</p>
+              </div>
+            )}
+            
+            {profilePopup?.linkedinUrl && (
+              <a 
+                href={profilePopup.linkedinUrl} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 transition-colors"
+              >
+                <Linkedin className="w-4 h-4" />
+                View LinkedIn Profile
+              </a>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

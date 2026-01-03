@@ -353,7 +353,7 @@ function buildCompanySearchQueries(request: CompanyEnrichmentRequest): string[] 
   return queries.slice(0, 10);
 }
 
-// Generate person enrichment report using OpenAI
+// Generate person enrichment report using OpenAI - DETAILED BUSINESS DATA
 async function generatePersonReport(
   request: PersonEnrichmentRequest,
   searchResults: any[],
@@ -375,66 +375,91 @@ async function generatePersonReport(
     ? `Direct Profile Content:\n${scrapedContent}\n\n---\n\nWeb Research:\n${allContent}`
     : allContent;
   
-  const systemPrompt = `You are an expert lead intelligence analyst powered by OpenAI GPT-4o. Generate a COMPREHENSIVE person enrichment profile.
+  const systemPrompt = `You are an expert lead intelligence analyst. Enrich this person with business-usable data.
 
-YOUR TASK: Create a detailed professional intelligence report for "${fullName}".
+CRITICAL: Generate COMPREHENSIVE, DETAILED data for every field. Do not leave fields empty - use research to populate all sections with meaningful business intelligence.
 
-You MUST extract and generate ALL of the following fields. Use "Not found in sources" only if truly absent.
-
-OUTPUT AS JSON with this EXACT structure:
+Return JSON with this EXACT structure:
 {
   "name": "Full Name",
   "type": "person",
-  "title": "Current Job Title",
-  "company": "Current Company",
-  "estimatedAnnualIncome": "$X - $Y range based on title/company/industry",
-  "aiProfileSummary": "2-3 paragraph professional AI-generated summary of this person",
-  "bestTimeToContact": {
-    "prediction": "e.g., Tuesday-Thursday, 9-11 AM local time",
-    "reasoning": "Based on role, seniority, industry patterns",
+  "profile": {
+    "full_name": "Complete full name",
+    "title": "Current job title with seniority level",
+    "company": "Current company name",
+    "location": "City, State/Province, Country",
+    "linkedin_url": "LinkedIn profile URL",
+    "email": "Professional email if found",
+    "phone": "Phone number if found",
+    "summary": "3-4 paragraph comprehensive professional biography covering career trajectory, achievements, expertise areas, and industry impact",
+    "skills": ["Skill 1", "Skill 2", "Skill 3", "...up to 15 relevant skills"],
+    "education": [
+      {"degree": "Degree name", "institution": "University name", "year": "Graduation year", "field": "Field of study", "honors": "Any honors/distinctions"}
+    ],
+    "experience": [
+      {"title": "Job title", "company": "Company name", "duration": "Start - End", "location": "Location", "description": "Detailed 2-3 sentence description of responsibilities and achievements"}
+    ]
+  },
+  "profileSummary": "Executive-level 2 paragraph summary of who this person is, their career highlights, and why they matter in their industry",
+  "companyPositioning": "Analysis of their current company's market position, their role in the organization, and strategic importance",
+  "estimatedAnnualIncome": "$X,XXX,XXX - $X,XXX,XXX based on title, company size, industry benchmarks, and location",
+  "annualIncome": {
+    "estimate": "$X,XXX,XXX - $X,XXX,XXX",
+    "methodology": "Explanation of how this was estimated based on role, company, industry, location",
     "confidence": "high/medium/low"
   },
-  "linkedinUrl": "LinkedIn profile URL",
-  "twitterUrl": "Twitter/X profile URL",
-  "email": "Email if found",
-  "phone": "Phone if found",
-  "location": "City, Country",
-  "education": [
-    {"degree": "MBA", "institution": "Harvard Business School", "year": "2015", "details": "Focus on Strategy"}
+  "yearsOfExperience": "XX years in industry, XX years in current role",
+  "bestTimeToContact": {
+    "prediction": "Specific days and times (e.g., Tuesday-Thursday, 9-11 AM PST)",
+    "reasoning": "Detailed explanation based on role, industry patterns, timezone",
+    "confidence": "high/medium/low"
+  },
+  "keyInsights": [
+    "Insight 1 about their career trajectory or decision-making patterns",
+    "Insight 2 about their professional network or influence",
+    "Insight 3 about their business priorities or interests",
+    "Insight 4 about opportunities to engage",
+    "Insight 5 about potential challenges or considerations"
   ],
-  "workExperience": [
-    {"title": "CEO", "company": "Company Name", "duration": "2020-Present", "description": "Key responsibilities and achievements"}
+  "strengths": [
+    "Professional strength 1 with evidence",
+    "Professional strength 2 with evidence",
+    "Professional strength 3 with evidence"
   ],
-  "skills": ["Leadership", "Strategy", "M&A"],
+  "recommendations": [
+    "Recommendation 1 for engaging with this person",
+    "Recommendation 2 for building relationship",
+    "Recommendation 3 for timing and approach"
+  ],
   "investmentInterests": {
-    "sectors": ["Technology", "Healthcare"],
-    "investmentStyle": "Growth equity, Series B-C",
+    "sectors": ["Technology sectors of interest"],
+    "investmentStyle": "Their investment approach if applicable",
     "pastInvestments": ["Company A", "Company B"],
-    "boardPositions": ["Company X", "Company Y"]
+    "boardPositions": ["Company X board role"]
   },
   "interestIndicators": {
-    "businessInterests": ["AI/ML", "Fintech", "SaaS"],
-    "personalInterests": ["Golf", "Philanthropy"],
-    "networkingEvents": ["TechCrunch Disrupt", "Davos"],
-    "publicationsOrMedia": ["Forbes contributor", "Bloomberg interviews"]
+    "businessInterests": ["AI/ML", "FinTech", "etc."],
+    "personalInterests": ["Hobbies and interests"],
+    "networkingEvents": ["Conferences they attend"],
+    "publicationsOrMedia": ["Media appearances, articles, podcasts"]
   },
-  "overview": "Comprehensive professional bio",
-  "keyFacts": ["Achievement 1", "Achievement 2"],
-  "recentNews": ["Recent news item 1"],
-  "socialProfiles": {
-    "linkedin": "URL",
-    "twitter": "URL",
-    "website": "URL",
-    "others": ["GitHub URL", "Medium URL"]
-  }
+  "insights": [
+    "Key business insight 1",
+    "Key business insight 2",
+    "Key business insight 3"
+  ],
+  "sources": [{"title": "Source title", "url": "Source URL"}]
 }
 
 CRITICAL INSTRUCTIONS:
-1. estimatedAnnualIncome: Base on job title, company size, industry, and location. Provide a range.
-2. bestTimeToContact: Analyze their role (executives prefer early morning, sales prefer mid-week), timezone, and industry.
-3. investmentInterests: Look for any mention of investments, board positions, advisory roles, or fund involvement.
-4. interestIndicators: Analyze their content, speeches, articles, hobbies, and affiliations.
-5. Be specific with data - no vague statements.`;
+1. estimatedAnnualIncome: Calculate precise range based on job title level, company size (startup vs Fortune 500), industry (tech vs non-profit), and location (SF vs rural). Be specific.
+2. yearsOfExperience: Calculate from earliest work experience to present. Break down by industry vs current role.
+3. profile.summary: Write a comprehensive 3-4 paragraph biography that covers their complete professional journey.
+4. profile.experience: Include ALL positions with detailed descriptions of responsibilities and achievements.
+5. keyInsights: Provide 5 actionable business insights about this person.
+6. strengths: Identify 3 key professional strengths with evidence from their background.
+7. recommendations: Give 3 specific recommendations for engaging with this person.
+8. Include only plausible business data based on research. Leave unknown fields empty rather than guessing.`;
 
   const userPrompt = `Research Subject: ${fullName}
 ${request.company ? `Current Company: ${request.company}` : ''}
@@ -448,10 +473,10 @@ Social Profiles Found:
 - Website: ${socialProfiles.website || 'Not found'}
 - Other profiles: ${socialProfiles.others.join(', ') || 'None found'}
 
-Sources to analyze:
+Sources to analyze (extract ALL available information):
 ${combinedContent.slice(0, 60000)}
 
-Extract ALL available information and generate the complete person profile JSON.`;
+Generate the COMPLETE detailed person profile JSON with ALL fields populated.`;
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -466,7 +491,7 @@ Extract ALL available information and generate the complete person profile JSON.
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
-        max_tokens: 4096,
+        max_tokens: 8192,
         temperature: 0.3,
       }),
     });
@@ -498,6 +523,31 @@ Extract ALL available information and generate the complete person profile JSON.
           sources: searchResults.slice(0, 10).map(r => ({ title: r.title, url: r.url })),
         }
       };
+    }
+    
+    // Flatten profile fields to top level for compatibility
+    if (parsedData.profile) {
+      parsedData.title = parsedData.profile.title || parsedData.title;
+      parsedData.company = parsedData.profile.company || parsedData.company;
+      parsedData.location = parsedData.profile.location || parsedData.location;
+      parsedData.linkedinUrl = parsedData.profile.linkedin_url || parsedData.linkedinUrl;
+      parsedData.email = parsedData.profile.email || parsedData.email;
+      parsedData.phone = parsedData.profile.phone || parsedData.phone;
+      parsedData.aiProfileSummary = parsedData.profile.summary || parsedData.profileSummary || parsedData.aiProfileSummary;
+      parsedData.skills = parsedData.profile.skills || parsedData.skills;
+      parsedData.education = parsedData.profile.education || parsedData.education;
+      parsedData.workExperience = parsedData.profile.experience || parsedData.workExperience;
+    }
+    
+    // Ensure overview exists
+    parsedData.overview = parsedData.profileSummary || parsedData.aiProfileSummary || parsedData.overview || '';
+    
+    // Extract keyFacts from insights if not present
+    if (!parsedData.keyFacts && parsedData.keyInsights) {
+      parsedData.keyFacts = parsedData.keyInsights;
+    }
+    if (!parsedData.keyFacts && parsedData.insights) {
+      parsedData.keyFacts = parsedData.insights;
     }
     
     // Add sources
@@ -554,7 +604,7 @@ function safeJsonParseFromModel(text: string): any | null {
   }
 }
 
-// Generate company enrichment report using STRICT grounded extraction (no estimates)
+// Generate company enrichment report using OpenAI - DETAILED BUSINESS DATA
 async function generateCompanyReport(
   request: CompanyEnrichmentRequest,
   evidenceSources: Array<{ url: string; title?: string; content: string }>,
@@ -571,7 +621,7 @@ async function generateCompanyReport(
     .filter(s => typeof s.content === 'string' && s.content.trim().length > 200)
     .slice(0, 25);
 
-  if (sourcesWithContent.length < 3) {
+  if (sourcesWithContent.length < 2) {
     return {
       success: false,
       error: 'Insufficient real-time sources retrieved. Provide the official website or more specific company details.',
@@ -585,34 +635,116 @@ async function generateCompanyReport(
     })
     .join('\n\n---\n\n');
 
-  const systemPrompt = `You are a STRICT, verification-first company intelligence extractor.
+  const systemPrompt = `You are an expert company intelligence analyst. Enrich this company with business-usable data.
 
-NON-NEGOTIABLE RULES:
-1) Use ONLY the provided SOURCES text. Do NOT use external knowledge.
-2) Do NOT estimate or guess ANYTHING (no revenue ranges, no employee ranges, no ownership assumptions).
-3) Only output a field if a source explicitly supports it.
-4) For EVERY field you output, include citations: an array of source URLs that explicitly support that field.
-5) Omit fields entirely if they are not supported (do NOT output empty arrays).
-6) Return ONLY valid JSON (no markdown, no code fences).
+CRITICAL: Generate COMPREHENSIVE, DETAILED data for every field. Extract ALL available information from sources.
 
-Output JSON structure (fields are optional unless noted):
+Return JSON with this EXACT structure:
 {
-  "name": string (required),
-  "type": "company" (required),
-  "overview": { "value": string, "citations": string[] },
-  "website": { "value": string, "citations": string[] },
-  "industry": { "value": string, "citations": string[] },
-  "location": { "value": string, "citations": string[] },
-  "offices": [ { "location": string, "address"?: string, "phone"?: string, "type"?: string, "citations": string[] } ],
-  "socialMedia": { "linkedin"?: {"value": string, "citations": string[]}, "twitter"?: {"value": string, "citations": string[]}, "facebook"?: {"value": string, "citations": string[]}, "instagram"?: {"value": string, "citations": string[]}, "youtube"?: {"value": string, "citations": string[]} },
-  "leadership": [ { "name": string, "title"?: string, "background"?: string, "linkedinUrl"?: string, "citations": string[] } ],
-  "ownership": { "type"?: {"value": string, "citations": string[]}, "ultimateOwner"?: {"value": string, "citations": string[]}, "majorShareholders"?: [ { "name": string, "stake"?: string, "type"?: string, "citations": string[] } ] },
-  "financials": { "revenue"?: {"value": string, "citations": string[]}, "netIncome"?: {"value": string, "citations": string[]}, "funding"?: {"value": string, "citations": string[]}, "valuation"?: {"value": string, "citations": string[]}, "investors"?: {"value": string[], "citations": string[]} },
-  "investmentActivity": { "acquisitions"?: [ {"company": string, "date"?: string, "amount"?: string, "citations": string[] } ], "investments"?: [ {"company": string, "date"?: string, "amount"?: string, "citations": string[] } ], "fundingReceived"?: [ {"round": string, "date"?: string, "amount"?: string, "investors"?: string[], "citations": string[] } ] },
-  "keyFacts": [ { "fact": string, "citations": string[] } ],
-  "recentNews": [ { "headline": string, "date"?: string, "summary"?: string, "url"?: string } ]
+  "name": "Company full legal name",
+  "type": "company",
+  "company": {
+    "name": "Company name",
+    "website": "Official website URL",
+    "industry": "Primary industry",
+    "sub_industry": "Specific sub-industry or sector",
+    "country": "Headquarters country",
+    "headquarters": "Full headquarters address",
+    "employees": "Employee count or range (e.g., 1,000-5,000)",
+    "founded": "Year founded",
+    "revenue": "Annual revenue or estimate range",
+    "summary": "4-5 paragraph comprehensive company overview covering history, business model, market position, competitive advantages, and strategic direction",
+    "management": [
+      {
+        "name": "Executive name",
+        "title": "C-Suite or VP title",
+        "profile_summary_popup": "3-4 sentence AI-generated profile covering their background, expertise, notable achievements, and leadership style. Make this detailed enough to display in a popup when their name is clicked.",
+        "linkedin_url": "LinkedIn profile URL if found",
+        "tenure": "How long in role"
+      }
+    ],
+    "owner_founder": [
+      {
+        "name": "Owner/Founder name",
+        "title": "Founder, Co-Founder, Owner, Chairman, etc.",
+        "profile_summary_popup": "3-4 sentence AI-generated profile covering their entrepreneurial journey, vision, investments, and influence. Make this detailed for popup display.",
+        "linkedin_url": "LinkedIn profile URL if found",
+        "ownership_stake": "Ownership percentage if known"
+      }
+    ],
+    "board_members": [
+      {
+        "name": "Board member name",
+        "title": "Board role (Director, Chairman, etc.)",
+        "profile_summary_popup": "AI-generated profile for popup display",
+        "other_roles": "Other board positions or companies"
+      }
+    ]
+  },
+  "profileSummary": "Executive summary paragraph about the company's market position and strategic importance",
+  "companyPositioning": "Detailed analysis of market position, competitive landscape, and strategic differentiation",
+  "estimatedRevenueRange": "$XXM - $XXXM or $X.XB - $X.XB with confidence level",
+  "revenue": {
+    "estimate": "Revenue figure or range",
+    "source": "How this was determined (public filings, estimates, etc.)",
+    "confidence": "high/medium/low"
+  },
+  "offices": [
+    {
+      "location": "City, Country",
+      "type": "Headquarters/Regional Office/R&D Center/etc.",
+      "address": "Full street address if available",
+      "phone": "Office phone number if available"
+    }
+  ],
+  "socialMedia": {
+    "linkedin": "LinkedIn company page URL",
+    "twitter": "Twitter/X profile URL",
+    "facebook": "Facebook page URL",
+    "instagram": "Instagram profile URL",
+    "youtube": "YouTube channel URL"
+  },
+  "keyInsights": [
+    "Strategic insight 1 about business direction",
+    "Strategic insight 2 about market opportunity",
+    "Strategic insight 3 about competitive position",
+    "Strategic insight 4 about growth trajectory",
+    "Strategic insight 5 about risks or challenges"
+  ],
+  "strengths": [
+    "Competitive strength 1 with evidence",
+    "Competitive strength 2 with evidence",
+    "Competitive strength 3 with evidence"
+  ],
+  "recommendations": [
+    "Business recommendation 1",
+    "Business recommendation 2",
+    "Business recommendation 3"
+  ],
+  "investmentActivity": {
+    "acquisitions": [{"company": "Acquired company", "date": "Date", "amount": "Deal value", "rationale": "Strategic rationale"}],
+    "investments": [{"company": "Investment target", "date": "Date", "amount": "Amount", "stage": "Series/Stage"}],
+    "fundingReceived": [{"round": "Series X", "date": "Date", "amount": "Amount", "investors": ["Investor names"]}]
+  },
+  "news": [
+    {"headline": "News headline", "date": "Date", "summary": "2-3 sentence summary", "url": "Source URL", "significance": "Why this matters"}
+  ],
+  "products": ["Product/Service 1", "Product/Service 2"],
+  "keyClients": ["Client 1", "Client 2"],
+  "competitors": ["Competitor 1", "Competitor 2"],
+  "insights": ["Key insight 1", "Key insight 2", "Key insight 3"],
+  "sources": [{"title": "Source title", "url": "Source URL"}]
 }
-`;
+
+CRITICAL INSTRUCTIONS:
+1. management/owner_founder profile_summary_popup: These are CLICKABLE names that show a popup. Write detailed 3-4 sentence summaries covering background, achievements, expertise, and leadership style. Make them informative enough to stand alone.
+2. estimatedRevenueRange: Provide specific range based on company size, industry, employee count. Include confidence level.
+3. offices: Include ALL offices found with complete addresses and phone numbers.
+4. socialMedia: Include ALL social media URLs (LinkedIn, Twitter, Facebook, Instagram, YouTube).
+5. keyInsights: Provide 5 actionable strategic insights about this company.
+6. investmentActivity: Include ALL acquisitions, investments made, and funding received with details.
+7. news: Include recent significant news with dates and summaries.
+8. Include only data supported by sources. Leave unknown fields empty rather than guessing.`;
 
   const userPrompt = `Company: ${request.companyName}
 ${request.industry ? `Industry hint: ${request.industry}` : ''}
@@ -625,10 +757,10 @@ Known URLs from site discovery:
 - Twitter/X: ${socialProfiles.twitter || 'unknown'}
 - Other: ${(socialProfiles.others || []).slice(0, 10).join(', ') || 'none'}
 
-SOURCES:
+SOURCES (extract ALL available information):
 ${evidenceText}
 
-Return ONLY valid JSON following the specified structure.`;
+Generate the COMPLETE detailed company profile JSON with ALL fields populated, especially management and owner_founder with detailed profile_summary_popup for clickable names.`;
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -643,7 +775,7 @@ Return ONLY valid JSON following the specified structure.`;
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
-        max_tokens: 4096,
+        max_tokens: 8192,
         temperature: 0.2,
       }),
     });
@@ -664,40 +796,82 @@ Return ONLY valid JSON following the specified structure.`;
       return { success: false, error: 'Failed to parse model output (expected JSON)' };
     }
 
-    // Convert to the frontend-friendly flat shape while keeping strict grounding.
-    // (We keep citations in nested objects, but also provide a simplified view for display.)
+    // Flatten company fields to top level for compatibility
     const flattened: any = {
       name: request.companyName,
       type: 'company',
-      overview: parsed.overview?.value || parsed.overview || '',
-      website: parsed.website?.value || websiteUrl || socialProfiles.website,
-      industry: parsed.industry?.value,
-      location: parsed.location?.value,
+      overview: parsed.company?.summary || parsed.profileSummary || '',
+      website: parsed.company?.website || websiteUrl || socialProfiles.website,
+      industry: parsed.company?.industry,
+      subIndustry: parsed.company?.sub_industry,
+      location: parsed.company?.headquarters || parsed.company?.country,
+      employees: parsed.company?.employees,
+      founded: parsed.company?.founded,
+      estimatedRevenueRange: parsed.estimatedRevenueRange || parsed.revenue?.estimate || parsed.company?.revenue,
       offices: parsed.offices,
-      socialMedia: parsed.socialMedia && {
-        linkedin: parsed.socialMedia.linkedin?.value,
-        twitter: parsed.socialMedia.twitter?.value,
-        facebook: parsed.socialMedia.facebook?.value,
-        instagram: parsed.socialMedia.instagram?.value,
-        youtube: parsed.socialMedia.youtube?.value,
+      socialMedia: parsed.socialMedia || {
+        linkedin: socialProfiles.linkedin,
+        twitter: socialProfiles.twitter,
       },
-      leadership: parsed.leadership,
-      ownership: parsed.ownership && {
-        type: parsed.ownership.type?.value,
-        ultimateOwner: parsed.ownership.ultimateOwner?.value,
-        majorShareholders: parsed.ownership.majorShareholders,
+      // Leadership with AI profile summaries for popups
+      leadership: (parsed.company?.management || []).map((m: any) => ({
+        name: m.name,
+        title: m.title,
+        aiProfileSummary: m.profile_summary_popup,
+        linkedinUrl: m.linkedin_url,
+        tenure: m.tenure,
+        background: m.profile_summary_popup,
+      })),
+      // Owners/Founders with AI profile summaries for popups
+      ownership: {
+        type: 'Private/Public',
+        ultimateOwner: parsed.company?.owner_founder?.[0]?.name,
+        majorShareholders: (parsed.company?.owner_founder || []).map((o: any) => ({
+          name: o.name,
+          stake: o.ownership_stake,
+          type: o.title,
+          aiProfileSummary: o.profile_summary_popup,
+        })),
       },
-      financials: parsed.financials && {
-        revenue: parsed.financials.revenue?.value,
-        netIncome: parsed.financials.netIncome?.value,
-        funding: parsed.financials.funding?.value,
-        valuation: parsed.financials.valuation?.value,
-        investors: parsed.financials.investors?.value,
+      // Board members with AI profile summaries
+      boardMembers: (parsed.company?.board_members || []).map((b: any) => ({
+        name: b.name,
+        title: b.title,
+        aiProfileSummary: b.profile_summary_popup,
+        otherRoles: b.other_roles,
+      })),
+      // Key people combines all leadership for display
+      keyPeople: [
+        ...(parsed.company?.management || []).map((m: any) => ({
+          name: m.name,
+          title: m.title,
+          aiProfileSummary: m.profile_summary_popup,
+          linkedinUrl: m.linkedin_url,
+          department: 'Executive',
+        })),
+        ...(parsed.company?.owner_founder || []).map((o: any) => ({
+          name: o.name,
+          title: o.title,
+          aiProfileSummary: o.profile_summary_popup,
+          department: 'Ownership',
+        })),
+      ],
+      financials: {
+        revenue: parsed.company?.revenue || parsed.revenue?.estimate,
+        funding: parsed.investmentActivity?.fundingReceived?.[0]?.amount,
+        valuation: parsed.valuation,
+        investors: parsed.investmentActivity?.fundingReceived?.[0]?.investors,
       },
       investmentActivity: parsed.investmentActivity,
-      keyFacts: (parsed.keyFacts || []).map((k: any) => k.fact).filter(Boolean),
-      recentNews: parsed.recentNews,
-      // Keep full grounded object for auditing
+      products: parsed.products,
+      keyClients: parsed.keyClients,
+      competitors: parsed.competitors,
+      keyFacts: parsed.keyInsights || parsed.insights || [],
+      strengths: parsed.strengths,
+      recommendations: parsed.recommendations,
+      recentNews: parsed.news,
+      companyPositioning: parsed.companyPositioning,
+      profileSummary: parsed.profileSummary,
       evidence: pruneEmptyDeep(parsed),
       sources: sourcesWithContent.slice(0, 15).map(s => ({
         title: (s.title || '').trim() || s.url,
