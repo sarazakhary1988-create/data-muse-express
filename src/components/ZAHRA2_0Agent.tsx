@@ -66,6 +66,109 @@ const clearConversation = () => {
 };
 
 // ============================================
+// AI CHAT STREAMING
+// ============================================
+
+const ZAHRA_CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/zahra-chat`;
+
+interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+async function streamZahraChat({
+  messages,
+  personality,
+  onDelta,
+  onDone,
+  onError,
+}: {
+  messages: ChatMessage[];
+  personality: string;
+  onDelta: (deltaText: string) => void;
+  onDone: () => void;
+  onError: (error: string) => void;
+}) {
+  try {
+    const response = await fetch(ZAHRA_CHAT_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+      },
+      body: JSON.stringify({ messages, personality }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Request failed with status ${response.status}`);
+    }
+
+    if (!response.body) {
+      throw new Error('No response body');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let textBuffer = '';
+    let streamDone = false;
+
+    while (!streamDone) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      textBuffer += decoder.decode(value, { stream: true });
+
+      let newlineIndex: number;
+      while ((newlineIndex = textBuffer.indexOf('\n')) !== -1) {
+        let line = textBuffer.slice(0, newlineIndex);
+        textBuffer = textBuffer.slice(newlineIndex + 1);
+
+        if (line.endsWith('\r')) line = line.slice(0, -1);
+        if (line.startsWith(':') || line.trim() === '') continue;
+        if (!line.startsWith('data: ')) continue;
+
+        const jsonStr = line.slice(6).trim();
+        if (jsonStr === '[DONE]') {
+          streamDone = true;
+          break;
+        }
+
+        try {
+          const parsed = JSON.parse(jsonStr);
+          const content = parsed.choices?.[0]?.delta?.content as string | undefined;
+          if (content) onDelta(content);
+        } catch {
+          textBuffer = line + '\n' + textBuffer;
+          break;
+        }
+      }
+    }
+
+    // Final flush
+    if (textBuffer.trim()) {
+      for (let raw of textBuffer.split('\n')) {
+        if (!raw) continue;
+        if (raw.endsWith('\r')) raw = raw.slice(0, -1);
+        if (raw.startsWith(':') || raw.trim() === '') continue;
+        if (!raw.startsWith('data: ')) continue;
+        const jsonStr = raw.slice(6).trim();
+        if (jsonStr === '[DONE]') continue;
+        try {
+          const parsed = JSON.parse(jsonStr);
+          const content = parsed.choices?.[0]?.delta?.content as string | undefined;
+          if (content) onDelta(content);
+        } catch { /* ignore */ }
+      }
+    }
+
+    onDone();
+  } catch (error) {
+    console.error('ZAHRA chat error:', error);
+    onError(error instanceof Error ? error.message : 'Failed to get AI response');
+  }
+}
+
+// ============================================
 // TYPES & CONSTANTS
 // ============================================
 
@@ -373,6 +476,7 @@ const ZahraAvatar: React.FC<ZahraAvatarProps> = ({
 
 interface ZahraMessageCardProps {
   message: ZahraMessage;
+  isStreaming?: boolean;
   onCopy?: () => void;
   onShare?: () => void;
   onSave?: () => void;
@@ -380,6 +484,7 @@ interface ZahraMessageCardProps {
 
 const ZahraMessageCard: React.FC<ZahraMessageCardProps> = ({ 
   message, 
+  isStreaming = false,
   onCopy, 
   onShare, 
   onSave 
@@ -429,11 +534,23 @@ const ZahraMessageCard: React.FC<ZahraMessageCardProps> = ({
             </span>
           </div>
           
-          {/* Message content */}
-          <p className="text-sm leading-relaxed">{message.content}</p>
+          {/* Message content with typing cursor */}
+          <p className="text-sm leading-relaxed">
+            {message.content}
+            {isStreaming && isZahra && (
+              <motion.span
+                className="inline-block w-0.5 h-4 bg-primary ml-0.5 align-middle"
+                animate={{ opacity: [1, 0, 1] }}
+                transition={{ duration: 0.6, repeat: Infinity, ease: "easeInOut" }}
+              />
+            )}
+            {!message.content && isStreaming && isZahra && (
+              <span className="text-muted-foreground italic">Thinking...</span>
+            )}
+          </p>
           
-          {/* Confidence indicator for Zahra messages */}
-          {isZahra && message.confidence !== undefined && (
+          {/* Confidence indicator for Zahra messages - only show when not streaming */}
+          {isZahra && message.confidence !== undefined && message.content && !isStreaming && (
             <div className="mt-3 flex items-center gap-2">
               <span className="text-xs text-muted-foreground">Confidence:</span>
               <Progress 
@@ -444,8 +561,8 @@ const ZahraMessageCard: React.FC<ZahraMessageCardProps> = ({
             </div>
           )}
           
-          {/* Actions for Zahra messages */}
-          {isZahra && (
+          {/* Actions for Zahra messages - only show when not streaming */}
+          {isZahra && message.content && !isStreaming && (
             <div className="mt-3 flex gap-1">
               <Button variant="ghost" size="sm" onClick={onCopy} className="h-7 px-2">
                 <Copy className="w-3.5 h-3.5 mr-1" />
@@ -745,6 +862,8 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
   const [errorCount, setErrorCount] = useState(0);
   const [conversationCount, setConversationCount] = useState(0);
   const [isResearching, setIsResearching] = useState(false);
+  const [streamingContent, setStreamingContent] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
 
   const config = PERSONALITY_CONFIGS[personality];
 
@@ -783,11 +902,13 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
     return researchKeywords.some(keyword => lowerContent.includes(keyword));
   };
 
-  // Process user input and generate response
+  // Process user input and generate AI response
   const processMessage = useCallback(async (content: string) => {
     if (!content.trim()) return;
 
     setIsProcessing(true);
+    setIsTyping(true);
+    setStreamingContent('');
     
     // Add user message
     const userMessage: ZahraMessage = {
@@ -804,10 +925,20 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
     const isNewTopic = messages.length === 0 || content.length > 50;
     const wantsResearch = detectResearchIntent(content);
     
-    // If user wants research, trigger the research engine
-    if (wantsResearch) {
-      updatePersonality('curious');
+    // Determine personality based on context
+    const newPersonality = detectPersonality({
+      querySuccess: true,
+      confidence: 0.8,
+      errorCount,
+      userSentiment: sentiment,
+      isNewTopic,
+    });
+    updatePersonality(newPersonality);
+    
+    // If user wants deep research, trigger the research engine
+    if (wantsResearch && content.toLowerCase().includes('research')) {
       setIsResearching(true);
+      updatePersonality('curious');
       
       // Add ZAHRA's acknowledgment message
       const ackMessage: ZahraMessage = {
@@ -819,15 +950,13 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
         confidence: 0.9,
       };
       setMessages(prev => [...prev, ackMessage]);
+      setIsTyping(false);
       
       try {
-        // Trigger actual research
         onResearchTriggered?.(content);
         await startResearch(content);
         
-        // Get the latest report
         const latestReport = reports[reports.length - 1];
-        
         updatePersonality('confident');
         
         const successMessage: ZahraMessage = {
@@ -839,19 +968,17 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
           confidence: 0.95,
         };
         setMessages(prev => [...prev, successMessage]);
-        
-        addXP(25); // Bonus XP for research
+        addXP(25);
         
         if (voiceEnabled) {
           speak(successMessage.content);
         }
       } catch (error) {
         updatePersonality('frustrated');
-        
         const errorMessage: ZahraMessage = {
           id: (Date.now() + 2).toString(),
           role: 'zahra',
-          content: `😓 I encountered an issue while researching. ${error instanceof Error ? error.message : 'Please try again.'} Would you like to rephrase your question or try a different approach?`,
+          content: `😓 I encountered an issue while researching. ${error instanceof Error ? error.message : 'Please try again.'} Would you like to rephrase your question?`,
           timestamp: new Date(),
           personality: 'frustrated',
           confidence: 0.3,
@@ -866,67 +993,96 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
       return;
     }
     
-    // Regular conversation (non-research)
-    const confidence = Math.random() * 0.4 + 0.5;
-    const success = confidence > 0.6;
-
-    const newPersonality = detectPersonality({
-      querySuccess: success,
-      confidence,
-      errorCount: success ? 0 : errorCount + 1,
-      userSentiment: sentiment,
-      isNewTopic,
-    });
-
-    if (!success) {
-      setErrorCount(prev => prev + 1);
-    } else {
-      setErrorCount(0);
-    }
-
-    updatePersonality(newPersonality);
-
-    // Simulate response delay
-    await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 800));
-
-    // Generate Zahra's response
-    const responseConfig = PERSONALITY_CONFIGS[newPersonality];
-    const greeting = responseConfig.greetings[Math.floor(Math.random() * responseConfig.greetings.length)];
+    // Regular AI conversation with streaming
+    const zahraMessageId = (Date.now() + 1).toString();
+    let fullContent = '';
     
-    // Smart response generation based on context
-    let responseContent = greeting;
-    if (content.toLowerCase().includes('hello') || content.toLowerCase().includes('hi')) {
-      responseContent = "Hello! 👋 I'm ZAHRA 2.0, your intelligent research companion. Ask me to research any topic, and I'll search across multiple sources to find verified information for you!";
-    } else if (content.toLowerCase().includes('help')) {
-      responseContent = "I can help you with deep research! Just ask me to 'research [topic]', 'find information about [subject]', or 'tell me about [anything]'. I'll search the web and compile a comprehensive report for you.";
-    } else {
-      responseContent = `${greeting} To trigger a full research, try asking me to "research", "find", or "tell me about" something specific. I'll search across multiple sources to give you verified information.`;
-    }
+    // Build conversation history for AI (last 10 messages)
+    const conversationHistory: ChatMessage[] = messages.slice(-10).map(m => ({
+      role: m.role === 'zahra' ? 'assistant' : 'user',
+      content: m.content,
+    }));
+    conversationHistory.push({ role: 'user', content: content.trim() });
     
-    const zahraMessage: ZahraMessage = {
-      id: (Date.now() + 1).toString(),
+    // Create placeholder message for streaming
+    const placeholderMessage: ZahraMessage = {
+      id: zahraMessageId,
       role: 'zahra',
-      content: responseContent,
+      content: '',
       timestamp: new Date(),
       personality: newPersonality,
-      confidence,
+      confidence: 0.85,
     };
+    setMessages(prev => [...prev, placeholderMessage]);
 
-    setMessages(prev => [...prev, zahraMessage]);
-    setIsProcessing(false);
-    setConversationCount(prev => prev + 1);
-
-    // Update gamification
-    addQuery();
-    addXP(5);
-
-    // Speak the response if voice is enabled
-    if (voiceEnabled) {
-      speak(zahraMessage.content);
-    }
-
-    onMessage?.(zahraMessage);
-  }, [messages.length, errorCount, voiceEnabled, speak, addQuery, addXP, onMessage, updatePersonality, startResearch, reports, onResearchTriggered]);
+    await streamZahraChat({
+      messages: conversationHistory,
+      personality: newPersonality,
+      onDelta: (delta) => {
+        fullContent += delta;
+        setStreamingContent(fullContent);
+        // Update the message in place
+        setMessages(prev => prev.map(m => 
+          m.id === zahraMessageId 
+            ? { ...m, content: fullContent }
+            : m
+        ));
+      },
+      onDone: () => {
+        setIsTyping(false);
+        setIsProcessing(false);
+        setStreamingContent('');
+        setConversationCount(prev => prev + 1);
+        addQuery();
+        addXP(5);
+        
+        // Speak the response if voice is enabled
+        if (voiceEnabled && fullContent) {
+          speak(fullContent);
+        }
+        
+        // Update personality based on response
+        if (fullContent.includes('!') || fullContent.includes('great') || fullContent.includes('amazing')) {
+          updatePersonality('delighted');
+        } else if (fullContent.includes('sorry') || fullContent.includes('unfortunately')) {
+          updatePersonality('anxious');
+        }
+        
+        onMessage?.({
+          id: zahraMessageId,
+          role: 'zahra',
+          content: fullContent,
+          timestamp: new Date(),
+          personality: newPersonality,
+          confidence: 0.85,
+        });
+      },
+      onError: (error) => {
+        setIsTyping(false);
+        setIsProcessing(false);
+        updatePersonality('frustrated');
+        setErrorCount(prev => prev + 1);
+        
+        // Update the placeholder with error message
+        setMessages(prev => prev.map(m => 
+          m.id === zahraMessageId 
+            ? { 
+                ...m, 
+                content: `😓 ${error}. Let me try again or rephrase your question!`,
+                personality: 'frustrated',
+                confidence: 0.3,
+              }
+            : m
+        ));
+        
+        toast({
+          title: "ZAHRA encountered an issue",
+          description: error,
+          variant: "destructive",
+        });
+      },
+    });
+  }, [messages, errorCount, voiceEnabled, speak, addQuery, addXP, onMessage, updatePersonality, startResearch, reports, onResearchTriggered]);
 
   // Handle voice transcript
   useEffect(() => {
@@ -1076,19 +1232,20 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
             </motion.div>
           ) : (
             <>
-              {messages.map((message) => (
+              {messages.map((message, index) => (
                 <ZahraMessageCard
                   key={message.id}
                   message={message}
+                  isStreaming={isTyping && index === messages.length - 1 && message.role === 'zahra'}
                   onCopy={() => handleCopy(message.content)}
                   onShare={() => {}}
                   onSave={() => {}}
                 />
               ))}
               
-              {/* Processing indicator */}
+              {/* Typing indicator - shows before first content arrives */}
               <AnimatePresence>
-                {isProcessing && (
+                {isTyping && !streamingContent && messages[messages.length - 1]?.role !== 'zahra' && (
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -1101,23 +1258,31 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
                       isListening={false}
                       size="sm"
                     />
-                    <div className="flex gap-1">
-                      {[0, 1, 2].map((i) => (
-                        <motion.div
-                          key={i}
-                          className="w-2 h-2 rounded-full bg-primary"
-                          animate={{ y: [0, -8, 0] }}
-                          transition={{
-                            duration: 0.6,
-                            repeat: Infinity,
-                            delay: i * 0.1,
-                          }}
-                        />
-                      ))}
+                    <div className="flex items-center gap-2">
+                      {/* Animated dots */}
+                      <div className="flex gap-1">
+                        {[0, 1, 2].map((i) => (
+                          <motion.div
+                            key={i}
+                            className="w-2 h-2 rounded-full"
+                            style={{ backgroundColor: config.color }}
+                            animate={{ 
+                              y: [0, -6, 0],
+                              opacity: [0.5, 1, 0.5],
+                            }}
+                            transition={{
+                              duration: 0.8,
+                              repeat: Infinity,
+                              delay: i * 0.15,
+                              ease: "easeInOut",
+                            }}
+                          />
+                        ))}
+                      </div>
+                      <span className="text-sm text-muted-foreground">
+                        {isResearching ? 'ZAHRA is researching...' : 'ZAHRA is thinking...'}
+                      </span>
                     </div>
-                    <span className="text-sm text-muted-foreground">
-                      {isResearching ? 'ZAHRA is researching...' : 'ZAHRA is thinking...'}
-                    </span>
                   </motion.div>
                 )}
               </AnimatePresence>
