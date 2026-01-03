@@ -23,7 +23,7 @@ import { HypothesisLab } from '@/components/hypothesis/HypothesisLab';
 import { LeadEnrichment } from '@/components/leads/LeadEnrichment';
 import { IntegrationsPage } from '@/components/integrations/IntegrationsPage';
 import { AgentOnboarding } from '@/components/AgentOnboarding';
-import { ZAHRA2_0Agent } from '@/components/ZAHRA2_0Agent';
+import { ZAHRA2_0Agent, ZahraMobileButton } from '@/components/ZAHRA2_0Agent';
 import { useResearchStore, ResearchTask } from '@/store/researchStore';
 import { useResearchEngine } from '@/hooks/useResearchEngine';
 import { useAgentStore, AgentGender } from '@/hooks/useAgentStore';
@@ -391,18 +391,25 @@ const Index = () => {
           </main>
         </div>
 
-        {/* ZAHRA 2.0 Agent Panel */}
+        {/* ZAHRA 2.0 Agent Panel - Desktop */}
         {hasCompletedOnboarding && (
           <div className="hidden xl:block w-[400px] border-l border-border/50 bg-background/80 backdrop-blur-sm">
             <ZAHRA2_0Agent 
               className="h-full border-0 rounded-none"
-              onMessage={(msg) => {
-                if (msg.content.includes('research') || msg.content.includes('search')) {
-                  // Could trigger research from ZAHRA suggestions
-                }
+              onResearchTriggered={(query) => {
+                setActiveView('results');
               }}
             />
           </div>
+        )}
+
+        {/* ZAHRA 2.0 Mobile Button */}
+        {hasCompletedOnboarding && (
+          <ZahraMobileButton 
+            onResearchTriggered={(query) => {
+              setActiveView('results');
+            }}
+          />
         )}
       </div>
     </>
