@@ -133,6 +133,31 @@ function decomposeQuery(query: string): string[] {
     }
   });
   
+  // IPO-specific sub-queries - CRITICAL for IPO research
+  if (/\b(ipo|ipos|initial\s+public\s+offering|listing|listings|going\s+public)\b/i.test(queryLower)) {
+    // Add specific IPO-focused searches
+    subQueries.push(`upcoming IPO companies list 2024 2025`);
+    subQueries.push(`IPO pipeline companies names`);
+    subQueries.push(`companies planning IPO filing`);
+    
+    // Saudi-specific IPO queries
+    if (/\b(saudi|ksa|tadawul|tasi|nomu|riyadh)\b/i.test(queryLower)) {
+      subQueries.push(`Saudi Arabia upcoming IPO 2024 2025 companies`);
+      subQueries.push(`TASI new listings companies 2024 2025`);
+      subQueries.push(`Nomu parallel market IPO companies`);
+      subQueries.push(`Tadawul upcoming IPO company names`);
+      subQueries.push(`Saudi CMA approved IPO companies`);
+      subQueries.push(`Saudi IPO pipeline valuation companies`);
+      subQueries.push(`site:tadawul.com.sa IPO`);
+      subQueries.push(`site:cma.org.sa new listings`);
+    }
+    
+    entities.forEach(entity => {
+      subQueries.push(`${entity} IPO date valuation`);
+      subQueries.push(`${entity} stock listing announcement`);
+    });
+  }
+  
   // Domain-specific sub-queries
   if (/\b(board|directors?|governance|executive)\b/i.test(queryLower)) {
     entities.forEach(entity => {
@@ -164,7 +189,7 @@ function decomposeQuery(query: string): string[] {
   
   // Deduplicate and limit
   const uniqueQueries = [...new Set(subQueries)];
-  return uniqueQueries.slice(0, 12); // Max 12 sub-queries
+  return uniqueQueries.slice(0, 15); // Increased to 15 for IPO queries
 }
 
 // Execute a single sub-agent search (100% real web scraping)
@@ -586,9 +611,36 @@ async function generateWideResearchReport(
     .map(s => `Source: ${s.title}\nURL: ${s.url}\n\n${s.content.slice(0, 2000)}`)
     .join('\n\n---\n\n');
   
+  // Check if this is an IPO/company-specific query
+  const isIPOQuery = /\b(ipo|ipos|initial\s+public\s+offering|listing|listings|going\s+public)\b/i.test(query);
+  const isCompanyQuery = /\b(companies|company|firms?|corporations?|entities|businesses)\b/i.test(query);
+  
+  // Build entity extraction instructions
+  const entityInstructions = (isIPOQuery || isCompanyQuery) ? `
+CRITICAL - ENTITY EXTRACTION REQUIREMENT:
+The user is asking for SPECIFIC COMPANIES. You MUST:
+
+1. **SCAN ALL SOURCES** for company names mentioned in relation to IPOs, listings, or the query topic
+2. **CREATE A COMPANIES TABLE** with ALL companies found:
+
+## Companies Identified
+
+| Company Name | Sector/Industry | IPO Status | Target Exchange | Expected Date | Valuation/Size | Key Details |
+|--------------|-----------------|------------|-----------------|---------------|----------------|-------------|
+| [List EVERY company name found] | [Sector] | [Status] | [Exchange] | [Date if known] | [Value if known] | [Description] |
+
+3. For EACH company found, include a brief profile section with available details
+4. If NO SPECIFIC COMPANY NAMES are found, state: "**No specific company names were identified in the retrieved sources.**"
+5. NEVER summarize as "several companies" or "various firms" - ALWAYS list by NAME
+
+PRIORITY: Extract and list company names FIRST, then provide analysis.
+` : '';
+  
   const reportPrompt = `You are a research analyst. Generate a comprehensive research report based ONLY on the following REAL data sources.
 
 RESEARCH QUERY: "${query}"
+
+${entityInstructions}
 
 REQUIRED REPORT STRUCTURE:
 
@@ -597,6 +649,17 @@ REQUIRED REPORT STRUCTURE:
 ## Executive Summary
 - 5-8 specific bullet points from the sources
 - Include actual names, dates, and numbers found
+- If asking about companies/IPOs, list company names in bullets
+
+${(isIPOQuery || isCompanyQuery) ? `## Companies Identified
+
+| Company Name | Sector/Industry | Status | Target Exchange | Expected Date | Valuation | Details |
+|--------------|-----------------|--------|-----------------|---------------|-----------|---------|
+(List EVERY company mentioned in sources - this table is REQUIRED)
+
+## Company Profiles
+(For each company found, provide a brief profile with available details)
+` : ''}
 
 ## Key Findings
 1. **[Finding]**: Evidence from sources
@@ -611,25 +674,28 @@ Detailed analysis with [Source: domain] citations
 |----------|---------|--------|
 
 ## Verified Information
-${verifications.filter(v => v.status === 'verified').map(v => `- ${v.claim}`).join('\n')}
+${verifications.filter(v => v.status === 'verified').map(v => `- ${v.claim}`).join('\n') || '- No verified claims'}
 
 ## Unverified / Needs Confirmation
-${verifications.filter(v => v.status !== 'verified').map(v => `- ${v.claim}`).join('\n')}
+${verifications.filter(v => v.status !== 'verified').map(v => `- ${v.claim}`).join('\n') || '- No unverified claims'}
 
 ## Sources
 ${sources.slice(0, 10).map((s, i) => `${i + 1}. [${s.title}](${s.url}) - ${s.domain}`).join('\n')}
 
-EXTRACTED DATA:
+EXTRACTED DATA (Use this to populate tables):
 Companies: ${JSON.stringify(extractedData.companies)}
 Key Facts: ${JSON.stringify(extractedData.key_facts)}
 Key Dates: ${JSON.stringify(extractedData.key_dates)}
 Numeric Data: ${JSON.stringify(extractedData.numeric_data)}
 
-SOURCE CONTENT:
+SOURCE CONTENT (Search for company names here):
 ${sourceContent.slice(0, 25000)}
 
-CRITICAL: Only use information from the provided sources. Cite each claim with [Source: domain].
-If information is not in the sources, say "Not found in available sources."
+CRITICAL RULES:
+1. Only use information from the provided sources. Cite each claim with [Source: domain].
+2. If asking about specific companies/IPOs, EXTRACT AND LIST ALL COMPANY NAMES FOUND.
+3. If information is not in the sources, say "Not found in available sources."
+4. NEVER provide generic analysis without listing specific entities when the query asks for them.
 
 Generate the research report:`;
 
@@ -637,14 +703,30 @@ Generate the research report:`;
     const result = await researchApi.analyze(query, reportPrompt, 'report', 'detailed');
     
     if (result.success && result.result) {
+      // Add extracted companies table if we have them and they're not in the report
+      let finalReport = result.result;
+      
+      // If we have extracted companies but they might not be in the AI response, append them
+      if (extractedData.companies.length > 0 && !result.result.includes('## Companies Identified')) {
+        const companiesTable = generateCompaniesTable(extractedData.companies);
+        // Insert after Executive Summary or at the beginning
+        const insertPoint = finalReport.indexOf('## Key Findings');
+        if (insertPoint > 0) {
+          finalReport = finalReport.slice(0, insertPoint) + companiesTable + '\n\n' + finalReport.slice(insertPoint);
+        } else {
+          finalReport = companiesTable + '\n\n' + finalReport;
+        }
+      }
+      
       const metadata = `\n\n---\n\n**Research Metadata:**
 - Mode: Wide Research (Manus 1.6 MAX)
 - Sources scraped: ${sources.length}
 - Unique domains: ${new Set(sources.map(s => s.domain)).size}
+- Companies extracted: ${extractedData.companies.length}
 - Verified claims: ${verifications.filter(v => v.status === 'verified').length}/${verifications.length}
 - Generated: ${new Date().toISOString()}`;
       
-      return result.result + metadata;
+      return finalReport + metadata;
     }
   } catch (error) {
     console.error('[WideResearch] Report generation error:', error);
@@ -652,6 +734,21 @@ Generate the research report:`;
   
   // Fallback: Generate report from extracted data directly
   return generateDataOnlyReport(query, sources, extractedData, verifications);
+}
+
+// Helper to generate companies table from extracted data
+function generateCompaniesTable(companies: ExtractedContent['companies']): string {
+  if (companies.length === 0) return '';
+  
+  let table = `## Companies Identified\n\n`;
+  table += `| Company Name | Sector/Industry | Status | Target Exchange | Expected Date | Valuation | Key Details |\n`;
+  table += `|--------------|-----------------|--------|-----------------|---------------|-----------|-------------|\n`;
+  
+  companies.forEach(c => {
+    table += `| ${c.name} | N/A | ${c.action || 'N/A'} | ${c.market || 'N/A'} | ${c.date || 'N/A'} | ${c.value || 'N/A'} | ${c.ticker ? `Ticker: ${c.ticker}` : 'See details'} |\n`;
+  });
+  
+  return table;
 }
 
 // Generate report from extracted data without AI (fallback)
