@@ -1,68 +1,283 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Mic, MicOff, Volume2, VolumeX, Send, Sparkles, 
   Flame, Trophy, Star, Award, ChevronRight, Copy, 
   Share2, Bookmark, MessageCircle, Zap, Brain,
-  HelpCircle, AlertCircle, Heart, Smile, Target,
-  X, Search, Trash2
+  HelpCircle, AlertCircle, Smile, Target, X, 
+  Search, Trash2, Globe, User, ChevronLeft, Check,
+  Play, Pause, SkipForward
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { useVoice } from '@/hooks/useVoice';
 import { useAgentStore } from '@/hooks/useAgentStore';
-import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useResearchEngine } from '@/hooks/useResearchEngine';
 import { useResearchStore } from '@/store/researchStore';
 import { toast } from '@/hooks/use-toast';
 
 // ============================================
-// CONVERSATION MEMORY STORAGE
+// EXACT COLOR PALETTE FROM DESIGN
 // ============================================
 
-const ZAHRA_MEMORY_KEY = 'zahra-conversation-memory';
+const PERSONALITY_COLORS = {
+  curious: '#00D9FF',    // Cyan
+  confused: '#FF9F40',   // Orange
+  frustrated: '#FF4E8F', // Pink
+  anxious: '#9C27B0',    // Purple
+  delighted: '#FFD700',  // Gold
+  confident: '#26C281',  // Green-Cyan
+} as const;
 
-interface StoredConversation {
-  messages: ZahraMessage[];
-  lastUpdated: string;
+// ============================================
+// TYPES
+// ============================================
+
+export type ZahraPersonality = keyof typeof PERSONALITY_COLORS;
+type VoiceGender = 'female' | 'male';
+type VoiceLanguage = 'en' | 'ar';
+
+interface ZahraMessage {
+  id: string;
+  role: 'user' | 'zahra';
+  content: string;
+  timestamp: Date;
+  personality?: ZahraPersonality;
+  confidence?: number;
 }
 
-const saveConversation = (messages: ZahraMessage[]) => {
+interface VoiceSettings {
+  language: VoiceLanguage;
+  gender: VoiceGender;
+  enabled: boolean;
+}
+
+interface OnboardingStep {
+  id: string;
+  title: string;
+  description: string;
+  personality: ZahraPersonality;
+  example: string;
+}
+
+// ============================================
+// PERSONALITY CONFIGS
+// ============================================
+
+const PERSONALITY_CONFIGS: Record<ZahraPersonality, {
+  name: string;
+  nameAr: string;
+  color: string;
+  icon: React.ReactNode;
+  keywords: string[];
+  greetings: { en: string[]; ar: string[] };
+  suggestions: { en: string[]; ar: string[] };
+}> = {
+  curious: {
+    name: 'Curious',
+    nameAr: 'فضولية',
+    color: PERSONALITY_COLORS.curious,
+    icon: <HelpCircle className="w-4 h-4" />,
+    keywords: ['what', 'how', 'why', 'when', 'where', 'who', 'tell me', 'explain', 'wonder', 'learn', 'ما', 'كيف', 'لماذا', 'متى', 'أين'],
+    greetings: {
+      en: ["Ooh, fascinating question! Let me explore...", "I'm curious about this too! Diving in..."],
+      ar: ["سؤال رائع! دعني أستكشف...", "أنا فضولية أيضاً! سأبحث..."],
+    },
+    suggestions: {
+      en: ["Tell me more", "What about...", "Explore deeper"],
+      ar: ["أخبرني المزيد", "ماذا عن...", "استكشف أكثر"],
+    },
+  },
+  confused: {
+    name: 'Confused',
+    nameAr: 'محتارة',
+    color: PERSONALITY_COLORS.confused,
+    icon: <AlertCircle className="w-4 h-4" />,
+    keywords: ["don't understand", 'unclear', 'confusing', 'lost', 'help me understand', 'what do you mean', 'لا أفهم', 'غير واضح', 'محتار'],
+    greetings: {
+      en: ["Hmm, let me think about this differently...", "I'm not quite sure, but let me try..."],
+      ar: ["دعني أفكر في هذا بشكل مختلف...", "لست متأكدة، لكن دعني أحاول..."],
+    },
+    suggestions: {
+      en: ["Can you clarify?", "Did you mean...?", "Let me rephrase"],
+      ar: ["هل يمكنك التوضيح؟", "هل تقصد...؟", "دعني أعيد الصياغة"],
+    },
+  },
+  frustrated: {
+    name: 'Frustrated',
+    nameAr: 'محبطة',
+    color: PERSONALITY_COLORS.frustrated,
+    icon: <Zap className="w-4 h-4" />,
+    keywords: ['not working', 'broken', 'error', 'failed', 'wrong', 'fix', 'problem', 'issue', 'bug', 'لا يعمل', 'خطأ', 'مشكلة'],
+    greetings: {
+      en: ["I see the problem! Let me work on this...", "This is tricky, but I won't give up!"],
+      ar: ["أرى المشكلة! دعني أعمل على هذا...", "هذا صعب، لكنني لن أستسلم!"],
+    },
+    suggestions: {
+      en: ["Try different approach", "Start fresh", "Break it down"],
+      ar: ["جرب طريقة مختلفة", "ابدأ من جديد", "قسمها"],
+    },
+  },
+  anxious: {
+    name: 'Anxious',
+    nameAr: 'قلقة',
+    color: PERSONALITY_COLORS.anxious,
+    icon: <Brain className="w-4 h-4" />,
+    keywords: ['worried', 'concerned', 'afraid', 'nervous', 'unsure', 'risky', 'careful', 'قلق', 'خائف', 'متوتر'],
+    greetings: {
+      en: ["I want to be careful with this...", "Let me double-check everything..."],
+      ar: ["أريد أن أكون حذرة...", "دعني أتحقق مرة أخرى..."],
+    },
+    suggestions: {
+      en: ["Verify this", "Check alternatives", "Be thorough"],
+      ar: ["تحقق من هذا", "راجع البدائل", "كن دقيقاً"],
+    },
+  },
+  delighted: {
+    name: 'Delighted',
+    nameAr: 'سعيدة',
+    color: PERSONALITY_COLORS.delighted,
+    icon: <Smile className="w-4 h-4" />,
+    keywords: ['thank', 'great', 'awesome', 'love', 'perfect', 'amazing', 'wonderful', 'excellent', 'شكراً', 'رائع', 'ممتاز'],
+    greetings: {
+      en: ["Wonderful! I'm so glad to help!", "This is exciting! Let me share..."],
+      ar: ["رائع! سعيدة بمساعدتك!", "هذا مثير! دعني أشارك..."],
+    },
+    suggestions: {
+      en: ["Explore more", "Share this", "Celebrate!"],
+      ar: ["استكشف المزيد", "شارك هذا", "احتفل!"],
+    },
+  },
+  confident: {
+    name: 'Confident',
+    nameAr: 'واثقة',
+    color: PERSONALITY_COLORS.confident,
+    icon: <Target className="w-4 h-4" />,
+    keywords: ['yes', 'correct', 'right', 'exactly', 'agree', 'sure', 'definitely', 'absolutely', 'نعم', 'صحيح', 'بالتأكيد'],
+    greetings: {
+      en: ["I can confirm this with confidence!", "Based on my analysis, here's what I found..."],
+      ar: ["يمكنني تأكيد هذا بثقة!", "بناءً على تحليلي، إليك ما وجدته..."],
+    },
+    suggestions: {
+      en: ["I recommend", "Proceed with", "Here's the best approach"],
+      ar: ["أوصي بـ", "تابع مع", "إليك أفضل طريقة"],
+    },
+  },
+};
+
+// ============================================
+// ONBOARDING STEPS
+// ============================================
+
+const ONBOARDING_STEPS: OnboardingStep[] = [
+  {
+    id: 'welcome',
+    title: 'Meet ZAHRA 2.0',
+    description: 'Your emotionally intelligent AI research companion with 6 personality states.',
+    personality: 'curious',
+    example: 'Hi! I adapt my personality based on how you interact with me.',
+  },
+  {
+    id: 'curious',
+    title: 'Curious Mode',
+    description: 'When you ask questions, I become curious and eager to explore!',
+    personality: 'curious',
+    example: 'What is quantum computing? → I light up cyan and dive deep!',
+  },
+  {
+    id: 'confused',
+    title: 'Confused Mode',
+    description: 'When things are unclear, I show I need more context.',
+    personality: 'confused',
+    example: '"I don\'t understand..." → I turn orange and ask for clarity.',
+  },
+  {
+    id: 'frustrated',
+    title: 'Frustrated Mode',
+    description: 'When facing problems, I show determination to solve them!',
+    personality: 'frustrated',
+    example: '"This isn\'t working!" → I turn pink and troubleshoot.',
+  },
+  {
+    id: 'anxious',
+    title: 'Anxious Mode',
+    description: 'For sensitive topics, I show careful consideration.',
+    personality: 'anxious',
+    example: '"I\'m worried about..." → I turn purple and think carefully.',
+  },
+  {
+    id: 'delighted',
+    title: 'Delighted Mode',
+    description: 'When you\'re happy, I celebrate with you!',
+    personality: 'delighted',
+    example: '"This is amazing!" → I glow gold with joy!',
+  },
+  {
+    id: 'confident',
+    title: 'Confident Mode',
+    description: 'When I have verified answers, I speak with confidence.',
+    personality: 'confident',
+    example: '"I can confirm..." → I shine green-cyan!',
+  },
+  {
+    id: 'voice',
+    title: 'Voice Settings',
+    description: 'Choose your preferred voice language and gender.',
+    personality: 'confident',
+    example: 'English/Arabic with Male/Female voices available!',
+  },
+];
+
+// ============================================
+// STORAGE HELPERS
+// ============================================
+
+const ZAHRA_MEMORY_KEY = 'zahra-v2-memory';
+const ZAHRA_SETTINGS_KEY = 'zahra-v2-settings';
+const ZAHRA_ONBOARDING_KEY = 'zahra-v2-onboarding';
+
+const saveMessages = (messages: ZahraMessage[]) => {
   try {
-    const data: StoredConversation = {
-      messages: messages.slice(-50), // Keep last 50 messages
-      lastUpdated: new Date().toISOString(),
-    };
-    localStorage.setItem(ZAHRA_MEMORY_KEY, JSON.stringify(data));
+    localStorage.setItem(ZAHRA_MEMORY_KEY, JSON.stringify(messages.slice(-50)));
   } catch (e) {
-    console.warn('Failed to save conversation:', e);
+    console.warn('Failed to save messages:', e);
   }
 };
 
-const loadConversation = (): ZahraMessage[] => {
+const loadMessages = (): ZahraMessage[] => {
   try {
     const stored = localStorage.getItem(ZAHRA_MEMORY_KEY);
     if (stored) {
-      const data: StoredConversation = JSON.parse(stored);
-      return data.messages.map(m => ({
-        ...m,
-        timestamp: new Date(m.timestamp),
-      }));
+      return JSON.parse(stored).map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) }));
     }
-  } catch (e) {
-    console.warn('Failed to load conversation:', e);
-  }
+  } catch (e) {}
   return [];
 };
 
-const clearConversation = () => {
-  localStorage.removeItem(ZAHRA_MEMORY_KEY);
+const saveSettings = (settings: VoiceSettings) => {
+  localStorage.setItem(ZAHRA_SETTINGS_KEY, JSON.stringify(settings));
+};
+
+const loadSettings = (): VoiceSettings => {
+  try {
+    const stored = localStorage.getItem(ZAHRA_SETTINGS_KEY);
+    if (stored) return JSON.parse(stored);
+  } catch (e) {}
+  return { language: 'en', gender: 'female', enabled: true };
+};
+
+const hasCompletedOnboarding = (): boolean => {
+  return localStorage.getItem(ZAHRA_ONBOARDING_KEY) === 'true';
+};
+
+const completeOnboarding = () => {
+  localStorage.setItem(ZAHRA_ONBOARDING_KEY, 'true');
 };
 
 // ============================================
@@ -101,250 +316,132 @@ async function streamZahraChat({
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `Request failed with status ${response.status}`);
+      throw new Error(errorData.error || `Request failed`);
     }
 
-    if (!response.body) {
-      throw new Error('No response body');
-    }
+    if (!response.body) throw new Error('No response body');
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
-    let textBuffer = '';
-    let streamDone = false;
+    let buffer = '';
 
-    while (!streamDone) {
+    while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      textBuffer += decoder.decode(value, { stream: true });
+      
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
 
-      let newlineIndex: number;
-      while ((newlineIndex = textBuffer.indexOf('\n')) !== -1) {
-        let line = textBuffer.slice(0, newlineIndex);
-        textBuffer = textBuffer.slice(newlineIndex + 1);
-
-        if (line.endsWith('\r')) line = line.slice(0, -1);
-        if (line.startsWith(':') || line.trim() === '') continue;
-        if (!line.startsWith('data: ')) continue;
-
-        const jsonStr = line.slice(6).trim();
-        if (jsonStr === '[DONE]') {
-          streamDone = true;
-          break;
-        }
-
+      for (const line of lines) {
+        if (!line.startsWith('data: ') || line.includes('[DONE]')) continue;
         try {
-          const parsed = JSON.parse(jsonStr);
-          const content = parsed.choices?.[0]?.delta?.content as string | undefined;
+          const content = JSON.parse(line.slice(6))?.choices?.[0]?.delta?.content;
           if (content) onDelta(content);
-        } catch {
-          textBuffer = line + '\n' + textBuffer;
-          break;
-        }
+        } catch {}
       }
     }
-
-    // Final flush
-    if (textBuffer.trim()) {
-      for (let raw of textBuffer.split('\n')) {
-        if (!raw) continue;
-        if (raw.endsWith('\r')) raw = raw.slice(0, -1);
-        if (raw.startsWith(':') || raw.trim() === '') continue;
-        if (!raw.startsWith('data: ')) continue;
-        const jsonStr = raw.slice(6).trim();
-        if (jsonStr === '[DONE]') continue;
-        try {
-          const parsed = JSON.parse(jsonStr);
-          const content = parsed.choices?.[0]?.delta?.content as string | undefined;
-          if (content) onDelta(content);
-        } catch { /* ignore */ }
-      }
-    }
-
     onDone();
   } catch (error) {
-    console.error('ZAHRA chat error:', error);
-    onError(error instanceof Error ? error.message : 'Failed to get AI response');
+    onError(error instanceof Error ? error.message : 'AI error');
   }
-}
-
-// ============================================
-// TYPES & CONSTANTS
-// ============================================
-
-export type ZahraPersonality = 
-  | 'curious' 
-  | 'confused' 
-  | 'frustrated' 
-  | 'anxious' 
-  | 'delighted' 
-  | 'confident';
-
-interface PersonalityConfig {
-  name: string;
-  color: string;
-  bgGradient: string;
-  icon: React.ReactNode;
-  voicePitch: number;
-  voiceRate: number;
-  greetings: string[];
-  suggestions: string[];
-}
-
-const PERSONALITY_CONFIGS: Record<ZahraPersonality, PersonalityConfig> = {
-  curious: {
-    name: 'Curious',
-    color: 'hsl(187, 85%, 43%)', // cyan
-    bgGradient: 'from-cyan-500/20 to-cyan-600/10',
-    icon: <HelpCircle className="w-5 h-5" />,
-    voicePitch: 1.1,
-    voiceRate: 1.05,
-    greetings: [
-      "Ooh, that's interesting! Let me dig into that...",
-      "What a fascinating question! I'm on it.",
-      "Hmm, I wonder... Let me explore this for you!",
-    ],
-    suggestions: [
-      "Want to explore related topics?",
-      "Should we dive deeper?",
-      "What else are you curious about?",
-    ],
-  },
-  confused: {
-    name: 'Confused',
-    color: 'hsl(24, 94%, 53%)', // orange
-    bgGradient: 'from-orange-500/20 to-orange-600/10',
-    icon: <AlertCircle className="w-5 h-5" />,
-    voicePitch: 1.0,
-    voiceRate: 0.9,
-    greetings: [
-      "Hmm, I'm not quite sure I understand...",
-      "Let me think about that differently...",
-      "Could you help me understand better?",
-    ],
-    suggestions: [
-      "Can you clarify what you mean?",
-      "Did you mean something else?",
-      "Let me try a different approach",
-    ],
-  },
-  frustrated: {
-    name: 'Frustrated',
-    color: 'hsl(330, 80%, 60%)', // pink
-    bgGradient: 'from-pink-500/20 to-pink-600/10',
-    icon: <Zap className="w-5 h-5" />,
-    voicePitch: 0.9,
-    voiceRate: 0.85,
-    greetings: [
-      "I'm having trouble with this, but I won't give up!",
-      "This is tricky... let me try harder.",
-      "Hmm, not finding what we need yet...",
-    ],
-    suggestions: [
-      "Let's try a simpler query",
-      "Maybe rephrase the question?",
-      "Should we break this down?",
-    ],
-  },
-  anxious: {
-    name: 'Anxious',
-    color: 'hsl(270, 70%, 60%)', // purple
-    bgGradient: 'from-purple-500/20 to-purple-600/10',
-    icon: <Brain className="w-5 h-5" />,
-    voicePitch: 1.05,
-    voiceRate: 1.1,
-    greetings: [
-      "This is complex... I want to get it right for you.",
-      "I'm carefully analyzing this...",
-      "Let me double-check my findings...",
-    ],
-    suggestions: [
-      "Should I verify this further?",
-      "Want me to find more sources?",
-      "Let me cross-reference this",
-    ],
-  },
-  delighted: {
-    name: 'Delighted',
-    color: 'hsl(45, 93%, 47%)', // gold
-    bgGradient: 'from-yellow-500/20 to-amber-500/10',
-    icon: <Smile className="w-5 h-5" />,
-    voicePitch: 1.2,
-    voiceRate: 1.1,
-    greetings: [
-      "Amazing! I found exactly what you need!",
-      "This is wonderful! Look what I discovered!",
-      "I'm so happy to share this with you!",
-    ],
-    suggestions: [
-      "Want to celebrate with more research?",
-      "Should I find similar insights?",
-      "This is exciting! What's next?",
-    ],
-  },
-  confident: {
-    name: 'Confident',
-    color: 'hsl(168, 76%, 42%)', // cyan-green/teal
-    bgGradient: 'from-teal-500/20 to-emerald-500/10',
-    icon: <Target className="w-5 h-5" />,
-    voicePitch: 0.95,
-    voiceRate: 1.0,
-    greetings: [
-      "I've verified this thoroughly. Here's what I found.",
-      "Based on strong evidence, I can confirm...",
-      "I'm certain about this. Let me explain.",
-    ],
-    suggestions: [
-      "I recommend exploring this next",
-      "Based on the evidence, try this",
-      "Here's what the data suggests",
-    ],
-  },
-};
-
-interface ZahraMessage {
-  id: string;
-  role: 'user' | 'zahra';
-  content: string;
-  timestamp: Date;
-  personality?: ZahraPersonality;
-  confidence?: number;
-}
-
-interface DetectionContext {
-  querySuccess: boolean;
-  confidence: number;
-  errorCount: number;
-  userSentiment: 'positive' | 'neutral' | 'negative';
-  isNewTopic: boolean;
 }
 
 // ============================================
 // PERSONALITY DETECTION
 // ============================================
 
-const detectPersonality = (context: DetectionContext): ZahraPersonality => {
-  if (context.isNewTopic) return 'curious';
-  if (context.errorCount > 2) return 'frustrated';
-  if (context.confidence < 0.4) return 'confused';
-  if (context.confidence < 0.6) return 'anxious';
-  if (context.querySuccess && context.confidence > 0.8) return 'confident';
-  if (context.userSentiment === 'positive') return 'delighted';
-  return 'curious';
-};
-
-const detectSentiment = (text: string): 'positive' | 'neutral' | 'negative' => {
-  const positiveWords = ['thanks', 'great', 'awesome', 'love', 'amazing', 'perfect', 'good', 'nice', 'excellent'];
-  const negativeWords = ['bad', 'wrong', 'hate', 'terrible', 'awful', 'no', 'not', 'never', 'fail'];
-  
+function detectPersonality(text: string): ZahraPersonality {
   const lowerText = text.toLowerCase();
-  const positiveCount = positiveWords.filter(w => lowerText.includes(w)).length;
-  const negativeCount = negativeWords.filter(w => lowerText.includes(w)).length;
   
-  if (positiveCount > negativeCount) return 'positive';
-  if (negativeCount > positiveCount) return 'negative';
-  return 'neutral';
-};
+  for (const [personality, config] of Object.entries(PERSONALITY_CONFIGS)) {
+    if (config.keywords.some(kw => lowerText.includes(kw.toLowerCase()))) {
+      return personality as ZahraPersonality;
+    }
+  }
+  
+  // Default based on punctuation
+  if (lowerText.includes('?')) return 'curious';
+  if (lowerText.includes('!') && (lowerText.includes('great') || lowerText.includes('thank'))) return 'delighted';
+  
+  return 'curious';
+}
+
+// ============================================
+// VOICE HOOK
+// ============================================
+
+function useZahraVoice(settings: VoiceSettings) {
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [transcript, setTranscript] = useState('');
+  const recognitionRef = useRef<any>(null);
+
+  const getVoice = useCallback(() => {
+    const voices = speechSynthesis.getVoices();
+    const langCode = settings.language === 'ar' ? 'ar' : 'en';
+    
+    // Find matching voice
+    const matchingVoices = voices.filter(v => 
+      v.lang.startsWith(langCode) && 
+      (settings.gender === 'female' ? !v.name.toLowerCase().includes('male') : v.name.toLowerCase().includes('male'))
+    );
+    
+    return matchingVoices[0] || voices.find(v => v.lang.startsWith(langCode)) || voices[0];
+  }, [settings.language, settings.gender]);
+
+  const speak = useCallback((text: string) => {
+    if (!settings.enabled || !text) return;
+    speechSynthesis.cancel();
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    const voice = getVoice();
+    if (voice) utterance.voice = voice;
+    
+    utterance.lang = settings.language === 'ar' ? 'ar-SA' : 'en-US';
+    utterance.pitch = settings.gender === 'female' ? 1.1 : 0.9;
+    utterance.rate = settings.language === 'ar' ? 0.9 : 1.0;
+    
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+    
+    speechSynthesis.speak(utterance);
+  }, [settings, getVoice]);
+
+  const stopSpeaking = useCallback(() => {
+    speechSynthesis.cancel();
+    setIsSpeaking(false);
+  }, []);
+
+  const startListening = useCallback(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      toast({ title: "Speech recognition not supported", variant: "destructive" });
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = settings.language === 'ar' ? 'ar-SA' : 'en-US';
+    recognition.continuous = false;
+    recognition.interimResults = true;
+
+    recognition.onstart = () => { setIsListening(true); setTranscript(''); };
+    recognition.onresult = (e: any) => setTranscript(e.results[e.results.length - 1][0].transcript);
+    recognition.onend = () => setIsListening(false);
+    recognition.onerror = () => setIsListening(false);
+
+    recognitionRef.current = recognition;
+    recognition.start();
+  }, [settings.language]);
+
+  const stopListening = useCallback(() => {
+    recognitionRef.current?.stop();
+    setIsListening(false);
+  }, []);
+
+  return { speak, stopSpeaking, startListening, stopListening, isSpeaking, isListening, transcript };
+}
 
 // ============================================
 // ZAHRA AVATAR COMPONENT
@@ -354,113 +451,85 @@ interface ZahraAvatarProps {
   personality: ZahraPersonality;
   isSpeaking: boolean;
   isListening: boolean;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg' | 'xl';
 }
 
-const ZahraAvatar: React.FC<ZahraAvatarProps> = ({ 
-  personality, 
-  isSpeaking, 
-  isListening,
-  size = 'lg' 
-}) => {
-  const config = PERSONALITY_CONFIGS[personality];
+const ZahraAvatar: React.FC<ZahraAvatarProps> = ({ personality, isSpeaking, isListening, size = 'lg' }) => {
+  const color = PERSONALITY_COLORS[personality];
   
-  const sizeClasses = {
-    sm: 'w-12 h-12',
-    md: 'w-20 h-20',
-    lg: 'w-28 h-28',
-  };
-
-  const innerSizeClasses = {
-    sm: 'w-10 h-10 text-lg',
-    md: 'w-16 h-16 text-2xl',
-    lg: 'w-24 h-24 text-4xl',
+  const sizes = {
+    sm: { outer: 'w-12 h-12', inner: 'w-10 h-10 text-sm' },
+    md: { outer: 'w-20 h-20', inner: 'w-16 h-16 text-xl' },
+    lg: { outer: 'w-28 h-28', inner: 'w-24 h-24 text-3xl' },
+    xl: { outer: 'w-36 h-36', inner: 'w-32 h-32 text-4xl' },
   };
 
   return (
-    <div className={cn("relative flex items-center justify-center", sizeClasses[size])}>
-      {/* Ripple layers */}
-      {[0, 1, 2].map((index) => (
+    <div className={cn("relative flex items-center justify-center", sizes[size].outer)}>
+      {/* Ripple effects */}
+      {[0, 1, 2].map(i => (
         <motion.div
-          key={index}
+          key={i}
           className="absolute inset-0 rounded-full"
-          style={{ 
-            border: `2px solid ${config.color}`,
-            opacity: 0.3 - index * 0.1,
-          }}
+          style={{ border: `2px solid ${color}` }}
           animate={isSpeaking || isListening ? {
-            scale: [1, 1.2 + index * 0.15, 1],
-            opacity: [0.3 - index * 0.1, 0, 0.3 - index * 0.1],
-          } : {
-            scale: [1, 1.05, 1],
-          }}
+            scale: [1, 1.3 + i * 0.15],
+            opacity: [0.4 - i * 0.1, 0],
+          } : { scale: 1, opacity: 0.2 - i * 0.05 }}
           transition={{
-            duration: isSpeaking || isListening ? 1 + index * 0.3 : 3,
+            duration: 1.5,
             repeat: Infinity,
-            delay: index * 0.2,
-            ease: "easeInOut",
+            delay: i * 0.3,
+            ease: "easeOut",
           }}
         />
       ))}
       
-      {/* Main avatar circle */}
+      {/* Main avatar */}
       <motion.div
         className={cn(
-          "relative rounded-full flex items-center justify-center font-bold text-white shadow-xl",
-          innerSizeClasses[size]
+          "relative rounded-full flex items-center justify-center font-bold text-white shadow-2xl",
+          sizes[size].inner
         )}
-        style={{ 
-          background: `linear-gradient(135deg, ${config.color}, ${config.color}cc)`,
-          boxShadow: `0 0 30px ${config.color}40`,
+        style={{
+          background: `linear-gradient(135deg, ${color}, ${color}dd)`,
+          boxShadow: `0 0 40px ${color}50`,
         }}
-        animate={isSpeaking ? {
-          scale: [1, 1.05, 1],
-        } : isListening ? {
-          scale: [1, 1.02, 1],
-        } : {
-          scale: [1, 1.02, 1],
+        animate={{
+          scale: isSpeaking ? [1, 1.05, 1] : isListening ? [1, 1.02, 1] : 1,
         }}
-        transition={{
-          duration: isSpeaking ? 0.5 : 2,
-          repeat: Infinity,
-          ease: "easeInOut",
-        }}
+        transition={{ duration: isSpeaking ? 0.4 : 2, repeat: Infinity }}
       >
-        <span className="select-none">Z</span>
+        <span className="select-none drop-shadow-lg">Z</span>
         
-        {/* State indicator */}
+        {/* Personality indicator */}
         <motion.div
-          className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center bg-background border-2"
-          style={{ borderColor: config.color }}
+          className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-background border-2 flex items-center justify-center"
+          style={{ borderColor: color, color }}
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
-          transition={{ type: "spring", stiffness: 500, damping: 30 }}
+          transition={{ type: "spring", stiffness: 500 }}
         >
-          <div style={{ color: config.color }}>
-            {config.icon}
-          </div>
+          {PERSONALITY_CONFIGS[personality].icon}
         </motion.div>
       </motion.div>
 
-      {/* Listening indicator */}
+      {/* Listening bars */}
       <AnimatePresence>
         {isListening && (
           <motion.div
-            className="absolute -bottom-8 flex gap-1"
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
+            className="absolute -bottom-6 flex gap-1"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
           >
-            {[0, 1, 2].map((i) => (
+            {[0, 1, 2, 3, 4].map(i => (
               <motion.div
                 key={i}
-                className="w-1.5 h-4 rounded-full bg-primary"
-                animate={{ scaleY: [1, 2, 1] }}
-                transition={{
-                  duration: 0.5,
-                  repeat: Infinity,
-                  delay: i * 0.1,
-                }}
+                className="w-1 rounded-full"
+                style={{ backgroundColor: color }}
+                animate={{ height: [8, 20, 8] }}
+                transition={{ duration: 0.5, repeat: Infinity, delay: i * 0.1 }}
               />
             ))}
           </motion.div>
@@ -474,112 +543,81 @@ const ZahraAvatar: React.FC<ZahraAvatarProps> = ({
 // MESSAGE CARD COMPONENT
 // ============================================
 
-interface ZahraMessageCardProps {
+interface MessageCardProps {
   message: ZahraMessage;
   isStreaming?: boolean;
-  onCopy?: () => void;
-  onShare?: () => void;
-  onSave?: () => void;
+  language: VoiceLanguage;
+  onCopy: () => void;
 }
 
-const ZahraMessageCard: React.FC<ZahraMessageCardProps> = ({ 
-  message, 
-  isStreaming = false,
-  onCopy, 
-  onShare, 
-  onSave 
-}) => {
-  const config = message.personality ? PERSONALITY_CONFIGS[message.personality] : null;
+const MessageCard: React.FC<MessageCardProps> = ({ message, isStreaming, language, onCopy }) => {
   const isZahra = message.role === 'zahra';
+  const config = message.personality ? PERSONALITY_CONFIGS[message.personality] : null;
+  const color = config?.color || PERSONALITY_COLORS.curious;
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20, scale: 0.95 }}
+      initial={{ opacity: 0, y: 15, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ type: "spring", stiffness: 400, damping: 30 }}
-      className={cn(
-        "w-full flex",
-        isZahra ? "justify-start" : "justify-end"
-      )}
+      className={cn("flex", isZahra ? "justify-start" : "justify-end")}
     >
-      <Card
+      <div
         className={cn(
-          "max-w-[85%] overflow-hidden transition-all duration-300",
-          isZahra ? "rounded-tl-none" : "rounded-tr-none",
-          isZahra && config && `bg-gradient-to-br ${config.bgGradient}`
+          "max-w-[85%] rounded-2xl p-4 shadow-lg",
+          isZahra ? "rounded-tl-sm" : "rounded-tr-sm bg-primary/10"
         )}
-        style={isZahra && config ? {
-          borderColor: `${config.color}40`,
-          borderWidth: '1px',
+        style={isZahra ? {
+          background: `linear-gradient(135deg, ${color}15, ${color}08)`,
+          border: `1px solid ${color}30`,
         } : undefined}
       >
-        <CardContent className="p-4">
-          {/* Message header */}
+        {/* Header */}
+        {isZahra && config && (
           <div className="flex items-center gap-2 mb-2">
-            {isZahra && config && (
-              <Badge 
-                variant="outline" 
-                className="text-xs"
-                style={{ 
-                  borderColor: config.color,
-                  color: config.color,
-                }}
-              >
-                {config.icon}
-                <span className="ml-1">{config.name}</span>
-              </Badge>
-            )}
+            <Badge
+              variant="outline"
+              className="text-xs font-medium"
+              style={{ borderColor: color, color }}
+            >
+              {config.icon}
+              <span className="ml-1">{language === 'ar' ? config.nameAr : config.name}</span>
+            </Badge>
             <span className="text-xs text-muted-foreground ml-auto">
               {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
           </div>
-          
-          {/* Message content with typing cursor */}
-          <p className="text-sm leading-relaxed">
-            {message.content}
-            {isStreaming && isZahra && (
-              <motion.span
-                className="inline-block w-0.5 h-4 bg-primary ml-0.5 align-middle"
-                animate={{ opacity: [1, 0, 1] }}
-                transition={{ duration: 0.6, repeat: Infinity, ease: "easeInOut" }}
-              />
-            )}
-            {!message.content && isStreaming && isZahra && (
-              <span className="text-muted-foreground italic">Thinking...</span>
-            )}
-          </p>
-          
-          {/* Confidence indicator for Zahra messages - only show when not streaming */}
-          {isZahra && message.confidence !== undefined && message.content && !isStreaming && (
-            <div className="mt-3 flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Confidence:</span>
-              <Progress 
-                value={message.confidence * 100} 
-                className="h-1.5 flex-1 max-w-24"
-              />
-              <span className="text-xs font-medium">{Math.round(message.confidence * 100)}%</span>
-            </div>
+        )}
+
+        {/* Content */}
+        <p className={cn("text-sm leading-relaxed", language === 'ar' && "text-right" )} dir={language === 'ar' ? 'rtl' : 'ltr'}>
+          {message.content || (isStreaming && <span className="text-muted-foreground italic">Thinking...</span>)}
+          {isStreaming && message.content && (
+            <motion.span
+              className="inline-block w-0.5 h-4 ml-0.5 align-middle"
+              style={{ backgroundColor: color }}
+              animate={{ opacity: [1, 0] }}
+              transition={{ duration: 0.5, repeat: Infinity }}
+            />
           )}
-          
-          {/* Actions for Zahra messages - only show when not streaming */}
-          {isZahra && message.content && !isStreaming && (
-            <div className="mt-3 flex gap-1">
-              <Button variant="ghost" size="sm" onClick={onCopy} className="h-7 px-2">
-                <Copy className="w-3.5 h-3.5 mr-1" />
-                <span className="text-xs">Copy</span>
-              </Button>
-              <Button variant="ghost" size="sm" onClick={onShare} className="h-7 px-2">
-                <Share2 className="w-3.5 h-3.5 mr-1" />
-                <span className="text-xs">Share</span>
-              </Button>
-              <Button variant="ghost" size="sm" onClick={onSave} className="h-7 px-2">
-                <Bookmark className="w-3.5 h-3.5 mr-1" />
-                <span className="text-xs">Save</span>
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+        </p>
+
+        {/* Confidence & Actions */}
+        {isZahra && message.content && !isStreaming && (
+          <div className="mt-3 flex items-center justify-between">
+            {message.confidence && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Confidence</span>
+                <Progress value={message.confidence * 100} className="w-16 h-1.5" />
+                <span className="text-xs font-medium">{Math.round(message.confidence * 100)}%</span>
+              </div>
+            )}
+            <Button variant="ghost" size="sm" onClick={onCopy} className="h-7 px-2 ml-auto">
+              <Copy className="w-3 h-3 mr-1" />
+              <span className="text-xs">Copy</span>
+            </Button>
+          </div>
+        )}
+      </div>
     </motion.div>
   );
 };
@@ -588,599 +626,430 @@ const ZahraMessageCard: React.FC<ZahraMessageCardProps> = ({
 // SUGGESTIONS COMPONENT
 // ============================================
 
-interface ZahraSuggestionsProps {
+interface SuggestionsProps {
   personality: ZahraPersonality;
-  onSuggestionClick: (suggestion: string) => void;
-  customSuggestions?: string[];
+  language: VoiceLanguage;
+  onSelect: (suggestion: string) => void;
 }
 
-const ZahraSuggestions: React.FC<ZahraSuggestionsProps> = ({ 
-  personality, 
-  onSuggestionClick,
-  customSuggestions 
-}) => {
+const Suggestions: React.FC<SuggestionsProps> = ({ personality, language, onSelect }) => {
   const config = PERSONALITY_CONFIGS[personality];
-  const suggestions = customSuggestions || config.suggestions;
+  const suggestions = config.suggestions[language];
+  const color = config.color;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="flex flex-wrap gap-2"
-    >
-      {suggestions.map((suggestion, index) => (
+    <div className="flex flex-wrap gap-2">
+      {suggestions.map((s, i) => (
         <motion.button
-          key={suggestion}
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: index * 0.05 }}
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={() => onSuggestionClick(suggestion)}
-          className="px-3 py-1.5 rounded-full text-sm border transition-all hover:shadow-md"
-          style={{
-            borderColor: `${config.color}60`,
-            color: config.color,
-            background: `${config.color}10`,
-          }}
+          key={s}
+          initial={{ opacity: 0, y: 5 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: i * 0.05 }}
+          whileHover={{ scale: 1.03 }}
+          whileTap={{ scale: 0.97 }}
+          onClick={() => onSelect(s)}
+          className="px-3 py-1.5 rounded-full text-xs border transition-all"
+          style={{ borderColor: `${color}50`, color, background: `${color}10` }}
         >
           <ChevronRight className="w-3 h-3 inline mr-1" />
-          {suggestion}
+          {s}
         </motion.button>
       ))}
-    </motion.div>
+    </div>
   );
 };
 
 // ============================================
-// METRICS COMPONENT
+// GAMIFICATION METRICS
 // ============================================
 
-interface ZahraMetricsProps {
+interface MetricsProps {
   compact?: boolean;
 }
 
-const ZahraMetrics: React.FC<ZahraMetricsProps> = ({ compact = false }) => {
-  const { 
-    researchStreak, 
-    level, 
-    xp, 
-    badges, 
-    totalQueries 
-  } = useAgentStore();
-  
+const Metrics: React.FC<MetricsProps> = ({ compact }) => {
+  const { researchStreak, level, xp, badges, totalQueries } = useAgentStore();
   const xpProgress = (xp % 1000) / 10;
-  const xpToNextLevel = 1000 - (xp % 1000);
 
   if (compact) {
     return (
-      <div className="flex items-center gap-4 text-sm">
+      <div className="flex items-center gap-3 text-xs">
         <div className="flex items-center gap-1">
           <Flame className="w-4 h-4 text-orange-500" />
-          <span className="font-medium">{researchStreak}</span>
+          <span className="font-bold">{researchStreak}</span>
         </div>
         <div className="flex items-center gap-1">
           <Trophy className="w-4 h-4 text-yellow-500" />
-          <span className="font-medium">Lv.{level}</span>
+          <span className="font-bold">Lv.{level}</span>
         </div>
         <div className="flex items-center gap-1">
           <Star className="w-4 h-4 text-primary" />
-          <span className="font-medium">{xp} XP</span>
+          <span className="font-bold">{xp}</span>
         </div>
       </div>
     );
   }
 
   return (
-    <Card className="bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20">
+    <Card className="bg-gradient-to-br from-primary/5 to-accent/5 border-primary/20">
       <CardContent className="p-4">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-primary" />
-            Your Progress
+            Progress
           </h3>
-          <Badge variant="secondary" className="gap-1">
-            <Award className="w-3 h-3" />
+          <Badge variant="secondary">
+            <Award className="w-3 h-3 mr-1" />
             {badges.length} Badges
           </Badge>
         </div>
 
-        <div className="grid grid-cols-3 gap-4 mb-4">
-          {/* Streak */}
-          <div className="text-center p-2 rounded-lg bg-background/50">
-            <Flame className="w-6 h-6 mx-auto text-orange-500 mb-1" />
-            <div className="text-2xl font-bold">{researchStreak}</div>
-            <div className="text-xs text-muted-foreground">Day Streak</div>
+        <div className="grid grid-cols-3 gap-3 mb-4">
+          <div className="text-center p-3 rounded-xl bg-background/60">
+            <Flame className="w-5 h-5 mx-auto text-orange-500 mb-1" />
+            <div className="text-xl font-bold">{researchStreak}</div>
+            <div className="text-xs text-muted-foreground">Streak</div>
           </div>
-
-          {/* Level */}
-          <div className="text-center p-2 rounded-lg bg-background/50">
-            <Trophy className="w-6 h-6 mx-auto text-yellow-500 mb-1" />
-            <div className="text-2xl font-bold">{level}</div>
+          <div className="text-center p-3 rounded-xl bg-background/60">
+            <Trophy className="w-5 h-5 mx-auto text-yellow-500 mb-1" />
+            <div className="text-xl font-bold">{level}</div>
             <div className="text-xs text-muted-foreground">Level</div>
           </div>
-
-          {/* Queries */}
-          <div className="text-center p-2 rounded-lg bg-background/50">
-            <MessageCircle className="w-6 h-6 mx-auto text-primary mb-1" />
-            <div className="text-2xl font-bold">{totalQueries}</div>
+          <div className="text-center p-3 rounded-xl bg-background/60">
+            <MessageCircle className="w-5 h-5 mx-auto text-primary mb-1" />
+            <div className="text-xl font-bold">{totalQueries}</div>
             <div className="text-xs text-muted-foreground">Queries</div>
           </div>
         </div>
 
-        {/* XP Progress */}
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">XP Progress</span>
-            <span className="font-medium">{xpToNextLevel} XP to Level {level + 1}</span>
+        <div className="space-y-1">
+          <div className="flex justify-between text-xs">
+            <span className="text-muted-foreground">XP to Level {level + 1}</span>
+            <span className="font-medium">{1000 - (xp % 1000)} XP</span>
           </div>
           <Progress value={xpProgress} className="h-2" />
         </div>
-
-        {/* Recent Badges */}
-        {badges.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-border/50">
-            <div className="text-sm text-muted-foreground mb-2">Recent Badges</div>
-            <div className="flex gap-2 flex-wrap">
-              {badges.slice(-3).map((badge) => (
-                <Badge key={badge} variant="outline" className="text-xs">
-                  <Star className="w-3 h-3 mr-1 text-yellow-500" />
-                  {badge}
-                </Badge>
-              ))}
-            </div>
-          </div>
-        )}
       </CardContent>
     </Card>
   );
 };
 
 // ============================================
-// VOICE CONTROLS COMPONENT
+// ONBOARDING COMPONENT
 // ============================================
 
-interface ZahraVoiceControlsProps {
-  isListening: boolean;
-  isSpeaking: boolean;
-  voiceEnabled: boolean;
-  onToggleListen: () => void;
-  onToggleVoice: () => void;
-  onStopSpeaking: () => void;
-  personality: ZahraPersonality;
+interface OnboardingProps {
+  voiceSettings: VoiceSettings;
+  onVoiceChange: (settings: VoiceSettings) => void;
+  onComplete: () => void;
+  onSkip: () => void;
 }
 
-const ZahraVoiceControls: React.FC<ZahraVoiceControlsProps> = ({
-  isListening,
-  isSpeaking,
-  voiceEnabled,
-  onToggleListen,
-  onToggleVoice,
-  onStopSpeaking,
-  personality,
-}) => {
-  const config = PERSONALITY_CONFIGS[personality];
+const Onboarding: React.FC<OnboardingProps> = ({ voiceSettings, onVoiceChange, onComplete, onSkip }) => {
+  const [step, setStep] = useState(0);
+  const currentStep = ONBOARDING_STEPS[step];
+  const color = PERSONALITY_COLORS[currentStep.personality];
+  const isLastStep = step === ONBOARDING_STEPS.length - 1;
+  const isVoiceStep = currentStep.id === 'voice';
 
   return (
-    <div className="flex items-center gap-2">
-      {/* Microphone button */}
-      <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-        <Button
-          variant={isListening ? "default" : "outline"}
-          size="icon"
-          onClick={onToggleListen}
-          className={cn(
-            "relative transition-all",
-            isListening && "ring-2 ring-offset-2 ring-primary"
-          )}
-          style={isListening ? { 
-            backgroundColor: config.color,
-          } : undefined}
-        >
-          {isListening ? (
-            <MicOff className="w-4 h-4" />
-          ) : (
-            <Mic className="w-4 h-4" />
-          )}
-          
-          {/* Listening pulse */}
-          {isListening && (
-            <motion.div
-              className="absolute inset-0 rounded-md"
-              style={{ backgroundColor: config.color }}
-              animate={{ opacity: [0.5, 0, 0.5] }}
-              transition={{ duration: 1, repeat: Infinity }}
-            />
-          )}
-        </Button>
-      </motion.div>
+    <Card className="w-full max-w-lg mx-auto overflow-hidden">
+      <CardHeader className="pb-2" style={{ background: `linear-gradient(135deg, ${color}20, transparent)` }}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {step > 0 && (
+              <Button variant="ghost" size="icon" onClick={() => setStep(s => s - 1)}>
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+            )}
+            <CardTitle className="text-lg">{currentStep.title}</CardTitle>
+          </div>
+          <Button variant="ghost" size="sm" onClick={onSkip}>Skip</Button>
+        </div>
+        <Progress value={(step / (ONBOARDING_STEPS.length - 1)) * 100} className="h-1 mt-2" />
+      </CardHeader>
 
-      {/* Voice output toggle */}
-      <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-        <Button
-          variant={voiceEnabled ? "default" : "outline"}
-          size="icon"
-          onClick={isSpeaking ? onStopSpeaking : onToggleVoice}
-          className={cn(
-            "transition-all",
-            isSpeaking && "animate-pulse"
+      <CardContent className="p-6">
+        <div className="flex flex-col items-center text-center">
+          <ZahraAvatar personality={currentStep.personality} isSpeaking={false} isListening={false} size="xl" />
+          
+          <p className="mt-6 text-muted-foreground">{currentStep.description}</p>
+          
+          <div className="mt-4 p-3 rounded-lg bg-muted/50 text-sm w-full" style={{ borderLeft: `3px solid ${color}` }}>
+            {currentStep.example}
+          </div>
+
+          {isVoiceStep && (
+            <div className="mt-6 grid grid-cols-2 gap-4 w-full">
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Language</label>
+                <Select
+                  value={voiceSettings.language}
+                  onValueChange={(v) => onVoiceChange({ ...voiceSettings, language: v as VoiceLanguage })}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="en">🇺🇸 English</SelectItem>
+                    <SelectItem value="ar">🇸🇦 العربية</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Voice</label>
+                <Select
+                  value={voiceSettings.gender}
+                  onValueChange={(v) => onVoiceChange({ ...voiceSettings, gender: v as VoiceGender })}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="female">👩 Female</SelectItem>
+                    <SelectItem value="male">👨 Male</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           )}
-        >
-          {voiceEnabled ? (
-            <Volume2 className="w-4 h-4" />
-          ) : (
-            <VolumeX className="w-4 h-4" />
-          )}
-        </Button>
-      </motion.div>
-    </div>
+
+          <div className="flex gap-2 mt-6">
+            {!isLastStep ? (
+              <Button onClick={() => setStep(s => s + 1)} style={{ backgroundColor: color }}>
+                Next <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            ) : (
+              <Button onClick={onComplete} style={{ backgroundColor: color }}>
+                <Check className="w-4 h-4 mr-1" /> Get Started
+              </Button>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 };
 
 // ============================================
-// MAIN ZAHRA 2.0 AGENT COMPONENT
+// MAIN ZAHRA 2.0 COMPONENT
 // ============================================
 
 interface ZAHRA2_0AgentProps {
-  onMessage?: (message: ZahraMessage) => void;
-  onPersonalityChange?: (personality: ZahraPersonality) => void;
   onResearchTriggered?: (query: string) => void;
   className?: string;
   compact?: boolean;
 }
 
 export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
-  onMessage,
-  onPersonalityChange,
   onResearchTriggered,
   className,
   compact = false,
 }) => {
-  const { t, isRTL } = useLanguage();
-  const { 
-    speak, 
-    stopSpeaking, 
-    startListening, 
-    stopListening, 
-    isSpeaking, 
-    isListening, 
-    transcript,
-    voiceEnabled,
-    toggleVoice,
-  } = useVoice();
-  const { addQuery, addXP } = useAgentStore();
-  
-  // Research engine integration
-  const { startResearch } = useResearchEngine();
-  const { isSearching, currentTask, reports } = useResearchStore();
-
-  // State - load from memory on init
+  // State
+  const [showOnboarding, setShowOnboarding] = useState(() => !hasCompletedOnboarding());
+  const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(loadSettings);
   const [personality, setPersonality] = useState<ZahraPersonality>('curious');
-  const [messages, setMessages] = useState<ZahraMessage[]>(() => loadConversation());
-  const [inputValue, setInputValue] = useState('');
+  const [messages, setMessages] = useState<ZahraMessage[]>(() => loadMessages());
+  const [input, setInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [errorCount, setErrorCount] = useState(0);
-  const [conversationCount, setConversationCount] = useState(0);
-  const [isResearching, setIsResearching] = useState(false);
-  const [streamingContent, setStreamingContent] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-
+  const scrollRef = useRef<HTMLDivElement>(null);
+  
+  const { addQuery, addXP } = useAgentStore();
+  const { startResearch } = useResearchEngine();
+  const { isSearching, currentTask } = useResearchStore();
+  
+  const voice = useZahraVoice(voiceSettings);
   const config = PERSONALITY_CONFIGS[personality];
 
-  // Save conversation to memory whenever messages change
+  // Persist settings
+  useEffect(() => { saveSettings(voiceSettings); }, [voiceSettings]);
+  useEffect(() => { saveMessages(messages); }, [messages]);
+  
+  // Auto-scroll
   useEffect(() => {
-    if (messages.length > 0) {
-      saveConversation(messages);
-    }
-  }, [messages]);
+    scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isTyping]);
 
-  // Handle personality change
-  const updatePersonality = useCallback((newPersonality: ZahraPersonality) => {
-    setPersonality(newPersonality);
-    onPersonalityChange?.(newPersonality);
-  }, [onPersonalityChange]);
-
-  // Clear conversation history
-  const handleClearHistory = useCallback(() => {
-    clearConversation();
-    setMessages([]);
-    toast({
-      title: "Conversation cleared",
-      description: "ZAHRA's memory has been reset.",
-    });
-  }, []);
-
-  // Detect if user wants research
-  const detectResearchIntent = (content: string): boolean => {
-    const researchKeywords = [
-      'research', 'search', 'find', 'look up', 'investigate', 
-      'analyze', 'discover', 'explore', 'learn about', 'tell me about',
-      'what is', 'who is', 'how does', 'why does', 'when did',
-      'compare', 'explain', 'summarize'
-    ];
-    const lowerContent = content.toLowerCase();
-    return researchKeywords.some(keyword => lowerContent.includes(keyword));
+  // Handle onboarding
+  const handleOnboardingComplete = () => {
+    completeOnboarding();
+    setShowOnboarding(false);
   };
 
-  // Process user input and generate AI response
+  // Process message
   const processMessage = useCallback(async (content: string) => {
-    if (!content.trim()) return;
-
+    if (!content.trim() || isProcessing) return;
+    
     setIsProcessing(true);
     setIsTyping(true);
-    setStreamingContent('');
     
-    // Add user message
-    const userMessage: ZahraMessage = {
+    const userMsg: ZahraMessage = {
       id: Date.now().toString(),
       role: 'user',
       content: content.trim(),
       timestamp: new Date(),
     };
-    setMessages(prev => [...prev, userMessage]);
-    setInputValue('');
+    setMessages(prev => [...prev, userMsg]);
+    setInput('');
 
-    // Detect sentiment and intent
-    const sentiment = detectSentiment(content);
-    const isNewTopic = messages.length === 0 || content.length > 50;
-    const wantsResearch = detectResearchIntent(content);
+    const detectedPersonality = detectPersonality(content);
+    setPersonality(detectedPersonality);
+
+    // Check for research intent
+    const wantsResearch = content.toLowerCase().includes('research') || 
+                          content.toLowerCase().includes('بحث');
     
-    // Determine personality based on context
-    const newPersonality = detectPersonality({
-      querySuccess: true,
-      confidence: 0.8,
-      errorCount,
-      userSentiment: sentiment,
-      isNewTopic,
-    });
-    updatePersonality(newPersonality);
-    
-    // If user wants deep research, trigger the research engine
-    if (wantsResearch && content.toLowerCase().includes('research')) {
-      setIsResearching(true);
-      updatePersonality('curious');
-      
-      // Add ZAHRA's acknowledgment message
-      const ackMessage: ZahraMessage = {
+    if (wantsResearch) {
+      const ackMsg: ZahraMessage = {
         id: (Date.now() + 1).toString(),
         role: 'zahra',
-        content: `🔍 Great question! I'm initiating a deep research on "${content.slice(0, 60)}${content.length > 60 ? '...' : ''}". This will search across multiple sources to find verified information for you.`,
+        content: voiceSettings.language === 'ar' 
+          ? '🔍 سأبدأ البحث عن هذا الموضوع...'
+          : '🔍 Starting research on this topic...',
         timestamp: new Date(),
         personality: 'curious',
         confidence: 0.9,
       };
-      setMessages(prev => [...prev, ackMessage]);
+      setMessages(prev => [...prev, ackMsg]);
       setIsTyping(false);
       
       try {
         onResearchTriggered?.(content);
         await startResearch(content);
-        
-        const latestReport = reports[reports.length - 1];
-        updatePersonality('confident');
-        
-        const successMessage: ZahraMessage = {
-          id: (Date.now() + 2).toString(),
-          role: 'zahra',
-          content: `✅ Research complete! I found comprehensive information about your query. ${latestReport ? `The report "${latestReport.title}" is now ready in the Results view.` : 'Check the Results view for the full report.'} Would you like me to summarize the key findings?`,
-          timestamp: new Date(),
-          personality: 'confident',
-          confidence: 0.95,
-        };
-        setMessages(prev => [...prev, successMessage]);
+        setPersonality('confident');
         addXP(25);
-        
-        if (voiceEnabled) {
-          speak(successMessage.content);
-        }
-      } catch (error) {
-        updatePersonality('frustrated');
-        const errorMessage: ZahraMessage = {
-          id: (Date.now() + 2).toString(),
-          role: 'zahra',
-          content: `😓 I encountered an issue while researching. ${error instanceof Error ? error.message : 'Please try again.'} Would you like to rephrase your question?`,
-          timestamp: new Date(),
-          personality: 'frustrated',
-          confidence: 0.3,
-        };
-        setMessages(prev => [...prev, errorMessage]);
-        setErrorCount(prev => prev + 1);
-      } finally {
-        setIsResearching(false);
-        setIsProcessing(false);
+      } catch (e) {
+        setPersonality('frustrated');
       }
-      
+      setIsProcessing(false);
       return;
     }
-    
-    // Regular AI conversation with streaming
-    const zahraMessageId = (Date.now() + 1).toString();
+
+    // AI Chat
+    const msgId = (Date.now() + 1).toString();
     let fullContent = '';
     
-    // Build conversation history for AI (last 10 messages)
-    const conversationHistory: ChatMessage[] = messages.slice(-10).map(m => ({
-      role: m.role === 'zahra' ? 'assistant' : 'user',
-      content: m.content,
-    }));
-    conversationHistory.push({ role: 'user', content: content.trim() });
-    
-    // Create placeholder message for streaming
-    const placeholderMessage: ZahraMessage = {
-      id: zahraMessageId,
+    const placeholder: ZahraMessage = {
+      id: msgId,
       role: 'zahra',
       content: '',
       timestamp: new Date(),
-      personality: newPersonality,
+      personality: detectedPersonality,
       confidence: 0.85,
     };
-    setMessages(prev => [...prev, placeholderMessage]);
+    setMessages(prev => [...prev, placeholder]);
+
+    const history: ChatMessage[] = messages.slice(-8).map(m => ({
+      role: m.role === 'zahra' ? 'assistant' : 'user',
+      content: m.content,
+    }));
+    history.push({ role: 'user', content: content.trim() });
 
     await streamZahraChat({
-      messages: conversationHistory,
-      personality: newPersonality,
+      messages: history,
+      personality: detectedPersonality,
       onDelta: (delta) => {
         fullContent += delta;
-        setStreamingContent(fullContent);
-        // Update the message in place
-        setMessages(prev => prev.map(m => 
-          m.id === zahraMessageId 
-            ? { ...m, content: fullContent }
-            : m
-        ));
+        setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: fullContent } : m));
       },
       onDone: () => {
         setIsTyping(false);
         setIsProcessing(false);
-        setStreamingContent('');
-        setConversationCount(prev => prev + 1);
         addQuery();
         addXP(5);
-        
-        // Speak the response if voice is enabled
-        if (voiceEnabled && fullContent) {
-          speak(fullContent);
-        }
-        
-        // Update personality based on response
-        if (fullContent.includes('!') || fullContent.includes('great') || fullContent.includes('amazing')) {
-          updatePersonality('delighted');
-        } else if (fullContent.includes('sorry') || fullContent.includes('unfortunately')) {
-          updatePersonality('anxious');
-        }
-        
-        onMessage?.({
-          id: zahraMessageId,
-          role: 'zahra',
-          content: fullContent,
-          timestamp: new Date(),
-          personality: newPersonality,
-          confidence: 0.85,
-        });
+        if (voiceSettings.enabled && fullContent) voice.speak(fullContent);
       },
-      onError: (error) => {
+      onError: (err) => {
         setIsTyping(false);
         setIsProcessing(false);
-        updatePersonality('frustrated');
-        setErrorCount(prev => prev + 1);
-        
-        // Update the placeholder with error message
-        setMessages(prev => prev.map(m => 
-          m.id === zahraMessageId 
-            ? { 
-                ...m, 
-                content: `😓 ${error}. Let me try again or rephrase your question!`,
-                personality: 'frustrated',
-                confidence: 0.3,
-              }
-            : m
-        ));
-        
-        toast({
-          title: "ZAHRA encountered an issue",
-          description: error,
-          variant: "destructive",
-        });
+        setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: `❌ ${err}`, personality: 'frustrated' } : m));
+        toast({ title: "Error", description: err, variant: "destructive" });
       },
     });
-  }, [messages, errorCount, voiceEnabled, speak, addQuery, addXP, onMessage, updatePersonality, startResearch, reports, onResearchTriggered]);
+  }, [isProcessing, messages, voiceSettings, voice, addQuery, addXP, startResearch, onResearchTriggered]);
 
-  // Handle voice transcript
+  // Voice transcript handler
   useEffect(() => {
-    if (transcript && !isListening) {
-      processMessage(transcript);
+    if (voice.transcript && !voice.isListening) {
+      processMessage(voice.transcript);
     }
-  }, [transcript, isListening, processMessage]);
+  }, [voice.transcript, voice.isListening, processMessage]);
 
-  // Handle send
-  const handleSend = useCallback(() => {
-    processMessage(inputValue);
-  }, [inputValue, processMessage]);
+  const handleSend = () => processMessage(input);
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+  };
+  const handleClear = () => { setMessages([]); localStorage.removeItem(ZAHRA_MEMORY_KEY); };
 
-  // Handle key press
-  const handleKeyPress = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  }, [handleSend]);
-
-  // Handle suggestion click
-  const handleSuggestionClick = useCallback((suggestion: string) => {
-    processMessage(suggestion);
-  }, [processMessage]);
-
-  // Toggle listening
-  const handleToggleListen = useCallback(() => {
-    if (isListening) {
-      stopListening();
-    } else {
-      startListening();
-    }
-  }, [isListening, startListening, stopListening]);
-
-  // Copy message
-  const handleCopy = useCallback((content: string) => {
-    navigator.clipboard.writeText(content);
-    toast({ title: "Copied to clipboard" });
-  }, []);
-
-  const showResearchIndicator = isSearching || isResearching;
+  // Show onboarding
+  if (showOnboarding) {
+    return (
+      <div className={cn("flex items-center justify-center p-4 h-full", className)}>
+        <Onboarding
+          voiceSettings={voiceSettings}
+          onVoiceChange={setVoiceSettings}
+          onComplete={handleOnboardingComplete}
+          onSkip={handleOnboardingComplete}
+        />
+      </div>
+    );
+  }
 
   return (
     <Card className={cn("flex flex-col h-full overflow-hidden", className)}>
       {/* Header */}
-      <div 
-        className="p-4 border-b flex items-center gap-4"
-        style={{ background: `linear-gradient(to right, ${config.color}10, transparent)` }}
+      <div
+        className="p-4 border-b flex items-center gap-3"
+        style={{ background: `linear-gradient(to right, ${config.color}15, transparent)` }}
       >
-        <ZahraAvatar 
+        <ZahraAvatar
           personality={personality}
-          isSpeaking={isSpeaking}
-          isListening={isListening}
+          isSpeaking={voice.isSpeaking}
+          isListening={voice.isListening}
           size={compact ? "sm" : "md"}
         />
         
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-bold truncate">ZAHRA 2.0</h2>
-            <Badge 
-              className="shrink-0"
-              style={{ 
-                backgroundColor: `${config.color}20`,
-                color: config.color,
-                borderColor: config.color,
-              }}
-            >
+            <h2 className="font-bold text-lg">ZAHRA 2.0</h2>
+            <Badge style={{ backgroundColor: `${config.color}20`, color: config.color, borderColor: config.color }}>
               {config.icon}
-              <span className="ml-1">{config.name}</span>
+              <span className="ml-1">{voiceSettings.language === 'ar' ? config.nameAr : config.name}</span>
             </Badge>
           </div>
-          {!compact && (
-            <p className="text-sm text-muted-foreground truncate">
-              Your intelligent research companion
-            </p>
-          )}
+          {!compact && <Metrics compact />}
         </div>
 
-        <div className="flex items-center gap-2">
-          {!compact && <ZahraMetrics compact />}
+        <div className="flex items-center gap-1">
+          {/* Language toggle */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setVoiceSettings(s => ({ ...s, language: s.language === 'en' ? 'ar' : 'en' }))}
+            title={voiceSettings.language === 'en' ? 'Switch to Arabic' : 'Switch to English'}
+          >
+            <Globe className="w-4 h-4" />
+          </Button>
+          
+          {/* Voice toggle */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setVoiceSettings(s => ({ ...s, enabled: !s.enabled }))}
+          >
+            {voiceSettings.enabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+          </Button>
+          
+          {/* Clear */}
           {messages.length > 0 && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleClearHistory}
-              className="text-muted-foreground hover:text-destructive"
-              title="Clear conversation"
-            >
+            <Button variant="ghost" size="icon" onClick={handleClear} className="text-muted-foreground hover:text-destructive">
               <Trash2 className="w-4 h-4" />
             </Button>
           )}
         </div>
       </div>
 
-      {/* Research in progress indicator */}
+      {/* Research progress */}
       <AnimatePresence>
-        {showResearchIndicator && (
+        {isSearching && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
@@ -1188,174 +1057,130 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
             className="px-4 py-2 bg-primary/10 border-b flex items-center gap-2"
           >
             <Search className="w-4 h-4 text-primary animate-pulse" />
-            <span className="text-sm font-medium text-primary">
-              Researching... {currentTask?.progress || 0}%
-            </span>
+            <span className="text-sm font-medium text-primary">Researching... {currentTask?.progress || 0}%</span>
             <Progress value={currentTask?.progress || 0} className="flex-1 h-1.5" />
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Messages area */}
+      {/* Messages */}
       <ScrollArea className="flex-1 p-4">
         <div className="space-y-4">
           {messages.length === 0 ? (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="text-center py-8"
-            >
-              <ZahraAvatar 
-                personality={personality}
-                isSpeaking={isSpeaking}
-                isListening={isListening}
-                size={compact ? "md" : "lg"}
-              />
-              <h3 className="mt-4 text-lg font-semibold">
-                Hi! I'm ZAHRA 2.0
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-10">
+              <ZahraAvatar personality="curious" isSpeaking={false} isListening={false} size="xl" />
+              <h3 className="mt-6 text-lg font-semibold">
+                {voiceSettings.language === 'ar' ? 'مرحباً! أنا زهراء' : "Hi! I'm ZAHRA 2.0"}
               </h3>
-              <p className="text-muted-foreground mt-2 max-w-md mx-auto text-sm">
-                Your emotionally intelligent research assistant. Ask me to research any topic!
+              <p className="text-muted-foreground mt-2 text-sm max-w-sm mx-auto">
+                {voiceSettings.language === 'ar' 
+                  ? 'مساعدتك الذكية في البحث. اسألني أي شيء!'
+                  : 'Your intelligent research companion. Ask me anything!'}
               </p>
-              
-              <div className="mt-4">
-                <ZahraSuggestions 
-                  personality={personality}
-                  onSuggestionClick={handleSuggestionClick}
-                  customSuggestions={[
-                    "Research AI advancements in 2024",
-                    "Find information about climate tech",
-                    "Tell me about quantum computing",
-                  ]}
-                />
+              <div className="mt-6">
+                <Suggestions personality="curious" language={voiceSettings.language} onSelect={processMessage} />
               </div>
             </motion.div>
           ) : (
-            <>
-              {messages.map((message, index) => (
-                <ZahraMessageCard
-                  key={message.id}
-                  message={message}
-                  isStreaming={isTyping && index === messages.length - 1 && message.role === 'zahra'}
-                  onCopy={() => handleCopy(message.content)}
-                  onShare={() => {}}
-                  onSave={() => {}}
-                />
-              ))}
-              
-              {/* Typing indicator - shows before first content arrives */}
-              <AnimatePresence>
-                {isTyping && !streamingContent && messages[messages.length - 1]?.role !== 'zahra' && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="flex items-center gap-3 p-4"
-                  >
-                    <ZahraAvatar 
-                      personality={personality}
-                      isSpeaking={false}
-                      isListening={false}
-                      size="sm"
-                    />
-                    <div className="flex items-center gap-2">
-                      {/* Animated dots */}
-                      <div className="flex gap-1">
-                        {[0, 1, 2].map((i) => (
-                          <motion.div
-                            key={i}
-                            className="w-2 h-2 rounded-full"
-                            style={{ backgroundColor: config.color }}
-                            animate={{ 
-                              y: [0, -6, 0],
-                              opacity: [0.5, 1, 0.5],
-                            }}
-                            transition={{
-                              duration: 0.8,
-                              repeat: Infinity,
-                              delay: i * 0.15,
-                              ease: "easeInOut",
-                            }}
-                          />
-                        ))}
-                      </div>
-                      <span className="text-sm text-muted-foreground">
-                        {isResearching ? 'ZAHRA is researching...' : 'ZAHRA is thinking...'}
-                      </span>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </>
+            messages.map((msg, i) => (
+              <MessageCard
+                key={msg.id}
+                message={msg}
+                isStreaming={isTyping && i === messages.length - 1 && msg.role === 'zahra'}
+                language={voiceSettings.language}
+                onCopy={() => { navigator.clipboard.writeText(msg.content); toast({ title: "Copied!" }); }}
+              />
+            ))
           )}
+          
+          {/* Typing indicator */}
+          <AnimatePresence>
+            {isTyping && messages[messages.length - 1]?.role !== 'zahra' && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex items-center gap-3 p-3"
+              >
+                <ZahraAvatar personality={personality} isSpeaking={false} isListening={false} size="sm" />
+                <div className="flex gap-1">
+                  {[0, 1, 2].map(i => (
+                    <motion.div
+                      key={i}
+                      className="w-2 h-2 rounded-full"
+                      style={{ backgroundColor: config.color }}
+                      animate={{ y: [0, -6, 0], opacity: [0.5, 1, 0.5] }}
+                      transition={{ duration: 0.7, repeat: Infinity, delay: i * 0.15 }}
+                    />
+                  ))}
+                </div>
+                <span className="text-sm text-muted-foreground">
+                  {voiceSettings.language === 'ar' ? 'زهراء تفكر...' : 'ZAHRA is thinking...'}
+                </span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          <div ref={scrollRef} />
         </div>
       </ScrollArea>
 
       {/* Suggestions */}
       {messages.length > 0 && !isProcessing && !compact && (
         <div className="px-4 pb-2">
-          <ZahraSuggestions 
-            personality={personality}
-            onSuggestionClick={handleSuggestionClick}
-          />
+          <Suggestions personality={personality} language={voiceSettings.language} onSelect={processMessage} />
         </div>
       )}
 
-      {/* Input area */}
+      {/* Input */}
       <div className="p-4 border-t bg-background/50">
-        {/* Voice transcript indicator */}
         <AnimatePresence>
-          {isListening && transcript && (
+          {voice.isListening && voice.transcript && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
               className="mb-2 p-2 rounded-lg bg-primary/10 text-sm"
             >
-              <span className="text-muted-foreground">Hearing: </span>
-              <span className="font-medium">{transcript}</span>
+              🎤 {voice.transcript}
             </motion.div>
           )}
         </AnimatePresence>
 
         <div className="flex items-center gap-2">
-          <ZahraVoiceControls
-            isListening={isListening}
-            isSpeaking={isSpeaking}
-            voiceEnabled={voiceEnabled}
-            onToggleListen={handleToggleListen}
-            onToggleVoice={toggleVoice}
-            onStopSpeaking={stopSpeaking}
-            personality={personality}
-          />
+          {/* Mic button */}
+          <Button
+            variant={voice.isListening ? "default" : "outline"}
+            size="icon"
+            onClick={voice.isListening ? voice.stopListening : voice.startListening}
+            style={voice.isListening ? { backgroundColor: config.color } : undefined}
+          >
+            {voice.isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+          </Button>
 
           <Input
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
+            value={input}
+            onChange={e => setInput(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder="Ask ZAHRA to research anything..."
-            disabled={isProcessing || isListening}
+            placeholder={voiceSettings.language === 'ar' ? 'اسأل زهراء...' : 'Ask ZAHRA...'}
+            disabled={isProcessing || voice.isListening}
             className="flex-1"
-            dir={isRTL ? 'rtl' : 'ltr'}
+            dir={voiceSettings.language === 'ar' ? 'rtl' : 'ltr'}
           />
 
-          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-            <Button
-              onClick={handleSend}
-              disabled={!inputValue.trim() || isProcessing}
-              style={{ backgroundColor: config.color }}
-              className="text-white"
-            >
-              <Send className="w-4 h-4" />
-            </Button>
-          </motion.div>
+          <Button
+            onClick={handleSend}
+            disabled={!input.trim() || isProcessing}
+            style={{ backgroundColor: config.color }}
+          >
+            <Send className="w-4 h-4" />
+          </Button>
         </div>
       </div>
 
-      {/* Metrics panel (expanded) - only show if not compact */}
+      {/* Metrics panel */}
       {!compact && (
         <div className="p-4 border-t">
-          <ZahraMetrics />
+          <Metrics />
         </div>
       )}
     </Card>
@@ -1363,7 +1188,7 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
 };
 
 // ============================================
-// MOBILE FLOATING BUTTON + DRAWER
+// MOBILE FLOATING BUTTON
 // ============================================
 
 interface ZahraMobileButtonProps {
@@ -1377,19 +1202,22 @@ export const ZahraMobileButton: React.FC<ZahraMobileButtonProps> = ({ onResearch
     <Sheet open={isOpen} onOpenChange={setIsOpen}>
       <SheetTrigger asChild>
         <motion.button
-          className="fixed bottom-6 right-6 z-50 xl:hidden w-14 h-14 rounded-full bg-gradient-to-br from-primary to-accent text-white shadow-lg flex items-center justify-center"
+          className="fixed bottom-6 right-6 z-50 xl:hidden w-14 h-14 rounded-full shadow-xl flex items-center justify-center"
+          style={{
+            background: `linear-gradient(135deg, ${PERSONALITY_COLORS.curious}, ${PERSONALITY_COLORS.confident})`,
+          }}
           whileHover={{ scale: 1.1 }}
           whileTap={{ scale: 0.95 }}
           animate={{
             boxShadow: [
-              '0 4px 20px rgba(139, 92, 246, 0.3)',
-              '0 4px 30px rgba(139, 92, 246, 0.5)',
-              '0 4px 20px rgba(139, 92, 246, 0.3)',
+              `0 4px 20px ${PERSONALITY_COLORS.curious}40`,
+              `0 4px 30px ${PERSONALITY_COLORS.curious}60`,
+              `0 4px 20px ${PERSONALITY_COLORS.curious}40`,
             ],
           }}
           transition={{ duration: 2, repeat: Infinity }}
         >
-          <MessageCircle className="w-6 h-6" />
+          <MessageCircle className="w-6 h-6 text-white" />
         </motion.button>
       </SheetTrigger>
       <SheetContent side="right" className="w-full sm:w-[400px] p-0">
@@ -1401,15 +1229,7 @@ export const ZahraMobileButton: React.FC<ZahraMobileButtonProps> = ({ onResearch
             </Button>
           </div>
           <div className="flex-1 overflow-hidden">
-            <ZAHRA2_0Agent 
-              compact 
-              className="h-full border-0 rounded-none"
-              onResearchTriggered={(query) => {
-                onResearchTriggered?.(query);
-                // Optionally close drawer after triggering research
-                // setIsOpen(false);
-              }}
-            />
+            <ZAHRA2_0Agent compact className="h-full border-0 rounded-none" onResearchTriggered={onResearchTriggered} />
           </div>
         </div>
       </SheetContent>
