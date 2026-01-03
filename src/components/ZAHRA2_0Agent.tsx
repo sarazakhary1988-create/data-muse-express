@@ -1,11 +1,11 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Search, TrendingUp, Users, Link, Lightbulb, Sparkles,
   ChevronRight, ChevronLeft, Check, ArrowRight, X,
   BookOpen, Newspaper, Building2, Globe, Database,
   Zap, Clock, Target, FileText, Play, Minimize2,
-  LayoutTemplate, Brain, Settings2, RotateCcw
+  LayoutTemplate, Brain, Settings2, RotateCcw, Mic, MicOff
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -14,8 +14,10 @@ import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { ViewType } from '@/components/Sidebar';
+import { toast } from '@/hooks/use-toast';
 
 // ============================================
 // TYPES
@@ -366,6 +368,90 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
   });
 
   const [personality, setPersonality] = useState<ResearchPersonality>('curious');
+  const [isListening, setIsListening] = useState(false);
+  const [interimTranscript, setInterimTranscript] = useState('');
+  const recognitionRef = useRef<any>(null);
+
+  // Voice recognition setup
+  const startListening = useCallback(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      toast({
+        title: "Voice not supported",
+        description: "Speech recognition is not supported in your browser. Try Chrome or Edge.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    recognition.continuous = false;
+    recognition.interimResults = true;
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      setInterimTranscript('');
+    };
+
+    recognition.onresult = (event: any) => {
+      let interim = '';
+      let final = '';
+      
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          final += transcript;
+        } else {
+          interim += transcript;
+        }
+      }
+      
+      if (final) {
+        setState(prev => ({ ...prev, topic: prev.topic + final }));
+        setInterimTranscript('');
+      } else {
+        setInterimTranscript(interim);
+      }
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error('Speech recognition error:', event.error);
+      setIsListening(false);
+      setInterimTranscript('');
+      if (event.error === 'no-speech') {
+        toast({
+          title: "No speech detected",
+          description: "Please try speaking again.",
+        });
+      }
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      setInterimTranscript('');
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+  }, []);
+
+  const stopListening = useCallback(() => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+    setIsListening(false);
+    setInterimTranscript('');
+  }, []);
+
+  const toggleVoiceInput = useCallback(() => {
+    if (isListening) {
+      stopListening();
+    } else {
+      startListening();
+    }
+  }, [isListening, startListening, stopListening]);
 
   // Update personality based on step
   useEffect(() => {
@@ -379,6 +465,15 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
     };
     setPersonality(personalityMap[state.currentStep]);
   }, [state.currentStep]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, []);
 
   const goToStep = (step: WorkflowStep) => {
     setState(prev => ({ ...prev, currentStep: step }));
@@ -397,6 +492,7 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
   };
 
   const resetWorkflow = () => {
+    stopListening();
     setState({
       currentStep: 1,
       topic: '',
@@ -457,14 +553,67 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
       case 1:
         return (
           <div className="space-y-4">
-            <Input
-              value={state.topic}
-              onChange={(e) => setState(prev => ({ ...prev, topic: e.target.value }))}
-              placeholder="e.g., Tesla's market position, AI in healthcare, Competitor pricing strategies..."
-              className="h-12 text-base"
-              onKeyDown={(e) => e.key === 'Enter' && canProceed() && nextStep()}
-              autoFocus
-            />
+            <div className="relative">
+              <Input
+                value={isListening ? state.topic + interimTranscript : state.topic}
+                onChange={(e) => setState(prev => ({ ...prev, topic: e.target.value }))}
+                placeholder="e.g., Tesla's market position, AI in healthcare..."
+                className={cn(
+                  "h-12 text-base pr-12 transition-all",
+                  isListening && "border-primary ring-2 ring-primary/30"
+                )}
+                onKeyDown={(e) => e.key === 'Enter' && canProceed() && nextStep()}
+                autoFocus
+                disabled={isListening}
+              />
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant={isListening ? "default" : "ghost"}
+                      size="icon"
+                      onClick={toggleVoiceInput}
+                      className={cn(
+                        "absolute right-1 top-1/2 -translate-y-1/2 h-10 w-10 transition-all",
+                        isListening && "bg-primary text-primary-foreground animate-pulse"
+                      )}
+                    >
+                      {isListening ? (
+                        <MicOff className="w-5 h-5" />
+                      ) : (
+                        <Mic className="w-5 h-5" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {isListening ? "Stop listening" : "Speak your research topic"}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+            
+            {/* Voice listening indicator */}
+            {isListening && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 border border-primary/30"
+              >
+                <div className="flex gap-1">
+                  {[0, 1, 2, 3].map((i) => (
+                    <motion.div
+                      key={i}
+                      className="w-1 bg-primary rounded-full"
+                      animate={{ height: [4, 16, 4] }}
+                      transition={{ duration: 0.5, repeat: Infinity, delay: i * 0.1 }}
+                    />
+                  ))}
+                </div>
+                <span className="text-sm text-primary font-medium">Listening...</span>
+              </motion.div>
+            )}
+            
             <div className="flex flex-wrap gap-2">
               {['Tesla competitors', 'AI market trends 2025', 'SaaS pricing strategies'].map((suggestion) => (
                 <Button
@@ -473,6 +622,7 @@ export const ZAHRA2_0Agent: React.FC<ZAHRA2_0AgentProps> = ({
                   size="sm"
                   onClick={() => setState(prev => ({ ...prev, topic: suggestion }))}
                   className="text-xs"
+                  disabled={isListening}
                 >
                   {suggestion}
                 </Button>
