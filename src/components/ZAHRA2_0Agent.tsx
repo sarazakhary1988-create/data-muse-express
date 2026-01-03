@@ -640,6 +640,93 @@ const ParticleField: React.FC<ParticleFieldProps> = ({ color, isActive, particle
 };
 
 // ============================================
+// SPARKLE BURST COMPONENT
+// ============================================
+
+interface SparkleProps {
+  color: string;
+  index: number;
+  totalSparkles: number;
+}
+
+const Sparkle: React.FC<SparkleProps> = ({ color, index, totalSparkles }) => {
+  const angle = (index / totalSparkles) * Math.PI * 2;
+  const distance = 80 + Math.random() * 40;
+  const size = 3 + Math.random() * 5;
+  const rotation = Math.random() * 360;
+  
+  return (
+    <motion.div
+      className="absolute pointer-events-none"
+      style={{
+        left: '50%',
+        top: '50%',
+        width: size,
+        height: size,
+      }}
+      initial={{ 
+        x: 0, 
+        y: 0, 
+        opacity: 1,
+        scale: 0,
+        rotate: 0,
+      }}
+      animate={{ 
+        x: Math.cos(angle) * distance, 
+        y: Math.sin(angle) * distance, 
+        opacity: [1, 1, 0],
+        scale: [0, 1.5, 0],
+        rotate: rotation,
+      }}
+      transition={{
+        duration: 0.8,
+        ease: "easeOut",
+        delay: index * 0.02,
+      }}
+    >
+      {/* Star shape */}
+      <svg viewBox="0 0 24 24" fill={color} className="w-full h-full drop-shadow-lg" style={{ filter: `drop-shadow(0 0 4px ${color})` }}>
+        <path d="M12 0L14.59 8.41L23 12L14.59 15.59L12 24L9.41 15.59L1 12L9.41 8.41L12 0Z" />
+      </svg>
+    </motion.div>
+  );
+};
+
+interface SparkleBurstProps {
+  color: string;
+  trigger: number; // Changes to trigger new burst
+}
+
+const SparkleBurst: React.FC<SparkleBurstProps> = ({ color, trigger }) => {
+  const [sparkles, setSparkles] = useState<number[]>([]);
+  const sparkleCount = 16;
+
+  useEffect(() => {
+    if (trigger > 0) {
+      // Create new burst
+      setSparkles(Array.from({ length: sparkleCount }, (_, i) => i));
+      
+      // Clear after animation
+      const timer = setTimeout(() => {
+        setSparkles([]);
+      }, 1000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [trigger]);
+
+  return (
+    <div className="absolute inset-0 pointer-events-none overflow-visible z-20">
+      <AnimatePresence>
+        {sparkles.map(i => (
+          <Sparkle key={`${trigger}-${i}`} color={color} index={i} totalSparkles={sparkleCount} />
+        ))}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+// ============================================
 // ZAHRA AVATAR COMPONENT
 // ============================================
 
@@ -661,6 +748,16 @@ const ZahraAvatar: React.FC<ZahraAvatarProps> = ({
   showParticles = true
 }) => {
   const color = PERSONALITY_COLORS[personality];
+  const [sparkleTrigger, setSparkleTrigger] = useState(0);
+  const prevPersonalityRef = useRef(personality);
+  
+  // Trigger sparkle burst on personality change
+  useEffect(() => {
+    if (prevPersonalityRef.current !== personality) {
+      setSparkleTrigger(prev => prev + 1);
+      prevPersonalityRef.current = personality;
+    }
+  }, [personality]);
   
   const sizes = {
     sm: { outer: 'w-12 h-12', inner: 'w-10 h-10 text-sm', particles: 6 },
@@ -674,6 +771,9 @@ const ZahraAvatar: React.FC<ZahraAvatarProps> = ({
   return (
     <div className="flex flex-col items-center gap-2">
       <div className={cn("relative flex items-center justify-center", sizes[size].outer)}>
+        {/* Sparkle Burst on personality change */}
+        <SparkleBurst color={color} trigger={sparkleTrigger} />
+        
         {/* Particle Effects */}
         {showParticles && (
           <ParticleField 
