@@ -270,6 +270,8 @@ Return ONLY a JSON object (no markdown): { "support": "strong|moderate|weak|cont
 Return ONLY the title text, no quotes or explanation.`;
     } else if (validatedType === 'report') {
       const isSaudi = /\b(saudi|tadawul|tasi|nomu|cma|riyadh)\b/i.test(validatedQuery);
+      const isIPOQuery = /\b(ipo|ipos|initial\s+public\s+offering|listing|listings|going\s+public)\b/i.test(validatedQuery);
+      const isCompanyQuery = /\b(companies|company|firms?|corporations?|entities|businesses)\b/i.test(validatedQuery);
 
       const saudiGuardrails = isSaudi ? `
 SAUDI MARKET GUARDRAILS (NON-NEGOTIABLE):
@@ -278,18 +280,42 @@ SAUDI MARKET GUARDRAILS (NON-NEGOTIABLE):
 - If a requested metric/event is not present in sources, write "Data not yet available in retrieved sources".
 ` : '';
 
+      // CRITICAL: Entity extraction instructions for IPO/company queries
+      const entityExtractionInstructions = (isIPOQuery || isCompanyQuery) ? `
+CRITICAL ENTITY EXTRACTION REQUIREMENT:
+The user is asking for SPECIFIC COMPANIES/ENTITIES. You MUST:
+
+1. **EXTRACT AND LIST EVERY SPECIFIC COMPANY NAME** mentioned in the sources
+2. For each company, provide ALL available details in a structured table:
+
+## Companies Identified
+
+| Company Name | Sector/Industry | IPO Status | Target Exchange | Expected Date | Valuation/Size | Key Details |
+|--------------|-----------------|------------|-----------------|---------------|----------------|-------------|
+| [Actual Name] | [Sector] | [Planning/Filed/Completed] | [TASI/Nomu/etc] | [Q1 2024/etc] | [SAR X million] | [Brief description] |
+
+3. If SPECIFIC COMPANY NAMES are found, list them ALL. Do NOT summarize as "several companies" - NAME THEM.
+4. If NO specific company names are found in sources, explicitly state: "**No specific company names identified in available sources**"
+5. Include a section with detailed profiles for each company found.
+
+NEVER provide generic trend analysis without listing the actual companies. The user needs NAMES, not trends.
+` : '';
+
       userContent = `RESEARCH QUERY: "${validatedQuery}"
 ${objective ? `\nOBJECTIVE: ${objective}` : ''}
 ${constraints ? `\nCONSTRAINTS: ${constraints}` : ''}
 
 ${saudiGuardrails}
+${entityExtractionInstructions}
 
 ${hasContent ? `SOURCES TO USE:
 ${truncatedContent}
 
 INSTRUCTIONS:
 - Generate report using the provided sources
+- EXTRACT ALL SPECIFIC ENTITY NAMES (companies, people, organizations) from sources
 - Cite sources with [Source: domain] or [1], [2] format
+- If the query asks for specific entities (companies, IPOs, etc.), LIST THEM BY NAME
 - If information is missing, state it clearly in "Open Questions"
 ` : `NO WEB SOURCES AVAILABLE
 

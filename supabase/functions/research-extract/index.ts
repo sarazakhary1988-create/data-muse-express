@@ -98,6 +98,20 @@ serve(async (req) => {
     // Limit content for AI processing
     const truncatedContent = contentValidation.value.substring(0, 30000);
 
+    // Check if this is an IPO/company query for enhanced extraction
+    const isIPOQuery = /\b(ipo|ipos|initial\s+public\s+offering|listing|listings|going\s+public)\b/i.test(validatedQuery);
+    const isCompanyQuery = /\b(companies|company|firms?|corporations?|entities|businesses)\b/i.test(validatedQuery);
+    
+    const entityExtractionPrompt = (isIPOQuery || isCompanyQuery) 
+      ? `CRITICAL: This query is about specific companies/IPOs. You MUST extract EVERY company name mentioned, even if details are incomplete. Look for:
+- Company names mentioned in any context
+- Organizations planning or undergoing IPOs
+- Firms mentioned as listing or going public
+- Any business entity names in the content
+
+For each company found, extract as much detail as available. If only the name is mentioned, still include it with "name" field filled.`
+      : '';
+
     // Use tool calling for structured extraction
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
@@ -110,7 +124,7 @@ serve(async (req) => {
         messages: [
           { 
             role: 'system', 
-            content: `You are a precise data extraction assistant. Extract ONLY information that is explicitly stated in the provided content. Do not infer or assume any data.` 
+            content: `You are a precise data extraction assistant. Extract ONLY information that is explicitly stated in the provided content. Do not infer or assume any data. ${entityExtractionPrompt}` 
           },
           { 
             role: 'user', 
@@ -119,7 +133,7 @@ serve(async (req) => {
 Content to analyze:
 ${truncatedContent}
 
-Extract all relevant structured data from this content related to the query.` 
+Extract all relevant structured data from this content related to the query. ${(isIPOQuery || isCompanyQuery) ? 'IMPORTANT: Extract EVERY company/organization name mentioned, even with minimal details.' : ''}` 
           }
         ],
         tools: [
