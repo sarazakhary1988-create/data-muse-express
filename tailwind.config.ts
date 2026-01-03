@@ -66,6 +66,7 @@ export default {
           "accent-foreground": "hsl(var(--sidebar-accent-foreground))",
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
+          surface: "hsl(var(--sidebar-surface))",
         },
         surface: {
           elevated: "hsl(var(--surface-elevated))",

@@ -46,6 +46,7 @@
 
     --sidebar-background: 262 25% 97%;
     --sidebar-foreground: 250 30% 15%;
+    --sidebar-surface: 262 25% 95%;
     --sidebar-primary: 262 83% 58%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 262 30% 94%;
@@ -91,8 +92,9 @@
     --surface-elevated: 222 47% 10%;
     --surface-hover: 222 47% 12%;
 
-    --sidebar-background: 222 47% 6%;
+    --sidebar-background: 222 47% 8%;
     --sidebar-foreground: 210 40% 98%;
+    --sidebar-surface: 222 47% 10%;
     --sidebar-primary: 262 83% 58%;
     --sidebar-primary-foreground: 210 40% 98%;
     --sidebar-accent: 222 47% 14%;
