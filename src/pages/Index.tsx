@@ -397,7 +397,11 @@ const Index = () => {
             <ZAHRA2_0Agent 
               className="h-full border-0 rounded-none"
               onResearchTriggered={(query) => {
-                setActiveView('results');
+                handleSearch(query);
+              }}
+              onViewChange={setActiveView}
+              onTemplateSelected={(templateId, fields) => {
+                handleSearch(fields.topic || '');
               }}
             />
           </div>
@@ -407,8 +411,9 @@ const Index = () => {
         {hasCompletedOnboarding && (
           <ZahraMobileButton 
             onResearchTriggered={(query) => {
-              setActiveView('results');
+              handleSearch(query);
             }}
+            onViewChange={setActiveView}
           />
         )}
       </div>
