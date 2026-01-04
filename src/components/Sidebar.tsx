@@ -19,7 +19,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Logo } from '@/components/Logo';
+
 import { SettingsDialog } from '@/components/SettingsDialog';
 import { HelpDialog } from '@/components/HelpDialog';
 import { Separator } from '@/components/ui/separator';
@@ -127,31 +127,6 @@ export const Sidebar = ({ activeView, onViewChange }: SidebarProps) => {
         {/* Gradient accent line */}
         <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-purple-500 via-blue-500 to-green-500 opacity-80" />
 
-        {/* Header */}
-        <div className="p-4 border-b border-border/30">
-          <AnimatePresence mode="wait">
-            {isCollapsed ? (
-              <motion.div
-                key="collapsed"
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.8 }}
-                className="flex justify-center"
-              >
-                <Logo compact size="sm" />
-              </motion.div>
-            ) : (
-              <motion.div
-                key="expanded"
-                initial={{ opacity: 0, x: isRTL ? 10 : -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: isRTL ? 10 : -10 }}
-              >
-                <Logo />
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-6 scrollbar-thin">
