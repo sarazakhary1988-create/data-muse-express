@@ -22,7 +22,7 @@ import { ResearchTemplates } from '@/components/templates/ResearchTemplates';
 import { HypothesisLab } from '@/components/hypothesis/HypothesisLab';
 import { LeadEnrichment } from '@/components/leads/LeadEnrichment';
 import { IntegrationsPage } from '@/components/integrations/IntegrationsPage';
-import { AgentOnboarding } from '@/components/AgentOnboarding';
+
 
 import { useResearchStore, ResearchTask } from '@/store/researchStore';
 import { useResearchEngine } from '@/hooks/useResearchEngine';
@@ -358,10 +358,6 @@ const Index = () => {
         />
       </Helmet>
 
-      {/* Agent Onboarding */}
-      {!hasCompletedOnboarding && (
-        <AgentOnboarding onComplete={handleAgentComplete} />
-      )}
 
       <div className="flex min-h-screen bg-background">
         <AnimatedBackground />
