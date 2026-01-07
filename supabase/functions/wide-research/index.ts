@@ -43,8 +43,10 @@ const USER_AGENTS = [
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
 ];
 
-// ============ AI-POWERED SEARCH ============
-async function searchWithAI(query: string, limit: number = 10, isNewsMode: boolean = false): Promise<WebSource[]> {
+// ============ AI-POWERED SEARCH (FOR RESEARCH MODE ONLY) ============
+// NOTE: This is ONLY used for research mode, NOT news mode.
+// News mode uses real RSS feeds to ensure authentic links.
+async function searchWithAI(query: string, limit: number = 10): Promise<WebSource[]> {
   const apiKey = Deno.env.get('LOVABLE_API_KEY');
   
   if (!apiKey) {
@@ -54,47 +56,8 @@ async function searchWithAI(query: string, limit: number = 10, isNewsMode: boole
 
   try {
     const currentDate = new Date().toISOString().split('T')[0];
-    const currentYear = new Date().getFullYear();
-    
-    const systemPrompt = isNewsMode 
-      ? `You are a financial news aggregator specializing in Middle Eastern and global business news.
 
-Current date: ${currentDate}
-
-IMPORTANT: Generate realistic business news items that reflect ACTUAL current market events and trends.
-
-For each news item provide:
-- A specific, detailed headline (e.g., "Saudi Aramco Signs $2.5B Deal with Sinopec for Petrochemical Expansion")
-- Real company names: Saudi Aramco, ACWA Power, STC, Al Rajhi Bank, SNB, SABIC, Ma'aden, Almarai, Mobily, Zain, NEOM, PIF, Emaar, ADNOC, DP World, Emirates NBD
-- Specific monetary values in SAR, USD, or AED
-- Real stock exchanges: Tadawul, NOMU, DFM, ADX, Nasdaq, NYSE
-- Source URLs from: argaam.com, zawya.com, reuters.com, bloomberg.com, arabnews.com, saudigazette.com.sa, tradingview.com
-
-Categories to cover:
-- IPO filings and listings (CMA approvals, Tadawul debuts)
-- M&A deals and acquisitions
-- Contract awards (construction, infrastructure, defense)
-- Executive appointments (CEO, CFO, Board)
-- Vision 2030 projects (NEOM, Red Sea, Qiddiya)
-- Banking sector updates
-- Real estate developments
-- Tech startup funding
-- Regulatory actions (CMA violations, fines)
-
-Return valid JSON:
-{
-  "results": [
-    {
-      "title": "Specific detailed headline with company name and numbers",
-      "url": "https://argaam.com/en/article/articledetail/id/123456",
-      "snippet": "1-2 sentence summary with key facts and figures",
-      "source": "Argaam",
-      "category": "ipo|acquisition|contract|appointment|vision_2030|banking|real_estate|tech_funding|cma_violation|market|expansion|joint_venture",
-      "publishDate": "${currentDate}"
-    }
-  ]
-}`
-      : `You are an expert research analyst with deep knowledge of global markets, companies, and business intelligence.
+    const systemPrompt = `You are an expert research analyst with deep knowledge of global markets, companies, and business intelligence.
 
 Current date: ${currentDate}
 
@@ -117,24 +80,12 @@ Return JSON:
   ]
 }`;
 
-    const userPrompt = isNewsMode
-      ? `Generate ${limit} current business news items matching: "${query}"
-
-Requirements:
-- Each headline must be unique and specific
-- Include actual company names from Saudi Arabia, UAE, or global markets
-- Add specific dollar/riyal amounts where relevant
-- Use realistic source domains (argaam.com, zawya.com, reuters.com, etc.)
-- Vary the categories: IPO, M&A, contracts, appointments, Vision 2030, banking, tech
-- Make timestamps recent (within last 48 hours)
-
-Focus on MENA region business intelligence with global context.`
-      : `Research query: "${query}"
+    const userPrompt = `Research query: "${query}"
 
 Provide ${limit} comprehensive results with real, factual information.
 Include specific company names, numbers, dates, and authoritative source URLs.`;
 
-    console.log(`[wide-research] AI search for: "${query.slice(0, 60)}..." (${isNewsMode ? 'news' : 'research'} mode)`);
+    console.log(`[wide-research] AI search for: "${query.slice(0, 60)}..."`);
 
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
@@ -264,12 +215,14 @@ function toIsoDateOrNow(s?: string | null): string {
 }
 
 async function searchNewsRss(query: string, limit: number = 10): Promise<WebSource[]> {
-  // NOTE: RSS feeds return real headlines/links; we do not generate news with an LLM.
+  // NOTE: RSS feeds return REAL headlines/links; we do NOT generate news with an LLM.
   const rssUrls = [
+    // Google News RSS - reliable source for real headlines
     `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`,
-    // Regional business feeds (best-effort; may occasionally rate-limit)
-    'https://www.argaam.com/en/rss/ho-main-news?sectionid=1524',
-    'https://www.zawya.com/en/rss/mena-business.xml',
+    // Regional business feeds
+    `https://news.google.com/rss/search?q=${encodeURIComponent(query + ' Saudi Arabia business')}&hl=en-US&gl=US&ceid=US:en`,
+    // Financial Times world news
+    `https://news.google.com/rss/search?q=${encodeURIComponent(query + ' MENA finance')}&hl=en-US&gl=US&ceid=US:en`,
   ];
 
   console.log('[wide-research] RSS search:', { query: query.slice(0, 80), rssUrlsCount: rssUrls.length });
@@ -308,22 +261,31 @@ async function searchNewsRss(query: string, limit: number = 10): Promise<WebSour
 
       // Google News titles often come as: "Headline - Source"
       let title = titleRaw;
-      if (sourceName && titleRaw.endsWith(` - ${sourceName}`)) {
+      let inferredSource = sourceName;
+      if (!sourceName && titleRaw.includes(' - ')) {
+        const parts = titleRaw.split(' - ');
+        if (parts.length >= 2) {
+          inferredSource = parts[parts.length - 1].trim();
+          title = parts.slice(0, -1).join(' - ').trim();
+        }
+      } else if (sourceName && titleRaw.endsWith(` - ${sourceName}`)) {
         title = titleRaw.slice(0, titleRaw.length - (` - ${sourceName}`).length).trim();
       }
 
       const snippet = stripHtml(descriptionRaw).slice(0, 280);
 
-      // Prefer source URL for domain when present (Google News links are redirects)
-      let domain = 'unknown';
-      try {
-        domain = new URL(sourceUrl || link).hostname.replace('www.', '');
-      } catch {
-        // ignore
+      // Get actual URL domain (Google News links redirect, so use source URL if available)
+      let domain = 'news.google.com';
+      let actualUrl = link;
+      
+      if (sourceUrl) {
+        try {
+          domain = new URL(sourceUrl).hostname.replace('www.', '');
+        } catch {}
       }
 
       out.push({
-        url: link,
+        url: actualUrl, // This is the real link that will open the actual article
         title,
         domain,
         content: snippet,
@@ -331,7 +293,7 @@ async function searchNewsRss(query: string, limit: number = 10): Promise<WebSour
         snippet,
         fetchedAt: toIsoDateOrNow(pubDateRaw),
         reliability: 0.9,
-        source: sourceName || domain,
+        source: inferredSource || domain,
         relevanceScore: 0.75 + Math.random() * 0.2,
         status: 'scraped',
       });
@@ -607,7 +569,7 @@ serve(async (req) => {
     }
 
     // RESEARCH MODE: AI-assisted search, then fallback scraping
-    sources = await searchWithAI(query, maxResults, false);
+    sources = await searchWithAI(query, maxResults);
 
     if (sources.length > 0) {
       const totalTime = Date.now() - startTime;

@@ -27,7 +27,10 @@ import {
   Languages,
   Settings,
   Search,
-  X
+  X,
+  Loader2,
+  Filter,
+  MapPin
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -50,12 +53,19 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
-import { useNewsMonitor, NewsItem, NewsCategory as NewsCategoryType } from '@/hooks/useNewsMonitor';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { useNewsMonitor, NewsItem, NewsCategory as NewsCategoryType, NewsRegion } from '@/hooks/useNewsMonitor';
 import { useNewsSourceSettings } from '@/hooks/useNewsSourceSettings';
 import { useNewsNotifications } from '@/hooks/useNewsNotifications';
 import { useLanguage, Language } from '@/lib/i18n/LanguageContext';
 import { cn } from '@/lib/utils';
 import { isBefore, isAfter, startOfDay, endOfDay } from 'date-fns';
+import { supabase } from '@/integrations/supabase/client';
 
 const categoryIcons: Record<NewsCategoryType, React.ReactNode> = {
   ipo: <Building2 className="w-3 h-3" />,
@@ -110,15 +120,49 @@ const categoryLabels: Record<NewsCategoryType, string> = {
 
 export type NewsCategory = NewsCategoryType | 'all';
 
+// Countries for filtering
+const COUNTRIES = [
+  { code: 'all', label: 'All Countries', flag: '🌍' },
+  { code: 'Saudi Arabia', label: 'Saudi Arabia', flag: '🇸🇦' },
+  { code: 'UAE', label: 'UAE', flag: '🇦🇪' },
+  { code: 'Kuwait', label: 'Kuwait', flag: '🇰🇼' },
+  { code: 'Qatar', label: 'Qatar', flag: '🇶🇦' },
+  { code: 'Egypt', label: 'Egypt', flag: '🇪🇬' },
+  { code: 'USA', label: 'USA', flag: '🇺🇸' },
+  { code: 'UK', label: 'UK', flag: '🇬🇧' },
+];
+
+// Sources for filtering
+const SOURCES = [
+  { id: 'all', label: 'All Sources' },
+  { id: 'argaam', label: 'Argaam' },
+  { id: 'zawya', label: 'Zawya' },
+  { id: 'reuters', label: 'Reuters' },
+  { id: 'bloomberg', label: 'Bloomberg' },
+  { id: 'arabnews', label: 'Arab News' },
+  { id: 'ft', label: 'Financial Times' },
+];
+
 interface NewsFilterState {
   categories: NewsCategory[];
+  countries: string[];
+  sources: string[];
   dateFrom: Date | undefined;
   dateTo: Date | undefined;
+}
+
+interface NewsSummary {
+  summary: string;
+  keyFacts: string[];
+  significance: string;
+  suggestions: { topic: string; query: string }[];
 }
 
 export const useNewsFilterState = () => {
   const [filters, setFilters] = useState<NewsFilterState>({
     categories: ['all'],
+    countries: ['all'],
+    sources: ['all'],
     dateFrom: undefined,
     dateTo: undefined,
   });
@@ -141,20 +185,64 @@ export const useNewsFilterState = () => {
     });
   };
 
+  const toggleCountry = (country: string) => {
+    setFilters(prev => {
+      if (country === 'all') {
+        return { ...prev, countries: ['all'] };
+      }
+      
+      const withoutAll = prev.countries.filter(c => c !== 'all');
+      const has = withoutAll.includes(country);
+      
+      if (has) {
+        const newList = withoutAll.filter(c => c !== country);
+        return { ...prev, countries: newList.length === 0 ? ['all'] : newList };
+      } else {
+        return { ...prev, countries: [...withoutAll, country] };
+      }
+    });
+  };
+
+  const toggleSource = (source: string) => {
+    setFilters(prev => {
+      if (source === 'all') {
+        return { ...prev, sources: ['all'] };
+      }
+      
+      const withoutAll = prev.sources.filter(s => s !== 'all');
+      const has = withoutAll.includes(source);
+      
+      if (has) {
+        const newList = withoutAll.filter(s => s !== source);
+        return { ...prev, sources: newList.length === 0 ? ['all'] : newList };
+      } else {
+        return { ...prev, sources: [...withoutAll, source] };
+      }
+    });
+  };
+
   const setDateRange = (from: Date | undefined, to: Date | undefined) => {
     setFilters(prev => ({ ...prev, dateFrom: from, dateTo: to }));
   };
 
   const clearFilters = () => {
-    setFilters({ categories: ['all'], dateFrom: undefined, dateTo: undefined });
+    setFilters({ 
+      categories: ['all'], 
+      countries: ['all'],
+      sources: ['all'],
+      dateFrom: undefined, 
+      dateTo: undefined 
+    });
   };
 
   const hasActiveFilters = 
     !filters.categories.includes('all') || 
+    !filters.countries.includes('all') ||
+    !filters.sources.includes('all') ||
     filters.dateFrom !== undefined || 
     filters.dateTo !== undefined;
 
-  return { filters, toggleCategory, setDateRange, clearFilters, hasActiveFilters };
+  return { filters, toggleCategory, toggleCountry, toggleSource, setDateRange, clearFilters, hasActiveFilters };
 };
 
 // News category filter chips for TopNavigation
@@ -230,10 +318,15 @@ export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [selectedItem, setSelectedItem] = useState<NewsItem | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [summaryDialogOpen, setSummaryDialogOpen] = useState(false);
+  const [summaryItem, setSummaryItem] = useState<NewsItem | null>(null);
+  const [summaryData, setSummaryData] = useState<NewsSummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
   const previousNewsRef = useRef<Set<string>>(new Set());
 
   const localFilterState = useNewsFilterState();
-  const { filters, toggleCategory, clearFilters, hasActiveFilters } = filterState || localFilterState;
+  const activeFilterState = filterState || localFilterState;
+  const { filters, toggleCategory, toggleCountry, toggleSource, clearFilters, hasActiveFilters } = activeFilterState;
 
   // Auto-start monitoring on mount
   useEffect(() => {
@@ -256,10 +349,24 @@ export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
     }
   }, [news, notifyNewItems]);
 
-  // Filter news
+  // Filter news with country and source filters
   const filteredNews = news.filter(item => {
     if (!isSourceAllowed(item.source)) return false;
     if (!filters.categories.includes('all') && !filters.categories.includes(item.category)) return false;
+    
+    // Country filter
+    if (!filters.countries.includes('all')) {
+      if (!item.country || !filters.countries.includes(item.country)) return false;
+    }
+    
+    // Source filter
+    if (!filters.sources.includes('all')) {
+      const sourceMatch = filters.sources.some(s => 
+        item.source.toLowerCase().includes(s.toLowerCase())
+      );
+      if (!sourceMatch) return false;
+    }
+    
     if (filters.dateFrom && isBefore(item.timestamp, startOfDay(filters.dateFrom))) return false;
     if (filters.dateTo && isAfter(item.timestamp, endOfDay(filters.dateTo))) return false;
     return true;
@@ -275,14 +382,51 @@ export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
     return `${Math.floor(seconds / 86400)}d`;
   };
 
-  const handleNewsClick = (item: NewsItem, openExternal = true) => {
+  // Fetch AI summary for a news item
+  const fetchSummary = async (item: NewsItem) => {
+    setSummaryItem(item);
+    setSummaryDialogOpen(true);
+    setSummaryLoading(true);
+    setSummaryData(null);
     markAsRead(item.id);
-    if (openExternal) {
-      window.open(item.url, '_blank', 'noopener,noreferrer');
+
+    try {
+      const { data, error } = await supabase.functions.invoke('summarize-news', {
+        body: {
+          title: item.title,
+          url: item.url,
+          snippet: item.snippet,
+          source: item.source,
+        },
+      });
+
+      if (error) throw error;
+
+      setSummaryData({
+        summary: data.summary || 'Summary unavailable.',
+        keyFacts: data.keyFacts || [],
+        significance: data.significance || '',
+        suggestions: data.suggestions || [],
+      });
+    } catch (error) {
+      console.error('Failed to fetch summary:', error);
+      setSummaryData({
+        summary: item.snippet || 'Unable to generate summary. Please visit the article directly.',
+        keyFacts: [],
+        significance: '',
+        suggestions: [],
+      });
+    } finally {
+      setSummaryLoading(false);
     }
   };
 
+  const handleNewsClick = (item: NewsItem) => {
+    fetchSummary(item);
+  };
+
   const handleResearchClick = (item: NewsItem) => {
+    setSummaryDialogOpen(false);
     if (onResearchNews) {
       onResearchNews(item.title);
     }
@@ -466,7 +610,7 @@ export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
                   <Settings className={cn("w-3 h-3", hasActiveFilters && "text-primary")} />
                 </Button>
               </PopoverTrigger>
-              <PopoverContent align="end" className="w-64 p-3">
+              <PopoverContent align="end" className="w-72 p-3 max-h-[400px] overflow-y-auto">
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs font-medium">News Settings</h4>
@@ -479,7 +623,9 @@ export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
                   
                   {/* Category Filters */}
                   <div className="space-y-2">
-                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Categories</Label>
+                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                      <Filter className="w-3 h-3" /> Categories
+                    </Label>
                     <div className="flex flex-wrap gap-1">
                       {Object.entries(categoryLabels).map(([key, label]) => (
                         <button
@@ -493,6 +639,53 @@ export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
                           )}
                         >
                           {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Country Filters */}
+                  <div className="space-y-2 pt-2 border-t border-border/50">
+                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                      <MapPin className="w-3 h-3" /> Countries
+                    </Label>
+                    <div className="flex flex-wrap gap-1">
+                      {COUNTRIES.map((country) => (
+                        <button
+                          key={country.code}
+                          onClick={() => toggleCountry(country.code)}
+                          className={cn(
+                            "px-2 py-0.5 text-[10px] rounded-full border transition-all flex items-center gap-1",
+                            filters.countries.includes(country.code) || filters.countries.includes('all')
+                              ? "bg-primary/20 text-primary border-primary/30"
+                              : "border-border text-muted-foreground hover:border-primary/50"
+                          )}
+                        >
+                          <span>{country.flag}</span>
+                          <span>{country.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Source Filters */}
+                  <div className="space-y-2 pt-2 border-t border-border/50">
+                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                      <Globe className="w-3 h-3" /> Sources
+                    </Label>
+                    <div className="flex flex-wrap gap-1">
+                      {SOURCES.map((source) => (
+                        <button
+                          key={source.id}
+                          onClick={() => toggleSource(source.id)}
+                          className={cn(
+                            "px-2 py-0.5 text-[10px] rounded-full border transition-all",
+                            filters.sources.includes(source.id) || filters.sources.includes('all')
+                              ? "bg-secondary text-secondary-foreground border-secondary"
+                              : "border-border text-muted-foreground hover:border-primary/50"
+                          )}
+                        >
+                          {source.label}
                         </button>
                       ))}
                     </div>
@@ -660,7 +853,7 @@ export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
                                   size="sm"
                                   variant="outline"
                                   className="h-6 text-[10px] gap-1"
-                                  onClick={() => handleNewsClick(item, true)}
+                                  onClick={() => window.open(item.url, '_blank', 'noopener,noreferrer')}
                                 >
                                   <ExternalLink className="w-3 h-3" />
                                   Read Article
@@ -692,6 +885,97 @@ export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
 
       {/* Spacer to prevent content from going under the ribbon */}
       <div className="h-10" />
+
+      {/* AI Summary Dialog */}
+      <Dialog open={summaryDialogOpen} onOpenChange={setSummaryDialogOpen}>
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-sm leading-tight pr-6">
+              {summaryItem?.title}
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {summaryLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                <span className="ml-2 text-sm text-muted-foreground">Generating AI summary...</span>
+              </div>
+            ) : summaryData ? (
+              <>
+                <div className="space-y-2">
+                  <h4 className="text-xs font-medium text-muted-foreground uppercase">Summary</h4>
+                  <p className="text-sm leading-relaxed">{summaryData.summary}</p>
+                </div>
+
+                {summaryData.keyFacts.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-medium text-muted-foreground uppercase">Key Facts</h4>
+                    <ul className="space-y-1">
+                      {summaryData.keyFacts.map((fact, i) => (
+                        <li key={i} className="text-sm flex items-start gap-2">
+                          <span className="text-primary">•</span>
+                          {fact}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {summaryData.significance && (
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-medium text-muted-foreground uppercase">Business Significance</h4>
+                    <p className="text-sm text-muted-foreground">{summaryData.significance}</p>
+                  </div>
+                )}
+
+                {summaryData.suggestions.length > 0 && onResearchNews && (
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-medium text-muted-foreground uppercase">Research Suggestions</h4>
+                    <div className="flex flex-wrap gap-1">
+                      {summaryData.suggestions.map((s, i) => (
+                        <Button
+                          key={i}
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => {
+                            setSummaryDialogOpen(false);
+                            onResearchNews(s.query);
+                          }}
+                        >
+                          <Search className="w-3 h-3 mr-1" />
+                          {s.topic}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="pt-4 border-t flex gap-2">
+                  <Button
+                    variant="default"
+                    className="flex-1"
+                    onClick={() => window.open(summaryItem?.url, '_blank', 'noopener,noreferrer')}
+                  >
+                    <ExternalLink className="w-4 h-4 mr-2" />
+                    Visit Article
+                  </Button>
+                  {onResearchNews && summaryItem && (
+                    <Button
+                      variant="secondary"
+                      onClick={() => handleResearchClick(summaryItem)}
+                    >
+                      <Search className="w-4 h-4 mr-2" />
+                      Deep Research
+                    </Button>
+                  )}
+                </div>
+              </>
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

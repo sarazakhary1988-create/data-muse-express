@@ -85,3 +85,6 @@ verify_jwt = false
 
 [functions.zahra-chat]
 verify_jwt = false
+
+[functions.summarize-news]
+verify_jwt = false
