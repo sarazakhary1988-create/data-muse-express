@@ -22,6 +22,7 @@ import { ResearchTemplates } from '@/components/templates/ResearchTemplates';
 import { HypothesisLab } from '@/components/hypothesis/HypothesisLab';
 import { LeadEnrichment } from '@/components/leads/LeadEnrichment';
 import { IntegrationsPage } from '@/components/integrations/IntegrationsPage';
+import { NewsRibbon } from '@/components/NewsRibbon';
 
 
 import { useResearchStore, ResearchTask } from '@/store/researchStore';
@@ -369,6 +370,9 @@ const Index = () => {
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Top Navigation */}
           <TopNavigation />
+          
+          {/* News Monitoring Ribbon */}
+          <NewsRibbon />
           
           {/* Main Content Area */}
           <main className="flex-1 overflow-auto">
