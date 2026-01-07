@@ -152,10 +152,10 @@ Examples:
 - Query: "Analyze market trends for electric vehicles in Europe"
   Title: European Electric Vehicle Market Dynamics`,
 
-      report: getReportPrompt(validatedFormat, hasContent, Boolean(webSourcesAvailable), originalPrompt),
+      report: getReportPrompt(validatedFormat, hasContent, Boolean(webSourcesAvailable), originalPrompt, validatedQuery),
     };
 
-    function getReportPrompt(format: string, hasWebContent: boolean, webSourcesAttempted: boolean, originalPrompt?: string): string {
+    function getReportPrompt(format: string, hasWebContent: boolean, webSourcesAttempted: boolean, originalPrompt?: string, query?: string): string {
       const currentDate = new Date();
       const sourceLabel = hasWebContent 
         ? 'Based on real-time web sources' 
@@ -163,6 +163,32 @@ Examples:
             ? 'Web sources unavailable — generated from model knowledge + provided inputs' 
             : 'Generated from model knowledge');
       
+      // Detect if this is an entity/company-focused query
+      const queryLower = (query || '').toLowerCase();
+      const isIPOQuery = /\b(ipo|ipos|initial\s+public\s+offering|listing|listings|going\s+public)\b/i.test(queryLower);
+      const isCompanyQuery = /\b(companies|company|firms?|corporations?|entities|businesses|startups?)\b/i.test(queryLower);
+      const isEntityQuery = isIPOQuery || isCompanyQuery;
+      
+      // MANDATORY entity extraction section for company/IPO queries
+      const entityExtractionSection = isEntityQuery ? `
+## Companies Identified (MANDATORY - COMPLETE FIRST)
+
+⚠️ THIS SECTION IS REQUIRED. DO NOT SKIP OR SUMMARIZE.
+
+| Company Name | Sector/Industry | Status | Target Exchange | Expected Date | Valuation/Size | Key Details |
+|--------------|-----------------|--------|-----------------|---------------|----------------|-------------|
+| [EXTRACT EVERY company name from sources] | [Sector] | [Status] | [Exchange] | [Date] | [Value] | [Brief description] |
+
+INSTRUCTIONS FOR THIS TABLE:
+1. SCAN the entire source content for ANY company, organization, or entity name
+2. Include EVERY company mentioned, even if only the name is available
+3. If details are missing, write "N/A" but ALWAYS include the company name
+4. NEVER write "various companies" or "several firms" - LIST THEM BY NAME
+5. If truly NO companies found, write: "**No specific companies identified in sources.**"
+
+AFTER completing this table, proceed to:
+` : '';
+
       const baseInstructions = `You are an expert research analyst powered by OpenAI GPT-4o generating a STRUCTURED research report.
 
 CURRENT DATE: ${currentDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
@@ -170,6 +196,14 @@ CURRENT DATE: ${currentDate.toLocaleDateString('en-US', { weekday: 'long', year:
 SOURCE CONTEXT: ${sourceLabel}
 
 CRITICAL: You MUST generate a complete, substantive report with ALL required sections.
+${isEntityQuery ? `
+⚠️ ENTITY EXTRACTION MODE ACTIVE ⚠️
+This query asks for SPECIFIC COMPANIES/ENTITIES. You MUST:
+1. Complete the "Companies Identified" table FIRST (before any other section)
+2. List EVERY company name found in the sources
+3. NEVER summarize as "various companies" - always list by name
+4. If no companies found, explicitly state this
+` : ''}
 ${originalPrompt ? `
 IMPORTANT: Include the original research prompt at the very beginning of the report in a blockquote, like this:
 > **Research Prompt:** ${originalPrompt}
@@ -178,10 +212,12 @@ REQUIRED REPORT STRUCTURE (Markdown):
 
 # [Title Based on Query - Be Specific]
 
+${entityExtractionSection}
 ## Executive Summary
 - [5-8 bullet points summarizing key findings]
 - Each bullet must be specific and actionable
 - Include metrics, dates, and names where available
+${isEntityQuery ? '- LIST any company names in bullet points' : ''}
 
 ## Key Findings
 1. **[Finding 1 Title]**: [Detailed explanation with evidence]

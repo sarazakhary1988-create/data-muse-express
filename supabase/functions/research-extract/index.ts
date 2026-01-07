@@ -43,6 +43,46 @@ function validateExtractType(extractType: unknown): 'entities' | 'companies' | '
   return extractType as 'entities' | 'companies' | 'dates' | 'facts' | 'all';
 }
 
+// Regex-based company extraction as fallback
+function extractCompaniesWithRegex(content: string): Array<{ name: string; action?: string; source_url?: string }> {
+  const companies: Array<{ name: string; action?: string }> = [];
+  const seen = new Set<string>();
+  
+  // Common company name patterns
+  const patterns = [
+    // "X Company", "X Corporation", "X Inc", etc.
+    /\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)\s+(?:Company|Corporation|Corp|Inc|Ltd|LLC|Group|Holdings|Holding|Industries|International|Enterprises)\b/g,
+    // "X Co." pattern
+    /\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)\s+Co\.\b/g,
+    // Arabic/Saudi company patterns
+    /\b(?:شركة|مؤسسة|مجموعة)\s+([^\s,،.]+(?:\s+[^\s,،.]+)*)\b/g,
+    // "The X Company" pattern
+    /\bThe\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)\s+(?:Company|Corporation|Corp|Group)\b/g,
+    // IPO-specific patterns
+    /\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)\s+(?:IPO|listing|filed\s+for\s+IPO|plans?\s+to\s+list|going\s+public)\b/gi,
+    // Stock ticker patterns like (ARAMCO) or [2222]
+    /\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)\s*\(([A-Z]{2,5}|\d{4})\)/g,
+  ];
+  
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(content)) !== null) {
+      const name = match[1]?.trim();
+      if (name && name.length > 2 && name.length < 50 && !seen.has(name.toLowerCase())) {
+        // Filter out common false positives
+        const lowerName = name.toLowerCase();
+        if (!['the', 'this', 'that', 'which', 'where', 'when', 'what', 'how', 'new', 'old', 'first', 'last'].includes(lowerName)) {
+          seen.add(lowerName);
+          companies.push({ name, action: 'Mentioned in sources' });
+        }
+      }
+    }
+    pattern.lastIndex = 0; // Reset regex
+  }
+  
+  return companies;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -237,10 +277,10 @@ Extract all relevant structured data from this content related to the query. ${(
     
     // Parse tool call result
     let extractedData = {
-      companies: [],
-      key_dates: [],
-      key_facts: [],
-      numeric_data: []
+      companies: [] as Array<{ name: string; ticker?: string; market?: string; action?: string; date?: string; value?: string; source_url?: string }>,
+      key_dates: [] as Array<{ date: string; event: string; entity?: string }>,
+      key_facts: [] as Array<{ fact: string; confidence?: string; source?: string }>,
+      numeric_data: [] as Array<{ metric: string; value: string; unit?: string; context?: string }>
     };
     
     const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
@@ -249,6 +289,17 @@ Extract all relevant structured data from this content related to the query. ${(
         extractedData = JSON.parse(toolCall.function.arguments);
       } catch (e) {
         console.error('Failed to parse tool call arguments:', e);
+      }
+    }
+
+    // SECONDARY EXTRACTION: If this is an IPO/company query and we got 0 companies, try regex extraction
+    if ((isIPOQuery || isCompanyQuery) && (!extractedData.companies || extractedData.companies.length === 0)) {
+      console.log('Zero companies from AI extraction, attempting regex fallback...');
+      
+      const regexCompanies = extractCompaniesWithRegex(truncatedContent);
+      if (regexCompanies.length > 0) {
+        console.log(`Regex extraction found ${regexCompanies.length} potential companies`);
+        extractedData.companies = regexCompanies;
       }
     }
 
