@@ -11,6 +11,11 @@ export type NewsCategory =
   | 'joint_venture' 
   | 'acquisition' 
   | 'appointment' 
+  | 'cma_violation'
+  | 'vision_2030'
+  | 'banking'
+  | 'real_estate'
+  | 'tech_funding'
   | 'general';
 
 export type NewsRegion = 'mena' | 'europe' | 'americas' | 'asia_pacific' | 'global';
@@ -129,6 +134,11 @@ export function useNewsMonitor() {
         'company acquisition merger Saudi UAE',
         'executive appointment CEO chairman Saudi Arabia',
         'Aramco SABIC STC news announcement',
+        'CMA violation fine penalty Saudi Arabia regulatory',
+        'Vision 2030 Saudi initiative government project',
+        'Saudi Arabia banking sector SNB Al Rajhi update',
+        'Saudi Arabia real estate property market ROSHN NEOM',
+        'Saudi Arabia tech startup funding investment fintech',
       ];
       
       const allResults: any[] = [];
@@ -316,7 +326,35 @@ function extractCompanies(text: string): string[] {
 function categorizeNews(title: string, snippet: string): NewsCategory {
   const text = `${title} ${snippet}`.toLowerCase();
   
-  // Lead-gen categories (checked first for priority)
+  // CMA violations/fines (high priority)
+  if (/\b(cma|capital market authority)\b/i.test(text) && 
+      /\b(violation|fine|penalty|sanction|breach|warning|suspend)\b/i.test(text)) {
+    return 'cma_violation';
+  }
+  
+  // Vision 2030 initiatives
+  if (/\b(vision 2030|giga.?project|neom|the line|qiddiya|red sea|diriyah|amaala)\b/i.test(text)) {
+    return 'vision_2030';
+  }
+  
+  // Tech startup funding
+  if (/\b(startup|fintech|tech|venture|seed|series [a-d]|funding round|raises?|raised)\b/i.test(text) && 
+      /\b(million|billion|funding|investment|investor)\b/i.test(text)) {
+    return 'tech_funding';
+  }
+  
+  // Real estate market
+  if (/\b(real estate|property|housing|residential|commercial property|roshn|reit|land)\b/i.test(text)) {
+    return 'real_estate';
+  }
+  
+  // Banking sector
+  if (/\b(bank|banking|snb|al rajhi|samba|riyad bank|alinma|bsf|sab|ncb)\b/i.test(text) && 
+      /\b(profit|earnings|loan|deposit|asset|branch|digital|merger)\b/i.test(text)) {
+    return 'banking';
+  }
+  
+  // Lead-gen categories
   if (/\b(acqui|merger|m&a|buyout|takeover)\b/i.test(text)) {
     return 'acquisition';
   }

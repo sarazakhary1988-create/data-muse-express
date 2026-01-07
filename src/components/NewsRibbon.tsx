@@ -20,7 +20,12 @@ import {
   Rocket,
   UserPlus,
   Landmark,
-  MapPin
+  MapPin,
+  Gavel,
+  Target,
+  Banknote,
+  Home,
+  Cpu
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -49,6 +54,11 @@ const categoryIcons: Record<NewsCategoryType, React.ReactNode> = {
   joint_venture: <Handshake className="w-3 h-3" />,
   acquisition: <Landmark className="w-3 h-3" />,
   appointment: <UserPlus className="w-3 h-3" />,
+  cma_violation: <Gavel className="w-3 h-3" />,
+  vision_2030: <Target className="w-3 h-3" />,
+  banking: <Banknote className="w-3 h-3" />,
+  real_estate: <Home className="w-3 h-3" />,
+  tech_funding: <Cpu className="w-3 h-3" />,
   general: <Globe className="w-3 h-3" />,
 };
 
@@ -61,6 +71,11 @@ const categoryColors: Record<NewsCategoryType, string> = {
   joint_venture: 'bg-pink-500/20 text-pink-400 border-pink-500/30',
   acquisition: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
   appointment: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
+  cma_violation: 'bg-red-500/20 text-red-400 border-red-500/30',
+  vision_2030: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+  banking: 'bg-sky-500/20 text-sky-400 border-sky-500/30',
+  real_estate: 'bg-teal-500/20 text-teal-400 border-teal-500/30',
+  tech_funding: 'bg-violet-500/20 text-violet-400 border-violet-500/30',
   general: 'bg-muted text-muted-foreground border-border',
 };
 
@@ -73,6 +88,11 @@ const categoryLabels: Record<NewsCategoryType, string> = {
   joint_venture: 'JV/Partnership',
   acquisition: 'M&A',
   appointment: 'Appointments',
+  cma_violation: 'CMA Violation',
+  vision_2030: 'Vision 2030',
+  banking: 'Banking',
+  real_estate: 'Real Estate',
+  tech_funding: 'Tech Funding',
   general: 'General',
 };
 
@@ -478,9 +498,14 @@ export function NewsFilter({ filterState }: NewsFilterProps) {
   const categories: { value: NewsCategory; label: string; icon: React.ReactNode; color: string }[] = [
     { value: 'all', label: 'All', icon: <Globe className="w-3 h-3" />, color: 'bg-muted text-foreground' },
     { value: 'ipo', label: 'IPO', icon: <Building2 className="w-3 h-3" />, color: categoryColors.ipo },
+    { value: 'cma_violation', label: 'CMA', icon: <Gavel className="w-3 h-3" />, color: categoryColors.cma_violation },
+    { value: 'vision_2030', label: 'Vision 2030', icon: <Target className="w-3 h-3" />, color: categoryColors.vision_2030 },
+    { value: 'banking', label: 'Banking', icon: <Banknote className="w-3 h-3" />, color: categoryColors.banking },
+    { value: 'real_estate', label: 'Real Estate', icon: <Home className="w-3 h-3" />, color: categoryColors.real_estate },
+    { value: 'tech_funding', label: 'Tech', icon: <Cpu className="w-3 h-3" />, color: categoryColors.tech_funding },
     { value: 'contract', label: 'Contracts', icon: <FileText className="w-3 h-3" />, color: categoryColors.contract },
-    { value: 'joint_venture', label: 'JV', icon: <Handshake className="w-3 h-3" />, color: categoryColors.joint_venture },
     { value: 'acquisition', label: 'M&A', icon: <Landmark className="w-3 h-3" />, color: categoryColors.acquisition },
+    { value: 'joint_venture', label: 'JV', icon: <Handshake className="w-3 h-3" />, color: categoryColors.joint_venture },
     { value: 'appointment', label: 'Execs', icon: <UserPlus className="w-3 h-3" />, color: categoryColors.appointment },
     { value: 'expansion', label: 'Expansion', icon: <Rocket className="w-3 h-3" />, color: categoryColors.expansion },
     { value: 'market', label: 'Market', icon: <TrendingUp className="w-3 h-3" />, color: categoryColors.market },
