@@ -96,122 +96,184 @@ async function fetchWithTimeout(
 }
 
 // ============ SEARCH ENGINES ============
-async function searchDuckDuckGo(query: string): Promise<WebSource[]> {
+
+// Add time-restricted query modifiers for recent news
+function addRecencyModifiers(query: string): string[] {
+  const currentYear = new Date().getFullYear();
+  const currentMonth = new Date().toLocaleString('en-US', { month: 'long' });
+  const queries: string[] = [];
+  
+  // Original query with year
+  queries.push(`${query} ${currentYear}`);
+  
+  // Add "latest" / "recent" / "news" modifiers
+  if (!/\b(latest|recent|new|news|announced|announcement)\b/i.test(query)) {
+    queries.push(`${query} latest news ${currentYear}`);
+    queries.push(`${query} announced ${currentMonth} ${currentYear}`);
+  }
+  
+  // For IPO-specific queries, add more targeted modifiers
+  if (/\b(ipo|listing|public|stock)\b/i.test(query.toLowerCase())) {
+    queries.push(`${query} upcoming ${currentYear}`);
+    queries.push(`${query} filing ${currentMonth} ${currentYear}`);
+  }
+  
+  return queries;
+}
+
+async function searchDuckDuckGo(query: string, useRecency = true): Promise<WebSource[]> {
   const results: WebSource[] = [];
   
-  try {
-    const encodedQuery = encodeURIComponent(query);
-    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodedQuery}`;
-    
-    const response = await fetchWithTimeout(searchUrl);
-    if (!response.ok) return results;
+  // Generate time-restricted queries
+  const searchQueries = useRecency ? addRecencyModifiers(query) : [query];
+  
+  for (const searchQuery of searchQueries.slice(0, 2)) {
+    try {
+      // Add time filter: df=w (past week), df=m (past month)
+      const encodedQuery = encodeURIComponent(searchQuery);
+      const searchUrl = `https://html.duckduckgo.com/html/?q=${encodedQuery}&df=w`;
+      
+      console.log(`[wide-research] DuckDuckGo searching: "${searchQuery.slice(0, 60)}..."`);
+      
+      const response = await fetchWithTimeout(searchUrl);
+      if (!response.ok) continue;
 
-    const doc = new DOMParser().parseFromString(response.text, 'text/html');
-    if (!doc) return results;
+      const doc = new DOMParser().parseFromString(response.text, 'text/html');
+      if (!doc) continue;
 
-    const resultElements = doc.querySelectorAll('.result');
-    
-    for (const el of resultElements) {
-      if (results.length >= MAX_RESULTS_PER_ENGINE) break;
+      const resultElements = doc.querySelectorAll('.result');
       
-      const linkEl = el.querySelector('.result__a');
-      const snippetEl = el.querySelector('.result__snippet');
-      
-      if (!linkEl) continue;
-      
-      let href = linkEl.getAttribute('href') || '';
-      const title = linkEl.textContent?.trim() || '';
-      const description = snippetEl?.textContent?.trim() || '';
-      
-      if (href.includes('uddg=')) {
-        const match = href.match(/uddg=([^&]+)/);
-        if (match) {
-          try { href = decodeURIComponent(match[1]); } catch {}
+      for (const el of resultElements) {
+        if (results.length >= MAX_RESULTS_PER_ENGINE) break;
+        
+        const linkEl = el.querySelector('.result__a');
+        const snippetEl = el.querySelector('.result__snippet');
+        
+        if (!linkEl) continue;
+        
+        let href = linkEl.getAttribute('href') || '';
+        const title = linkEl.textContent?.trim() || '';
+        const description = snippetEl?.textContent?.trim() || '';
+        
+        if (href.includes('uddg=')) {
+          const match = href.match(/uddg=([^&]+)/);
+          if (match) {
+            try { href = decodeURIComponent(match[1]); } catch {}
+          }
         }
+        
+        if (!href.startsWith('http')) continue;
+        
+        try {
+          const domain = new URL(href).hostname.toLowerCase();
+          if (BLOCKED_DOMAINS.some(bd => domain.includes(bd))) continue;
+        } catch { continue; }
+        
+        // Skip if already have this URL
+        if (results.some(r => r.url === href)) continue;
+        
+        // Boost score for results mentioning current year or recent terms
+        const currentYear = new Date().getFullYear();
+        const textContent = `${title} ${description}`.toLowerCase();
+        const recencyBoost = (
+          textContent.includes(String(currentYear)) ? 0.15 :
+          textContent.includes(String(currentYear - 1)) ? 0.05 : 0
+        );
+        
+        results.push({
+          url: href,
+          title,
+          domain: new URL(href).hostname.replace('www.', ''),
+          content: description,
+          markdown: description,
+          source: 'duckduckgo',
+          fetchedAt: new Date().toISOString(),
+          reliability: 0.8,
+          relevanceScore: 0.7 + Math.random() * 0.15 + recencyBoost,
+          status: 'pending',
+        });
       }
-      
-      if (!href.startsWith('http')) continue;
-      
-      try {
-        const domain = new URL(href).hostname.toLowerCase();
-        if (BLOCKED_DOMAINS.some(bd => domain.includes(bd))) continue;
-      } catch { continue; }
-      
-      results.push({
-        url: href,
-        title,
-        domain: new URL(href).hostname.replace('www.', ''),
-        content: description,
-        markdown: description,
-        source: 'duckduckgo',
-        fetchedAt: new Date().toISOString(),
-        reliability: 0.8,
-        relevanceScore: 0.7 + Math.random() * 0.25, // Will be refined after scraping
-        status: 'pending',
-      });
+    } catch (e) {
+      console.error('[wide-research] DuckDuckGo error:', e);
     }
-  } catch (e) {
-    console.error('[wide-research] DuckDuckGo error:', e);
   }
 
+  console.log(`[wide-research] DuckDuckGo found ${results.length} results`);
   return results;
 }
 
-async function searchGoogle(query: string): Promise<WebSource[]> {
+async function searchGoogle(query: string, useRecency = true): Promise<WebSource[]> {
   const results: WebSource[] = [];
   
-  try {
-    const encodedQuery = encodeURIComponent(query);
-    const searchUrl = `https://www.google.com/search?q=${encodedQuery}&num=${MAX_RESULTS_PER_ENGINE}&hl=en`;
-    
-    const response = await fetchWithTimeout(searchUrl);
-    if (!response.ok) return results;
+  // Generate time-restricted queries
+  const searchQueries = useRecency ? addRecencyModifiers(query) : [query];
+  
+  for (const searchQuery of searchQueries.slice(0, 2)) {
+    try {
+      const encodedQuery = encodeURIComponent(searchQuery);
+      // tbs=qdr:w = past week, tbs=qdr:m = past month
+      const searchUrl = `https://www.google.com/search?q=${encodedQuery}&num=${MAX_RESULTS_PER_ENGINE}&hl=en&tbs=qdr:m`;
+      
+      console.log(`[wide-research] Google searching: "${searchQuery.slice(0, 60)}..."`);
+      
+      const response = await fetchWithTimeout(searchUrl);
+      if (!response.ok) continue;
 
-    const doc = new DOMParser().parseFromString(response.text, 'text/html');
-    if (!doc) return results;
+      const doc = new DOMParser().parseFromString(response.text, 'text/html');
+      if (!doc) continue;
 
-    const resultDivs = doc.querySelectorAll('.g, .tF2Cxc');
-    
-    for (const el of resultDivs) {
-      if (results.length >= MAX_RESULTS_PER_ENGINE) break;
+      const resultDivs = doc.querySelectorAll('.g, .tF2Cxc');
       
-      const linkEl = el.querySelector('a[href^="http"]');
-      const titleEl = el.querySelector('h3');
-      const snippetEl = el.querySelector('.VwiC3b, .IsZvec');
-      
-      if (!linkEl || !titleEl) continue;
-      
-      const href = linkEl.getAttribute('href') || '';
-      const title = titleEl.textContent?.trim() || '';
-      const description = snippetEl?.textContent?.trim() || '';
-      
-      if (!href.startsWith('http')) continue;
-      
-      try {
-        const domain = new URL(href).hostname.toLowerCase();
-        if (domain.includes('google.com')) continue;
-        if (BLOCKED_DOMAINS.some(bd => domain.includes(bd))) continue;
-      } catch { continue; }
-      
-      if (results.some(r => r.url === href)) continue;
-      
-      results.push({
-        url: href,
-        title,
-        domain: new URL(href).hostname.replace('www.', ''),
-        content: description,
-        markdown: description,
-        source: 'google',
-        fetchedAt: new Date().toISOString(),
-        reliability: 0.85,
-        relevanceScore: 0.75 + Math.random() * 0.2, // Will be refined after scraping
-        status: 'pending',
-      });
+      for (const el of resultDivs) {
+        if (results.length >= MAX_RESULTS_PER_ENGINE) break;
+        
+        const linkEl = el.querySelector('a[href^="http"]');
+        const titleEl = el.querySelector('h3');
+        const snippetEl = el.querySelector('.VwiC3b, .IsZvec');
+        
+        if (!linkEl || !titleEl) continue;
+        
+        const href = linkEl.getAttribute('href') || '';
+        const title = titleEl.textContent?.trim() || '';
+        const description = snippetEl?.textContent?.trim() || '';
+        
+        if (!href.startsWith('http')) continue;
+        
+        try {
+          const domain = new URL(href).hostname.toLowerCase();
+          if (domain.includes('google.com')) continue;
+          if (BLOCKED_DOMAINS.some(bd => domain.includes(bd))) continue;
+        } catch { continue; }
+        
+        if (results.some(r => r.url === href)) continue;
+        
+        // Boost score for results mentioning current year
+        const currentYear = new Date().getFullYear();
+        const textContent = `${title} ${description}`.toLowerCase();
+        const recencyBoost = (
+          textContent.includes(String(currentYear)) ? 0.15 :
+          textContent.includes(String(currentYear - 1)) ? 0.05 : 0
+        );
+        
+        results.push({
+          url: href,
+          title,
+          domain: new URL(href).hostname.replace('www.', ''),
+          content: description,
+          markdown: description,
+          source: 'google',
+          fetchedAt: new Date().toISOString(),
+          reliability: 0.85,
+          relevanceScore: 0.75 + Math.random() * 0.1 + recencyBoost,
+          status: 'pending',
+        });
+      }
+    } catch (e) {
+      console.error('[wide-research] Google error:', e);
     }
-  } catch (e) {
-    console.error('[wide-research] Google error:', e);
   }
 
+  console.log(`[wide-research] Google found ${results.length} results`);
   return results;
 }
 
@@ -322,7 +384,13 @@ async function executeSubAgent(query: string): Promise<SubAgentResult> {
 
 // ============ QUERY DECOMPOSITION ============
 function decomposeQuery(query: string): string[] {
-  const subQueries: string[] = [query];
+  const subQueries: string[] = [];
+  const currentYear = new Date().getFullYear();
+  const currentMonth = new Date().toLocaleString('en-US', { month: 'long' });
+  
+  // Always add the original query with current year
+  subQueries.push(`${query} ${currentYear}`);
+  subQueries.push(query);
   
   const entityPattern = /\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)\b/g;
   const entities = new Set<string>();
@@ -335,9 +403,24 @@ function decomposeQuery(query: string): string[] {
   
   const queryLower = query.toLowerCase();
   
+  // For IPO queries, add specialized sub-queries for recent announcements
+  if (/\b(ipo|listing|public|float)\b/i.test(queryLower)) {
+    subQueries.push(`IPO announced ${currentMonth} ${currentYear}`);
+    subQueries.push(`IPO filing ${currentYear} latest`);
+    subQueries.push(`upcoming IPO ${currentYear} news`);
+    
+    // Saudi-specific IPO queries
+    if (/saudi|ksa|tadawul|tasi|nomu|riyadh/i.test(queryLower)) {
+      subQueries.push(`Saudi Arabia IPO ${currentYear} latest`);
+      subQueries.push(`TASI Nomu IPO announced ${currentMonth} ${currentYear}`);
+      subQueries.push(`CMA Saudi IPO approval ${currentYear}`);
+      subQueries.push(`Tadawul new listing ${currentYear}`);
+    }
+  }
+  
   entities.forEach(entity => {
     if (entity.length > 3) {
-      subQueries.push(`${entity} company profile`);
+      subQueries.push(`${entity} company profile ${currentYear}`);
       if (/board|directors?|governance/i.test(queryLower)) {
         subQueries.push(`${entity} board of directors members`);
       }
@@ -345,12 +428,12 @@ function decomposeQuery(query: string): string[] {
         subQueries.push(`${entity} shareholders ownership`);
       }
       if (/saudi|ksa|tadawul/i.test(queryLower)) {
-        subQueries.push(`${entity} Saudi Arabia`);
+        subQueries.push(`${entity} Saudi Arabia ${currentYear}`);
       }
     }
   });
   
-  return [...new Set(subQueries)].slice(0, 10);
+  return [...new Set(subQueries)].slice(0, 12);
 }
 
 // ============ MAIN HANDLER ============
