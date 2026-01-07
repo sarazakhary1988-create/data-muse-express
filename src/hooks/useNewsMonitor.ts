@@ -20,6 +20,8 @@ export type NewsCategory =
 
 export type NewsRegion = 'mena' | 'europe' | 'americas' | 'asia_pacific' | 'global';
 
+export type RefreshInterval = 1 | 5 | 15 | 30;
+
 export interface NewsItem {
   id: string;
   title: string;
@@ -32,7 +34,8 @@ export interface NewsItem {
   country?: string;
   region?: NewsRegion;
   companies?: string[];
-  isOfficial?: boolean; // From official exchange/regulator
+  isOfficial?: boolean;
+  isValidated?: boolean;
 }
 
 interface NewsMonitorState {
@@ -41,17 +44,19 @@ interface NewsMonitorState {
   lastCheck: Date | null;
   isLoading: boolean;
   error: string | null;
+  refreshInterval: RefreshInterval;
+  secondsUntilRefresh: number;
 }
 
-const NEWS_CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes
 const NEWS_STORAGE_KEY = 'orkestra_monitored_news';
 const LAST_CHECK_KEY = 'orkestra_last_news_check';
+const REFRESH_INTERVAL_KEY = 'orkestra_news_refresh_interval';
 
 // Official sources for higher trust
 const OFFICIAL_SOURCES = [
   'tadawul', 'saudiexchange', 'cma.org.sa', 'argaam', 'zawya',
   'sec.gov', 'nasdaq', 'nyse', 'lseg', 'londonstockexchange',
-  'reuters', 'bloomberg', 'ft.com', 'wsj.com'
+  'reuters', 'bloomberg', 'ft.com', 'wsj.com', 'yahoo'
 ];
 
 // Country detection patterns
@@ -73,16 +78,36 @@ const REGION_MAP: Record<string, NewsRegion> = {
   'USA': 'americas', 'UK': 'europe',
 };
 
+// GCC-focused news queries
+const GCC_NEWS_QUERIES = [
+  'IPO listing Saudi Arabia Tadawul NOMU CMA',
+  'M&A acquisition merger MENA GCC Saudi Arabia',
+  'CMA violation fine Saudi Arabia financial',
+  'CEO CFO chairman director Saudi Arabia UAE appointment',
+  'real estate development Saudi Arabia UAE Kuwait NEOM',
+  'banking sector profit earnings Gulf region GCC',
+  'technology startup funding Saudi Arabia UAE',
+  'Vision 2030 project update Saudi Arabia',
+  'contract awarded construction Saudi Arabia',
+  'Aramco SABIC ACWA Power STC company news',
+];
+
 export function useNewsMonitor() {
-  const [state, setState] = useState<NewsMonitorState>({
-    news: [],
-    isMonitoring: false,
-    lastCheck: null,
-    isLoading: false,
-    error: null,
+  const [state, setState] = useState<NewsMonitorState>(() => {
+    const savedInterval = localStorage.getItem(REFRESH_INTERVAL_KEY);
+    return {
+      news: [],
+      isMonitoring: false,
+      lastCheck: null,
+      isLoading: false,
+      error: null,
+      refreshInterval: (savedInterval ? parseInt(savedInterval) : 5) as RefreshInterval,
+      secondsUntilRefresh: 0,
+    };
   });
   
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const countdownRef = useRef<NodeJS.Timeout | null>(null);
   const seenNewsIds = useRef<Set<string>>(new Set());
 
   // Load persisted news from localStorage
@@ -120,34 +145,50 @@ export function useNewsMonitor() {
     }
   }, []);
 
+  const setRefreshInterval = useCallback((interval: RefreshInterval) => {
+    localStorage.setItem(REFRESH_INTERVAL_KEY, interval.toString());
+    setState(prev => ({ 
+      ...prev, 
+      refreshInterval: interval,
+      secondsUntilRefresh: interval * 60 
+    }));
+  }, []);
+
+  // Validate URL is real (not AI-generated)
+  const isValidNewsUrl = (url: string): boolean => {
+    if (!url || !url.startsWith('http')) return false;
+    // Reject obviously fake/generated URLs
+    if (url.includes('source-') && url.includes('.com')) return false;
+    if (url.includes('example.com')) return false;
+    if (url.includes('placeholder')) return false;
+    // Must have a proper domain structure
+    try {
+      const urlObj = new URL(url);
+      return urlObj.hostname.includes('.') && urlObj.hostname.length > 3;
+    } catch {
+      return false;
+    }
+  };
+
+  // Filter for today's news only
+  const isFromToday = (timestamp: Date): boolean => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return timestamp >= today;
+  };
+
   const fetchLatestNews = useCallback(async () => {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
     
     try {
-      console.log('[NewsMonitor] Fetching business news...');
-      
-      // Diversified queries for comprehensive news coverage
-      const queries = [
-        'Saudi Arabia IPO Tadawul NOMU CMA approval listing 2025',
-        'Saudi Arabia M&A acquisition merger deal announcement',
-        'Saudi Arabia contract award billion SAR project construction',
-        'Saudi Arabia CEO CFO chairman appointment executive',
-        'NEOM Red Sea Qiddiya Vision 2030 project update',
-        'Saudi Arabia banking sector Al Rajhi SNB profit earnings',
-        'Saudi Arabia real estate ROSHN property development',
-        'Saudi Arabia fintech startup funding investment',
-        'CMA Saudi Arabia violation penalty fine regulatory',
-        'Aramco SABIC ACWA Power STC company news',
-        'UAE Dubai Abu Dhabi business deal investment',
-        'MENA region joint venture partnership announcement',
-      ];
+      console.log('[NewsMonitor] Fetching GCC business news...');
       
       const allResults: any[] = [];
       
-      // Fetch in parallel batches
+      // Fetch in parallel batches using GCC-focused queries
       const batchSize = 3;
-      for (let i = 0; i < queries.length; i += batchSize) {
-        const batch = queries.slice(i, i + batchSize);
+      for (let i = 0; i < GCC_NEWS_QUERIES.length; i += batchSize) {
+        const batch = GCC_NEWS_QUERIES.slice(i, i + batchSize);
         const results = await Promise.all(
           batch.map(query => 
             supabase.functions.invoke('wide-research', {
@@ -164,11 +205,16 @@ export function useNewsMonitor() {
 
       console.log('[NewsMonitor] Got total results:', allResults.length);
       
-      // Transform and deduplicate
+      // Transform, validate and deduplicate
       const urlSet = new Set<string>();
       const newNewsItems: NewsItem[] = allResults
         .filter((result: any) => {
           if (!result.title || !result.url) return false;
+          // Validate URL is real
+          if (!isValidNewsUrl(result.url)) {
+            console.log('[NewsMonitor] Rejecting invalid URL:', result.url);
+            return false;
+          }
           if (urlSet.has(result.url)) return false;
           urlSet.add(result.url);
           return true;
@@ -189,7 +235,7 @@ export function useNewsMonitor() {
           const text = `${result.title} ${snippet}`;
           const country = detectCountry(text);
 
-          // Prefer published timestamp from the backend when available
+          // Parse published timestamp
           const tsCandidate = result.fetchedAt || result.publishDate || result.publishedAt;
           const parsedTs = tsCandidate ? new Date(tsCandidate) : new Date();
           const timestamp = Number.isNaN(parsedTs.getTime()) ? new Date() : parsedTs;
@@ -207,13 +253,18 @@ export function useNewsMonitor() {
             region: country ? REGION_MAP[country] : 'global',
             companies: extractCompanies(text),
             isOfficial: OFFICIAL_SOURCES.some(s => source.toLowerCase().includes(s)),
+            isValidated: true,
           };
-        });
+        })
+        // Filter for today's news only
+        .filter((item: NewsItem) => isFromToday(item.timestamp));
 
       setState(prev => {
         const existingIds = new Set(prev.news.map(n => n.id));
         const uniqueNew = newNewsItems.filter(n => !existingIds.has(n.id));
-        const merged = [...uniqueNew, ...prev.news].slice(0, 100);
+        // Keep today's news only when merging
+        const todayNews = prev.news.filter(n => isFromToday(n.timestamp));
+        const merged = [...uniqueNew, ...todayNews].slice(0, 100);
         
         persistNews(merged);
         
@@ -222,12 +273,13 @@ export function useNewsMonitor() {
           news: merged,
           lastCheck: new Date(),
           isLoading: false,
+          secondsUntilRefresh: prev.refreshInterval * 60,
         };
       });
 
       const newCount = newNewsItems.filter(n => n.isNew).length;
       if (newCount > 0) {
-        console.log(`[NewsMonitor] Found ${newCount} new news items`);
+        console.log(`[NewsMonitor] Found ${newCount} new news items from today`);
       }
 
       return newNewsItems;
@@ -245,25 +297,54 @@ export function useNewsMonitor() {
   const startMonitoring = useCallback(() => {
     if (intervalRef.current) return;
     
-    console.log('[NewsMonitor] Starting hourly monitoring...');
-    setState(prev => ({ ...prev, isMonitoring: true }));
+    console.log(`[NewsMonitor] Starting ${state.refreshInterval}-minute monitoring...`);
+    setState(prev => ({ 
+      ...prev, 
+      isMonitoring: true,
+      secondsUntilRefresh: prev.refreshInterval * 60 
+    }));
     
     fetchLatestNews();
     
+    // Set up refresh interval
     intervalRef.current = setInterval(() => {
-      console.log('[NewsMonitor] Hourly check triggered');
+      console.log('[NewsMonitor] Auto-refresh triggered');
       fetchLatestNews();
-    }, NEWS_CHECK_INTERVAL);
-  }, [fetchLatestNews]);
+    }, state.refreshInterval * 60 * 1000);
+
+    // Set up countdown timer (update every second)
+    countdownRef.current = setInterval(() => {
+      setState(prev => ({
+        ...prev,
+        secondsUntilRefresh: Math.max(0, prev.secondsUntilRefresh - 1)
+      }));
+    }, 1000);
+  }, [fetchLatestNews, state.refreshInterval]);
 
   const stopMonitoring = useCallback(() => {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
-    setState(prev => ({ ...prev, isMonitoring: false }));
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
+    setState(prev => ({ ...prev, isMonitoring: false, secondsUntilRefresh: 0 }));
     console.log('[NewsMonitor] Monitoring stopped');
   }, []);
+
+  // Restart monitoring when refresh interval changes
+  useEffect(() => {
+    if (state.isMonitoring) {
+      stopMonitoring();
+      // Small delay before restarting
+      const timeout = setTimeout(() => {
+        startMonitoring();
+      }, 100);
+      return () => clearTimeout(timeout);
+    }
+  }, [state.refreshInterval]);
 
   const markAsRead = useCallback((newsId: string) => {
     setState(prev => ({
@@ -285,6 +366,9 @@ export function useNewsMonitor() {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
       }
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+      }
     };
   }, []);
 
@@ -295,6 +379,7 @@ export function useNewsMonitor() {
     fetchLatestNews,
     markAsRead,
     clearAllNews,
+    setRefreshInterval,
   };
 }
 
@@ -336,35 +421,29 @@ function extractCompanies(text: string): string[] {
 function categorizeNews(title: string, snippet: string): NewsCategory {
   const text = `${title} ${snippet}`.toLowerCase();
   
-  // CMA violations/fines (high priority)
   if (/\b(cma|capital market authority)\b/i.test(text) && 
       /\b(violation|fine|penalty|sanction|breach|warning|suspend)\b/i.test(text)) {
     return 'cma_violation';
   }
   
-  // Vision 2030 initiatives
   if (/\b(vision 2030|giga.?project|neom|the line|qiddiya|red sea|diriyah|amaala)\b/i.test(text)) {
     return 'vision_2030';
   }
   
-  // Tech startup funding
   if (/\b(startup|fintech|tech|venture|seed|series [a-d]|funding round|raises?|raised)\b/i.test(text) && 
       /\b(million|billion|funding|investment|investor)\b/i.test(text)) {
     return 'tech_funding';
   }
   
-  // Real estate market
   if (/\b(real estate|property|housing|residential|commercial property|roshn|reit|land)\b/i.test(text)) {
     return 'real_estate';
   }
   
-  // Banking sector
   if (/\b(bank|banking|snb|al rajhi|samba|riyad bank|alinma|bsf|sab|ncb)\b/i.test(text) && 
       /\b(profit|earnings|loan|deposit|asset|branch|digital|merger)\b/i.test(text)) {
     return 'banking';
   }
   
-  // Lead-gen categories
   if (/\b(acqui|merger|m&a|buyout|takeover)\b/i.test(text)) {
     return 'acquisition';
   }
@@ -382,7 +461,6 @@ function categorizeNews(title: string, snippet: string): NewsCategory {
     return 'expansion';
   }
   
-  // Standard categories
   if (/\b(ipo|listing|debut|goes public|prospectus|float)\b/i.test(text)) {
     return 'ipo';
   }

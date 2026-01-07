@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { motion, AnimatePresence, useDragControls } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import { 
   Newspaper, 
   Bell, 
@@ -30,7 +31,10 @@ import {
   X,
   Loader2,
   Filter,
-  MapPin
+  MapPin,
+  GripVertical,
+  Timer,
+  Maximize2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -59,13 +63,23 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { useNewsMonitor, NewsItem, NewsCategory as NewsCategoryType, NewsRegion } from '@/hooks/useNewsMonitor';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { useNewsMonitor, NewsItem, NewsCategory as NewsCategoryType, NewsRegion, RefreshInterval } from '@/hooks/useNewsMonitor';
 import { useNewsSourceSettings } from '@/hooks/useNewsSourceSettings';
 import { useNewsNotifications } from '@/hooks/useNewsNotifications';
 import { useLanguage, Language } from '@/lib/i18n/LanguageContext';
 import { cn } from '@/lib/utils';
 import { isBefore, isAfter, startOfDay, endOfDay } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
+
+const FILTER_STORAGE_KEY = 'orkestra_news_filters';
+const RIBBON_POSITION_KEY = 'orkestra_ribbon_position';
 
 const categoryIcons: Record<NewsCategoryType, React.ReactNode> = {
   ipo: <Building2 className="w-3 h-3" />,
@@ -127,6 +141,8 @@ const COUNTRIES = [
   { code: 'UAE', label: 'UAE', flag: '🇦🇪' },
   { code: 'Kuwait', label: 'Kuwait', flag: '🇰🇼' },
   { code: 'Qatar', label: 'Qatar', flag: '🇶🇦' },
+  { code: 'Bahrain', label: 'Bahrain', flag: '🇧🇭' },
+  { code: 'Oman', label: 'Oman', flag: '🇴🇲' },
   { code: 'Egypt', label: 'Egypt', flag: '🇪🇬' },
   { code: 'USA', label: 'USA', flag: '🇺🇸' },
   { code: 'UK', label: 'UK', flag: '🇬🇧' },
@@ -141,6 +157,8 @@ const SOURCES = [
   { id: 'bloomberg', label: 'Bloomberg' },
   { id: 'arabnews', label: 'Arab News' },
   { id: 'ft', label: 'Financial Times' },
+  { id: 'yahoo', label: 'Yahoo Finance' },
+  { id: 'tadawul', label: 'Tadawul' },
 ];
 
 interface NewsFilterState {
@@ -158,14 +176,50 @@ interface NewsSummary {
   suggestions: { topic: string; query: string }[];
 }
 
+// Load filters from localStorage
+const loadFiltersFromStorage = (): NewsFilterState => {
+  try {
+    const stored = localStorage.getItem(FILTER_STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      return {
+        categories: parsed.categories || ['all'],
+        countries: parsed.countries || ['all'],
+        sources: parsed.sources || ['all'],
+        dateFrom: parsed.dateFrom ? new Date(parsed.dateFrom) : undefined,
+        dateTo: parsed.dateTo ? new Date(parsed.dateTo) : undefined,
+      };
+    }
+  } catch {}
+  return { 
+    categories: ['all'], 
+    countries: ['all'], 
+    sources: ['all'], 
+    dateFrom: undefined, 
+    dateTo: undefined 
+  };
+};
+
+// Save filters to localStorage
+const saveFiltersToStorage = (filters: NewsFilterState) => {
+  try {
+    localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify({
+      categories: filters.categories,
+      countries: filters.countries,
+      sources: filters.sources,
+      dateFrom: filters.dateFrom?.toISOString(),
+      dateTo: filters.dateTo?.toISOString(),
+    }));
+  } catch {}
+};
+
 export const useNewsFilterState = () => {
-  const [filters, setFilters] = useState<NewsFilterState>({
-    categories: ['all'],
-    countries: ['all'],
-    sources: ['all'],
-    dateFrom: undefined,
-    dateTo: undefined,
-  });
+  const [filters, setFilters] = useState<NewsFilterState>(loadFiltersFromStorage);
+
+  // Persist to localStorage on change
+  useEffect(() => {
+    saveFiltersToStorage(filters);
+  }, [filters]);
 
   const toggleCategory = (category: NewsCategory) => {
     setFilters(prev => {
@@ -288,15 +342,19 @@ interface NewsRibbonProps {
 }
 
 export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
+  const navigate = useNavigate();
   const {
     news,
     isMonitoring,
     isLoading,
     lastCheck,
+    refreshInterval,
+    secondsUntilRefresh,
     startMonitoring,
     stopMonitoring,
     fetchLatestNews,
     markAsRead,
+    setRefreshInterval,
   } = useNewsMonitor();
 
   const { isSourceAllowed } = useNewsSourceSettings();
@@ -315,6 +373,16 @@ export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
     { code: 'ar', label: 'العربية', flag: '🇸🇦' },
   ];
 
+  // Draggable position state
+  const [position, setPosition] = useState<'top' | 'bottom'>(() => {
+    try {
+      const saved = localStorage.getItem(RIBBON_POSITION_KEY);
+      return saved === 'bottom' ? 'bottom' : 'top';
+    } catch {
+      return 'top';
+    }
+  });
+
   const [isExpanded, setIsExpanded] = useState(false);
   const [selectedItem, setSelectedItem] = useState<NewsItem | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -327,6 +395,15 @@ export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
   const localFilterState = useNewsFilterState();
   const activeFilterState = filterState || localFilterState;
   const { filters, toggleCategory, toggleCountry, toggleSource, clearFilters, hasActiveFilters } = activeFilterState;
+
+  // Save position to localStorage
+  const togglePosition = () => {
+    const newPosition = position === 'top' ? 'bottom' : 'top';
+    setPosition(newPosition);
+    try {
+      localStorage.setItem(RIBBON_POSITION_KEY, newPosition);
+    } catch {}
+  };
 
   // Auto-start monitoring on mount
   useEffect(() => {
@@ -380,6 +457,12 @@ export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
     if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
     if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
     return `${Math.floor(seconds / 86400)}d`;
+  };
+
+  const formatCountdown = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   // Fetch AI summary for a news item
@@ -440,43 +523,65 @@ export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
   // Empty state
   if (filteredNews.length === 0 && !isLoading) {
     return (
-      <div className="fixed top-14 left-0 right-0 z-30 h-10 bg-background/95 backdrop-blur-sm border-b border-border/50">
-        <div className="flex items-center justify-center gap-3 h-full px-4">
-          <Newspaper className="w-4 h-4 text-muted-foreground" />
-          <span className="text-xs text-muted-foreground">
-            {news.length > 0 
-              ? 'No news matching filters' 
-              : isMonitoring 
-                ? 'Loading news feed...' 
-                : 'Start monitoring for news'}
-          </span>
-          {isLoading && <RefreshCw className="w-3 h-3 animate-spin text-primary" />}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={isMonitoring ? stopMonitoring : startMonitoring}
-            className="h-6 px-2"
-          >
-            {isMonitoring ? <BellOff className="w-3 h-3" /> : <Bell className="w-3 h-3" />}
-          </Button>
+      <>
+        <div className={cn(
+          "fixed left-0 right-0 z-30 h-10 bg-background/95 backdrop-blur-sm border-b border-border/50",
+          position === 'top' ? "top-14" : "bottom-0 border-t border-b-0"
+        )}>
+          <div className="flex items-center justify-center gap-3 h-full px-4">
+            <Newspaper className="w-4 h-4 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">
+              {news.length > 0 
+                ? 'No news matching filters' 
+                : isMonitoring 
+                  ? 'Loading news feed...' 
+                  : 'Start monitoring for news'}
+            </span>
+            {isLoading && <RefreshCw className="w-3 h-3 animate-spin text-primary" />}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={isMonitoring ? stopMonitoring : startMonitoring}
+              className="h-6 px-2"
+            >
+              {isMonitoring ? <BellOff className="w-3 h-3" /> : <Bell className="w-3 h-3" />}
+            </Button>
+          </div>
         </div>
-      </div>
+        <div className="h-10" />
+      </>
     );
   }
 
   return (
     <>
-      {/* Compact News Ribbon */}
+      {/* Draggable News Ribbon */}
       <div 
         className={cn(
-          "fixed top-14 left-0 right-0 z-30",
-          "bg-background/95 backdrop-blur-sm border-b border-border/50",
-          "transition-all duration-300"
+          "fixed left-0 right-0 z-30",
+          "bg-background/95 backdrop-blur-sm border-border/50",
+          "transition-all duration-300",
+          position === 'top' ? "top-14 border-b" : "bottom-0 border-t"
         )}
       >
         {/* Main ticker bar - 40px height */}
         <div className="flex items-center h-10 px-2 gap-2">
-          {/* Live indicator */}
+          {/* Drag handle */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={togglePosition}
+                className="shrink-0 p-1 cursor-grab active:cursor-grabbing hover:bg-muted/50 rounded"
+              >
+                <GripVertical className="w-3.5 h-3.5 text-muted-foreground" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side={position === 'top' ? 'bottom' : 'top'}>
+              Move to {position === 'top' ? 'bottom' : 'top'}
+            </TooltipContent>
+          </Tooltip>
+
+          {/* Live indicator with countdown */}
           <div className="flex items-center gap-1.5 px-2 border-r border-border/50 shrink-0">
             <div className="relative">
               <Sparkles className="w-3.5 h-3.5 text-primary" />
@@ -494,6 +599,12 @@ export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
               >
                 {newItemsCount}
               </Badge>
+            )}
+            {/* Countdown timer */}
+            {isMonitoring && secondsUntilRefresh > 0 && (
+              <span className="text-[9px] text-muted-foreground font-mono hidden md:inline">
+                {formatCountdown(secondsUntilRefresh)}
+              </span>
             )}
           </div>
 
@@ -550,6 +661,32 @@ export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
 
           {/* Controls */}
           <div className="flex items-center gap-0.5 pl-2 border-l border-border/50 shrink-0">
+            {/* Refresh interval selector */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-7 w-7">
+                  <Timer className="w-3 h-3" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-36 p-2">
+                <p className="text-[10px] text-muted-foreground mb-2">Refresh interval</p>
+                <div className="space-y-1">
+                  {([1, 5, 15, 30] as RefreshInterval[]).map((interval) => (
+                    <button
+                      key={interval}
+                      onClick={() => setRefreshInterval(interval)}
+                      className={cn(
+                        "w-full text-left px-2 py-1 text-xs rounded hover:bg-muted",
+                        refreshInterval === interval && "bg-primary/20 text-primary"
+                      )}
+                    >
+                      {interval} min
+                    </button>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -562,7 +699,7 @@ export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
                   <RefreshCw className={cn("w-3 h-3", isLoading && "animate-spin")} />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="bottom">Refresh</TooltipContent>
+              <TooltipContent side={position === 'top' ? 'bottom' : 'top'}>Refresh</TooltipContent>
             </Tooltip>
 
             <Tooltip>
@@ -580,7 +717,22 @@ export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
                   )}
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="bottom">{isExpanded ? 'Collapse' : 'Expand'}</TooltipContent>
+              <TooltipContent side={position === 'top' ? 'bottom' : 'top'}>{isExpanded ? 'Collapse' : 'Expand'}</TooltipContent>
+            </Tooltip>
+
+            {/* Open full news page */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => navigate('/news')}
+                >
+                  <Maximize2 className="w-3 h-3" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side={position === 'top' ? 'bottom' : 'top'}>Open News Page</TooltipContent>
             </Tooltip>
 
             <Tooltip>
@@ -598,7 +750,7 @@ export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
                   )}
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="bottom">
+              <TooltipContent side={position === 'top' ? 'bottom' : 'top'}>
                 {isMonitoring ? 'Stop' : 'Start'}
               </TooltipContent>
             </Tooltip>
@@ -884,7 +1036,7 @@ export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
       </div>
 
       {/* Spacer to prevent content from going under the ribbon */}
-      <div className="h-10" />
+      <div className={cn("h-10", position === 'bottom' && "order-last")} />
 
       {/* AI Summary Dialog */}
       <Dialog open={summaryDialogOpen} onOpenChange={setSummaryDialogOpen}>
