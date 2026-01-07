@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Settings, Moon, Sun, Trash2, Database, RefreshCw } from 'lucide-react';
+import { Settings, Moon, Sun, Trash2, Database, RefreshCw, Newspaper } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -17,6 +17,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { useResearchStore } from '@/store/researchStore';
 import { cn } from '@/lib/utils';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { NewsSourceSettings } from '@/components/NewsSourceSettings';
 
 interface SettingsDialogProps {
   collapsed?: boolean;
@@ -59,7 +60,7 @@ export const SettingsDialog = ({ collapsed = false }: SettingsDialogProps) => {
           {!collapsed && <span>{t.common.settings}</span>}
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Settings className="w-5 h-5" />
@@ -109,6 +110,17 @@ export const SettingsDialog = ({ collapsed = false }: SettingsDialogProps) => {
                 onCheckedChange={(checked) => setStrictMode({ ...strictMode, enabled: checked })}
               />
             </div>
+          </div>
+
+          <Separator />
+
+          {/* News Source Filters */}
+          <div className="space-y-4">
+            <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
+              <Newspaper className="w-4 h-4" />
+              News Source Filters
+            </h4>
+            <NewsSourceSettings />
           </div>
 
           <Separator />
