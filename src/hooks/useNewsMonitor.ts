@@ -1,14 +1,33 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
+// Extended categories for lead generation
+export type NewsCategory = 
+  | 'ipo' 
+  | 'market' 
+  | 'regulatory' 
+  | 'expansion' 
+  | 'contract' 
+  | 'joint_venture' 
+  | 'acquisition' 
+  | 'appointment' 
+  | 'general';
+
+export type NewsRegion = 'mena' | 'europe' | 'americas' | 'asia_pacific' | 'global';
+
 export interface NewsItem {
   id: string;
   title: string;
   source: string;
   url: string;
   timestamp: Date;
-  category: 'ipo' | 'market' | 'regulatory' | 'general';
+  category: NewsCategory;
   isNew: boolean;
+  snippet?: string;
+  country?: string;
+  region?: NewsRegion;
+  companies?: string[];
+  isOfficial?: boolean; // From official exchange/regulator
 }
 
 interface NewsMonitorState {
@@ -19,9 +38,35 @@ interface NewsMonitorState {
   error: string | null;
 }
 
-const NEWS_CHECK_INTERVAL = 60 * 60 * 1000; // 1 hour in milliseconds
+const NEWS_CHECK_INTERVAL = 60 * 60 * 1000; // 1 hour
 const NEWS_STORAGE_KEY = 'orkestra_monitored_news';
 const LAST_CHECK_KEY = 'orkestra_last_news_check';
+
+// Official sources for higher trust
+const OFFICIAL_SOURCES = [
+  'tadawul', 'saudiexchange', 'cma.org.sa', 'argaam', 'zawya',
+  'sec.gov', 'nasdaq', 'nyse', 'lseg', 'londonstockexchange',
+  'reuters', 'bloomberg', 'ft.com', 'wsj.com'
+];
+
+// Country detection patterns
+const COUNTRY_PATTERNS: Record<string, RegExp> = {
+  'Saudi Arabia': /\b(saudi|ksa|riyadh|jeddah|tadawul|aramco|sabic|stc)\b/i,
+  'UAE': /\b(uae|dubai|abu dhabi|emirates|adx|dfm)\b/i,
+  'Kuwait': /\b(kuwait|boursa)\b/i,
+  'Qatar': /\b(qatar|doha|qse)\b/i,
+  'Bahrain': /\b(bahrain|manama)\b/i,
+  'Oman': /\b(oman|muscat|msm)\b/i,
+  'Egypt': /\b(egypt|cairo|egx)\b/i,
+  'USA': /\b(usa|us|nasdaq|nyse|american|sec)\b/i,
+  'UK': /\b(uk|britain|london|lse|ftse)\b/i,
+};
+
+const REGION_MAP: Record<string, NewsRegion> = {
+  'Saudi Arabia': 'mena', 'UAE': 'mena', 'Kuwait': 'mena', 'Qatar': 'mena',
+  'Bahrain': 'mena', 'Oman': 'mena', 'Egypt': 'mena',
+  'USA': 'americas', 'UK': 'europe',
+};
 
 export function useNewsMonitor() {
   const [state, setState] = useState<NewsMonitorState>({
@@ -43,7 +88,6 @@ export function useNewsMonitor() {
       
       if (storedNews) {
         const parsed = JSON.parse(storedNews) as NewsItem[];
-        // Mark all as not new since they're from storage
         const newsWithDates = parsed.map(n => ({
           ...n,
           timestamp: new Date(n.timestamp),
@@ -61,11 +105,9 @@ export function useNewsMonitor() {
     }
   }, []);
 
-  // Persist news to localStorage
   const persistNews = useCallback((news: NewsItem[]) => {
     try {
-      // Keep only last 50 news items
-      const toStore = news.slice(0, 50);
+      const toStore = news.slice(0, 100);
       localStorage.setItem(NEWS_STORAGE_KEY, JSON.stringify(toStore));
       localStorage.setItem(LAST_CHECK_KEY, new Date().toISOString());
     } catch (e) {
@@ -77,27 +119,49 @@ export function useNewsMonitor() {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
     
     try {
-      console.log('[NewsMonitor] Fetching latest IPO news...');
+      console.log('[NewsMonitor] Fetching business news...');
       
-      // Call the wide-research function with a focused IPO query
-      const { data, error } = await supabase.functions.invoke('wide-research', {
-        body: {
-          query: 'IPO announcements news today latest filings 2025 2026',
-          maxResults: 20,
-          newsMode: true,
-        },
-      });
-
-      if (error) {
-        throw new Error(error.message);
+      // Multiple queries for different news categories
+      const queries = [
+        'IPO announcements latest filings 2025 2026 Tadawul CMA',
+        'Saudi Arabia business expansion news contract award',
+        'MENA joint venture partnership announcement',
+        'company acquisition merger Saudi UAE',
+        'executive appointment CEO chairman Saudi Arabia',
+        'Aramco SABIC STC news announcement',
+      ];
+      
+      const allResults: any[] = [];
+      
+      // Fetch in parallel batches
+      const batchSize = 3;
+      for (let i = 0; i < queries.length; i += batchSize) {
+        const batch = queries.slice(i, i + batchSize);
+        const results = await Promise.all(
+          batch.map(query => 
+            supabase.functions.invoke('wide-research', {
+              body: { query, maxResults: 15, newsMode: true },
+            })
+          )
+        );
+        
+        results.forEach(({ data }) => {
+          const searchResults = data?.searchResults || data?.results || [];
+          allResults.push(...searchResults);
+        });
       }
 
-      const searchResults = data?.searchResults || data?.results || [];
-      console.log('[NewsMonitor] Got search results:', searchResults.length);
+      console.log('[NewsMonitor] Got total results:', allResults.length);
       
-      // Transform search results into news items
-      const newNewsItems: NewsItem[] = searchResults
-        .filter((result: any) => result.title && result.url)
+      // Transform and deduplicate
+      const urlSet = new Set<string>();
+      const newNewsItems: NewsItem[] = allResults
+        .filter((result: any) => {
+          if (!result.title || !result.url) return false;
+          if (urlSet.has(result.url)) return false;
+          urlSet.add(result.url);
+          return true;
+        })
         .map((result: any) => {
           const id = `news_${btoa(result.url).slice(0, 20)}`;
           const isNew = !seenNewsIds.current.has(id);
@@ -106,22 +170,30 @@ export function useNewsMonitor() {
             seenNewsIds.current.add(id);
           }
           
+          const source = extractDomain(result.url);
+          const text = `${result.title} ${result.snippet || ''}`;
+          const country = detectCountry(text);
+          
           return {
             id,
             title: result.title,
-            source: extractDomain(result.url),
+            source,
             url: result.url,
             timestamp: new Date(),
             category: categorizeNews(result.title, result.snippet || ''),
             isNew,
+            snippet: result.snippet?.slice(0, 200) || '',
+            country,
+            region: country ? REGION_MAP[country] : 'global',
+            companies: extractCompanies(text),
+            isOfficial: OFFICIAL_SOURCES.some(s => source.toLowerCase().includes(s)),
           };
         });
 
       setState(prev => {
-        // Merge new items, avoiding duplicates
         const existingIds = new Set(prev.news.map(n => n.id));
         const uniqueNew = newNewsItems.filter(n => !existingIds.has(n.id));
-        const merged = [...uniqueNew, ...prev.news].slice(0, 50);
+        const merged = [...uniqueNew, ...prev.news].slice(0, 100);
         
         persistNews(merged);
         
@@ -133,7 +205,6 @@ export function useNewsMonitor() {
         };
       });
 
-      // Show notification for new items
       const newCount = newNewsItems.filter(n => n.isNew).length;
       if (newCount > 0) {
         console.log(`[NewsMonitor] Found ${newCount} new news items`);
@@ -157,10 +228,8 @@ export function useNewsMonitor() {
     console.log('[NewsMonitor] Starting hourly monitoring...');
     setState(prev => ({ ...prev, isMonitoring: true }));
     
-    // Fetch immediately
     fetchLatestNews();
     
-    // Set up hourly interval
     intervalRef.current = setInterval(() => {
       console.log('[NewsMonitor] Hourly check triggered');
       fetchLatestNews();
@@ -191,7 +260,6 @@ export function useNewsMonitor() {
     localStorage.removeItem(NEWS_STORAGE_KEY);
   }, []);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (intervalRef.current) {
@@ -220,17 +288,62 @@ function extractDomain(url: string): string {
   }
 }
 
-function categorizeNews(title: string, snippet: string): NewsItem['category'] {
+function detectCountry(text: string): string | undefined {
+  for (const [country, pattern] of Object.entries(COUNTRY_PATTERNS)) {
+    if (pattern.test(text)) {
+      return country;
+    }
+  }
+  return undefined;
+}
+
+function extractCompanies(text: string): string[] {
+  const companies: string[] = [];
+  const knownCompanies = [
+    'Aramco', 'SABIC', 'STC', 'Al Rajhi', 'ACWA Power', 'SNB', 'Ma\'aden',
+    'Almarai', 'Jarir', 'SACO', 'Mobily', 'Zain', 'Emaar', 'ADNOC'
+  ];
+  
+  for (const company of knownCompanies) {
+    if (text.toLowerCase().includes(company.toLowerCase())) {
+      companies.push(company);
+    }
+  }
+  
+  return companies.slice(0, 3);
+}
+
+function categorizeNews(title: string, snippet: string): NewsCategory {
   const text = `${title} ${snippet}`.toLowerCase();
   
-  if (text.includes('ipo') || text.includes('listing') || text.includes('debut') || text.includes('goes public')) {
+  // Lead-gen categories (checked first for priority)
+  if (/\b(acqui|merger|m&a|buyout|takeover)\b/i.test(text)) {
+    return 'acquisition';
+  }
+  if (/\b(joint venture|partnership|jv|strategic alliance|mou|memorandum)\b/i.test(text)) {
+    return 'joint_venture';
+  }
+  if (/\b(contract|award|won|signed|deal|agreement|billion|million)\b/i.test(text) && 
+      /\b(sar|usd|aed|project|construction|supply)\b/i.test(text)) {
+    return 'contract';
+  }
+  if (/\b(appoint|ceo|chairman|cfo|director|executive|join|hire|named)\b/i.test(text)) {
+    return 'appointment';
+  }
+  if (/\b(expand|expansion|launch|open|new branch|new office|entering|growth)\b/i.test(text)) {
+    return 'expansion';
+  }
+  
+  // Standard categories
+  if (/\b(ipo|listing|debut|goes public|prospectus|float)\b/i.test(text)) {
     return 'ipo';
   }
-  if (text.includes('regulation') || text.includes('sec') || text.includes('cma') || text.includes('filing')) {
+  if (/\b(regulation|sec|cma|filing|compliance|law|rule)\b/i.test(text)) {
     return 'regulatory';
   }
-  if (text.includes('market') || text.includes('stock') || text.includes('index') || text.includes('trading')) {
+  if (/\b(market|stock|index|trading|shares|equity)\b/i.test(text)) {
     return 'market';
   }
+  
   return 'general';
 }

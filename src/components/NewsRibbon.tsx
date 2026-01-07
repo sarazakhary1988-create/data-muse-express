@@ -14,7 +14,13 @@ import {
   RefreshCw,
   Sparkles,
   Calendar,
-  X
+  X,
+  Handshake,
+  FileText,
+  Rocket,
+  UserPlus,
+  Landmark,
+  MapPin
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -29,33 +35,48 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
-import { useNewsMonitor, NewsItem } from '@/hooks/useNewsMonitor';
+import { useNewsMonitor, NewsItem, NewsCategory as NewsCategoryType } from '@/hooks/useNewsMonitor';
 import { useNewsSourceSettings } from '@/hooks/useNewsSourceSettings';
 import { cn } from '@/lib/utils';
 import { format, isAfter, isBefore, startOfDay, endOfDay } from 'date-fns';
 
-const categoryIcons: Record<NewsItem['category'], React.ReactNode> = {
+const categoryIcons: Record<NewsCategoryType, React.ReactNode> = {
   ipo: <Building2 className="w-3 h-3" />,
   market: <TrendingUp className="w-3 h-3" />,
   regulatory: <AlertCircle className="w-3 h-3" />,
+  expansion: <Rocket className="w-3 h-3" />,
+  contract: <FileText className="w-3 h-3" />,
+  joint_venture: <Handshake className="w-3 h-3" />,
+  acquisition: <Landmark className="w-3 h-3" />,
+  appointment: <UserPlus className="w-3 h-3" />,
   general: <Globe className="w-3 h-3" />,
 };
 
-const categoryColors: Record<NewsItem['category'], string> = {
+const categoryColors: Record<NewsCategoryType, string> = {
   ipo: 'bg-green-500/20 text-green-400 border-green-500/30',
   market: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
   regulatory: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+  expansion: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
+  contract: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
+  joint_venture: 'bg-pink-500/20 text-pink-400 border-pink-500/30',
+  acquisition: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+  appointment: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
   general: 'bg-muted text-muted-foreground border-border',
 };
 
-const categoryLabels: Record<NewsItem['category'], string> = {
+const categoryLabels: Record<NewsCategoryType, string> = {
   ipo: 'IPO',
   market: 'Market',
   regulatory: 'Regulatory',
+  expansion: 'Expansion',
+  contract: 'Contract',
+  joint_venture: 'JV/Partnership',
+  acquisition: 'M&A',
+  appointment: 'Appointments',
   general: 'General',
 };
 
-export type NewsCategory = NewsItem['category'] | 'all';
+export type NewsCategory = NewsCategoryType | 'all';
 
 interface NewsFilterState {
   categories: NewsCategory[];
@@ -353,9 +374,9 @@ export function NewsRibbon({ filterState }: NewsRibbonProps) {
               exit={{ height: 0, opacity: 0 }}
               className="border-t border-border/30 overflow-hidden"
             >
-              <div className="p-4 max-h-80 overflow-y-auto">
+              <div className="p-4 max-h-96 overflow-y-auto">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-medium">Latest IPO News</h3>
+                  <h3 className="text-sm font-medium">Business Intelligence Feed</h3>
                   {lastCheck && (
                     <span className="text-xs text-muted-foreground flex items-center gap-1">
                       <Clock className="w-3 h-3" />
@@ -365,7 +386,7 @@ export function NewsRibbon({ filterState }: NewsRibbonProps) {
                 </div>
 
                 <div className="grid gap-2">
-                  {filteredNews.slice(0, 10).map((item) => (
+                  {filteredNews.slice(0, 15).map((item) => (
                     <button
                       key={item.id}
                       onClick={() => handleNewsClick(item)}
@@ -383,21 +404,46 @@ export function NewsRibbon({ filterState }: NewsRibbonProps) {
                       </span>
                       <div className="flex-1 min-w-0">
                         <p className={cn(
-                          "text-sm truncate",
+                          "text-sm",
                           item.isNew ? "text-foreground font-medium" : "text-muted-foreground"
                         )}>
                           {item.title}
                         </p>
-                        <div className="flex items-center gap-2 mt-1">
+                        {item.snippet && (
+                          <p className="text-xs text-muted-foreground/70 mt-0.5 line-clamp-1">
+                            {item.snippet}
+                          </p>
+                        )}
+                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                           <Badge variant="outline" className={cn("text-[10px] h-4", categoryColors[item.category])}>
                             {categoryLabels[item.category]}
                           </Badge>
+                          {item.country && (
+                            <Badge variant="outline" className="text-[10px] h-4 gap-0.5">
+                              <MapPin className="w-2.5 h-2.5" />
+                              {item.country}
+                            </Badge>
+                          )}
+                          {item.isOfficial && (
+                            <Badge className="text-[10px] h-4 bg-green-500/20 text-green-500 border-green-500/30">
+                              Official
+                            </Badge>
+                          )}
                           <span className="text-xs text-muted-foreground">{item.source}</span>
                           <span className="text-xs text-muted-foreground/50">•</span>
                           <span className="text-xs text-muted-foreground/50">
                             {formatTimeAgo(item.timestamp)}
                           </span>
                         </div>
+                        {item.companies && item.companies.length > 0 && (
+                          <div className="flex items-center gap-1 mt-1">
+                            {item.companies.map(company => (
+                              <Badge key={company} variant="secondary" className="text-[9px] h-3.5 px-1.5">
+                                {company}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       {item.isNew && (
                         <Badge className="text-[10px] bg-primary/20 text-primary border-primary/30 shrink-0">
@@ -432,6 +478,11 @@ export function NewsFilter({ filterState }: NewsFilterProps) {
   const categories: { value: NewsCategory; label: string; icon: React.ReactNode; color: string }[] = [
     { value: 'all', label: 'All', icon: <Globe className="w-3 h-3" />, color: 'bg-muted text-foreground' },
     { value: 'ipo', label: 'IPO', icon: <Building2 className="w-3 h-3" />, color: categoryColors.ipo },
+    { value: 'contract', label: 'Contracts', icon: <FileText className="w-3 h-3" />, color: categoryColors.contract },
+    { value: 'joint_venture', label: 'JV', icon: <Handshake className="w-3 h-3" />, color: categoryColors.joint_venture },
+    { value: 'acquisition', label: 'M&A', icon: <Landmark className="w-3 h-3" />, color: categoryColors.acquisition },
+    { value: 'appointment', label: 'Execs', icon: <UserPlus className="w-3 h-3" />, color: categoryColors.appointment },
+    { value: 'expansion', label: 'Expansion', icon: <Rocket className="w-3 h-3" />, color: categoryColors.expansion },
     { value: 'market', label: 'Market', icon: <TrendingUp className="w-3 h-3" />, color: categoryColors.market },
     { value: 'regulatory', label: 'Regulatory', icon: <AlertCircle className="w-3 h-3" />, color: categoryColors.regulatory },
   ];
