@@ -909,23 +909,74 @@ Explain WHY each finding is supported with data and logic
 
     const reportFormatInstructions = this.getReportFormatInstructions();
     
-    const reportPrompt = `You are a research analyst. Generate a comprehensive research report based ONLY on the following REAL data sources.
+    // Check if this is an IPO query and format companies prominently
+    const isIPOQuery = /\b(ipo|ipos|initial\s+public\s+offering|listing|listings)\b/i.test(query);
+    const isSaudiQuery = /\b(saudi|tadawul|tasi|nomu|ksa)\b/i.test(query);
+    
+    // Format extracted companies as a table for the prompt
+    let companiesSection = '';
+    const companies = extractionResult?.data?.companies || [];
+    if (companies.length > 0) {
+      companiesSection = `
+## CRITICAL: EXTRACTED COMPANIES (MUST BE INCLUDED IN REPORT)
+
+The following ${companies.length} companies were extracted from the sources. YOU MUST include ALL of these in the report:
+
+| Company Name | Ticker | Market | IPO Status | Date | Value |
+|--------------|--------|--------|------------|------|-------|
+${companies.map((c: any) => 
+  `| ${c.name} | ${c.ticker || 'N/A'} | ${c.market || 'N/A'} | ${c.action || 'N/A'} | ${c.date || 'N/A'} | ${c.value || 'N/A'} |`
+).join('\n')}
+
+⚠️ IMPORTANT: The "Companies Identified" section in your report MUST include ALL companies from this table.
+`;
+    } else if (isIPOQuery) {
+      companiesSection = `
+⚠️ WARNING: No specific companies were extracted. You MUST scan the source content and identify ANY company names mentioned.
+If no specific companies can be identified, explicitly state: "No specific company names found in available sources."
+`;
+    }
+
+    // Format key facts and dates
+    let factsSection = '';
+    const keyFacts = extractionResult?.data?.key_facts || [];
+    if (keyFacts.length > 0) {
+      factsSection = `
+## Key Facts Extracted:
+${keyFacts.map((f: any) => `- ${f.fact} (${f.confidence || 'medium'} confidence)`).join('\n')}
+`;
+    }
+
+    // Format numeric data
+    let numericSection = '';
+    const numericData = extractionResult?.data?.numeric_data || [];
+    if (numericData.length > 0) {
+      numericSection = `
+## Financial Data Extracted:
+${numericData.slice(0, 15).map((n: any) => `- ${n.metric}: ${n.value}${n.unit ? ' ' + n.unit : ''} ${n.context ? '(' + n.context + ')' : ''}`).join('\n')}
+`;
+    }
+    
+    const reportPrompt = `You are a research analyst. Generate a comprehensive research report based on the following data.
 
 RESEARCH QUERY: "${query}"
 
 ${reportFormatInstructions}
 
-EXTRACTED DATA:
-${JSON.stringify(extractionResult?.data || {}, null, 2)}
+${companiesSection}
+${factsSection}
+${numericSection}
 
-SOURCE CONTENT:
-${combinedContent.slice(0, 15000)}
+ADDITIONAL SOURCE CONTENT:
+${combinedContent.slice(0, 12000)}
 
-INSTRUCTIONS:
-1. ONLY use information from the provided sources
-2. Cite sources using [Source: domain] format
-3. If data is incomplete, state that clearly
-4. Include specific numbers, dates, and names from the sources
+CRITICAL INSTRUCTIONS:
+1. For IPO/company queries: START the report with a "Companies Identified" table listing EVERY company
+2. Include specific numbers, dates, and names from the extracted data above
+3. Cite sources using [Source: domain] format
+4. If data is incomplete, state that clearly in "Open Questions"
+5. NEVER use generic phrases like "various companies" - NAME THEM
+${isIPOQuery && isSaudiQuery ? '\n6. This is a Saudi Arabia IPO query - focus on TASI and Nomu markets specifically' : ''}
 
 Generate the research report:`;
 
@@ -933,6 +984,34 @@ Generate the research report:`;
       const analyzeResult = await researchApi.analyze(query, reportPrompt, 'report', this.reportFormat);
       
       if (analyzeResult.success && analyzeResult.result) {
+        // Prepend companies table if the AI didn't include it prominently
+        let finalReport = analyzeResult.result;
+        
+        // Check if companies table exists in report, if not add it at the start
+        if (companies.length > 0 && !finalReport.includes('Company Name') && !finalReport.includes('Companies Identified')) {
+          const companyTable = `## Companies Identified
+
+| Company Name | Ticker | Market | Status | Date |
+|--------------|--------|--------|--------|------|
+${companies.slice(0, 20).map((c: any) => 
+  `| ${c.name} | ${c.ticker || '-'} | ${c.market || '-'} | ${c.action || '-'} | ${c.date || '-'} |`
+).join('\n')}
+
+---
+
+`;
+          // Insert after the first heading
+          const firstHeadingMatch = finalReport.match(/^#[^#\n]+\n/);
+          if (firstHeadingMatch) {
+            finalReport = finalReport.replace(
+              firstHeadingMatch[0], 
+              firstHeadingMatch[0] + '\n' + companyTable
+            );
+          } else {
+            finalReport = companyTable + finalReport;
+          }
+        }
+        
         const sourcesSection = `\n\n---\n\n## Sources\n\n${results.map((r, i) => 
           `${i + 1}. [${r.title}](${r.url}) - ${r.metadata.domain}`
         ).join('\n')}`;
@@ -940,11 +1019,12 @@ Generate the research report:`;
         const metadataSection = `\n\n---\n\n**Research Metadata:**
 - Data Source: Real-time web search
 - Sources analyzed: ${results.length}
+- Companies extracted: ${companies.length}
 - Unique domains: ${new Set(results.map(r => r.metadata.domain)).size}
 - Report generated: ${new Date().toISOString()}
 - Research engine: Manus 1.6 MAX`;
 
-        return analyzeResult.result + sourcesSection + metadataSection;
+        return finalReport + sourcesSection + metadataSection;
       }
     } catch (error) {
       console.error('[ResearchAgent] Report generation error:', error);
