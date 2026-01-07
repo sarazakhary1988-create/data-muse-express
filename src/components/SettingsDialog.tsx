@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Settings, Moon, Sun, Trash2, Database, RefreshCw, Newspaper } from 'lucide-react';
+import { Settings, Moon, Sun, Trash2, Database, RefreshCw, Newspaper, Bell } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -18,6 +18,7 @@ import { useResearchStore } from '@/store/researchStore';
 import { cn } from '@/lib/utils';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { NewsSourceSettings } from '@/components/NewsSourceSettings';
+import { NewsNotificationSettings } from '@/components/NewsNotificationSettings';
 
 interface SettingsDialogProps {
   collapsed?: boolean;
@@ -110,6 +111,17 @@ export const SettingsDialog = ({ collapsed = false }: SettingsDialogProps) => {
                 onCheckedChange={(checked) => setStrictMode({ ...strictMode, enabled: checked })}
               />
             </div>
+          </div>
+
+          <Separator />
+
+          {/* Push Notifications */}
+          <div className="space-y-4">
+            <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
+              <Bell className="w-4 h-4" />
+              Push Notifications
+            </h4>
+            <NewsNotificationSettings />
           </div>
 
           <Separator />
