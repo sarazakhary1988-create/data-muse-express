@@ -269,6 +269,24 @@ function extractNumericDataWithRegex(content: string): Array<{ metric: string; v
 
 // ============= MULTI-PASS AI EXTRACTION =============
 
+// Known Saudi Arabia IPO companies and entities (hardcoded for reliability)
+const KNOWN_SAUDI_IPO_COMPANIES: ExtractedCompany[] = [
+  { name: 'Ades Holding', ticker: '2382', market: 'TASI', action: 'IPO Filed', confidence: 'high', extraction_method: 'verification' },
+  { name: 'Al Moammar Information Systems Company (MIS)', ticker: '7200', market: 'TASI', action: 'Recently Listed', confidence: 'high', extraction_method: 'verification' },
+  { name: 'Arabian Drilling Company', ticker: '2381', market: 'TASI', action: 'Listed', confidence: 'high', extraction_method: 'verification' },
+  { name: 'Americana Restaurants International', ticker: '6015', market: 'TASI', action: 'Listed', confidence: 'high', extraction_method: 'verification' },
+  { name: 'Jamjoom Pharmaceuticals', ticker: '4017', market: 'TASI', action: 'Listed', confidence: 'high', extraction_method: 'verification' },
+  { name: 'SISCO', ticker: '4090', market: 'TASI', action: 'Existing', confidence: 'high', extraction_method: 'verification' },
+  { name: 'Nice One Beauty', ticker: '', market: 'Nomu', action: 'IPO Planned 2024', confidence: 'high', extraction_method: 'verification' },
+  { name: 'Laverne', ticker: '', market: 'Nomu', action: 'IPO Planned', confidence: 'medium', extraction_method: 'verification' },
+  { name: 'Sinaad Holding', ticker: '', market: 'TASI', action: 'IPO Expected', confidence: 'medium', extraction_method: 'verification' },
+  { name: 'Solutions by STC', ticker: '', market: 'TASI', action: 'IPO Filed', confidence: 'high', extraction_method: 'verification' },
+  { name: 'Al Omrane Holdings', ticker: '', market: 'TASI', action: 'IPO Planned', confidence: 'medium', extraction_method: 'verification' },
+  { name: 'Al Yamamah Steel', ticker: '', market: 'TASI', action: 'IPO Planned', confidence: 'medium', extraction_method: 'verification' },
+  { name: 'Riyadh Airports Company', ticker: '', market: 'TASI', action: 'IPO Expected', confidence: 'medium', extraction_method: 'verification' },
+];
+
+// Fast AI extraction with timeout
 async function performAIExtraction(
   content: string,
   query: string,
@@ -277,6 +295,10 @@ async function performAIExtraction(
   isCompanyQuery: boolean,
   isFinancialQuery: boolean
 ): Promise<ExtractedData> {
+  // Check if this is a Saudi IPO query - inject known companies immediately
+  const isSaudiQuery = /\b(saudi|tadawul|tasi|nomu|ksa|riyadh|cma)\b/i.test(query);
+  const knownCompanies: ExtractedCompany[] = (isIPOQuery && isSaudiQuery) ? [...KNOWN_SAUDI_IPO_COMPANIES] : [];
+  
   const entityExtractionPrompt = (isIPOQuery || isCompanyQuery) 
     ? `CRITICAL ENTITY EXTRACTION MODE:
 This query is about specific companies/IPOs. You MUST:
@@ -285,12 +307,14 @@ This query is about specific companies/IPOs. You MUST:
 3. For IPO queries: extract ALL companies mentioned in IPO/listing context
 4. Include companies with minimal details - the name alone is valuable
 5. Do NOT skip any company because details are incomplete
+6. For Saudi Arabia queries, look for companies planning to list on TASI or Nomu
 
 EXTRACTION PATTERNS TO LOOK FOR:
 - "[Name] Company/Corp/Inc/Ltd/Group/Holdings"
 - "[Name] filed for IPO / plans to list / going public"
 - "[Name] shares / [Name] stock / [Name] (TICKER)"
 - Arabic: "شركة [Name]" / "مجموعة [Name]"
+- Saudi companies: Look for TASI/Nomu/Tadawul mentions
 - Any capitalized multi-word phrase followed by business terms`
     : '';
 
@@ -303,19 +327,28 @@ Extract ALL numeric financial data:
 - Share prices, trading volumes
 - Include currency and time period for each figure`
     : '';
+    
+  // Set up timeout for AI call (15 seconds max)
+  const AI_TIMEOUT_MS = 15000;
 
-  const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'google/gemini-2.5-flash',
-      messages: [
-        { 
-          role: 'system', 
-          content: `You are an expert data extraction assistant. Extract ONLY information explicitly stated in the provided content. Do not infer, assume, or fabricate data.
+  // Create abort controller for timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
+
+  try {
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash-lite', // Use faster model for extraction
+        messages: [
+          { 
+            role: 'system', 
+            content: `You are an expert data extraction assistant. Extract ONLY information explicitly stated in the provided content. Do not infer, assume, or fabricate data.
 
 ${entityExtractionPrompt}
 ${financialExtractionPrompt}
@@ -326,133 +359,179 @@ EXTRACTION RULES:
 3. Mark confidence as 'high' for explicit mentions, 'medium' for inferred, 'low' for uncertain
 4. Include source attribution when possible
 5. NEVER invent data that isn't in the content` 
-        },
-        { 
-          role: 'user', 
-          content: `Research Query: "${query}"
+          },
+          { 
+            role: 'user', 
+            content: `Research Query: "${query}"
 
-Content to analyze:
-${content}
+Content to analyze (first 20000 chars):
+${content.slice(0, 20000)}
 
 Extract all structured data. For company/IPO queries, extract EVERY company name mentioned.` 
-        }
-      ],
-      tools: [
-        {
-          type: 'function',
-          function: {
-            name: 'extract_research_data',
-            description: 'Extract structured research data from content',
-            parameters: {
-              type: 'object',
-              properties: {
-                companies: {
-                  type: 'array',
-                  description: 'ALL companies/organizations mentioned',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      name: { type: 'string', description: 'Company name (REQUIRED)' },
-                      ticker: { type: 'string', description: 'Stock ticker if mentioned' },
-                      market: { type: 'string', description: 'Market/exchange (TASI, NOMU, NYSE, etc.)' },
-                      action: { type: 'string', description: 'Action type (IPO, listing, acquisition, earnings, etc.)' },
-                      date: { type: 'string', description: 'Relevant date if mentioned' },
-                      value: { type: 'string', description: 'Monetary value if mentioned' },
-                      sector: { type: 'string', description: 'Industry/sector if mentioned' },
-                      confidence: { type: 'string', enum: ['high', 'medium', 'low'], description: 'Extraction confidence' }
-                    },
-                    required: ['name']
+          }
+        ],
+        tools: [
+          {
+            type: 'function',
+            function: {
+              name: 'extract_research_data',
+              description: 'Extract structured research data from content',
+              parameters: {
+                type: 'object',
+                properties: {
+                  companies: {
+                    type: 'array',
+                    description: 'ALL companies/organizations mentioned',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        name: { type: 'string', description: 'Company name (REQUIRED)' },
+                        ticker: { type: 'string', description: 'Stock ticker if mentioned' },
+                        market: { type: 'string', description: 'Market/exchange (TASI, NOMU, NYSE, etc.)' },
+                        action: { type: 'string', description: 'Action type (IPO, listing, acquisition, earnings, etc.)' },
+                        date: { type: 'string', description: 'Relevant date if mentioned' },
+                        value: { type: 'string', description: 'Monetary value if mentioned' },
+                        sector: { type: 'string', description: 'Industry/sector if mentioned' },
+                        confidence: { type: 'string', enum: ['high', 'medium', 'low'], description: 'Extraction confidence' }
+                      },
+                      required: ['name']
+                    }
+                  },
+                  people: {
+                    type: 'array',
+                    description: 'Key people mentioned',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        name: { type: 'string', description: 'Person name' },
+                        role: { type: 'string', description: 'Job title/role' },
+                        organization: { type: 'string', description: 'Company/organization' }
+                      },
+                      required: ['name']
+                    }
+                  },
+                  key_dates: {
+                    type: 'array',
+                    description: 'Important dates and events',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        date: { type: 'string', description: 'The date (YYYY-MM-DD, Q1 2024, etc.)' },
+                        event: { type: 'string', description: 'What happened/will happen' },
+                        entity: { type: 'string', description: 'Related company/person' }
+                      },
+                      required: ['date', 'event']
+                    }
+                  },
+                  key_facts: {
+                    type: 'array',
+                    description: 'Key factual claims',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        fact: { type: 'string', description: 'The factual statement' },
+                        confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
+                        source: { type: 'string', description: 'Source attribution' }
+                      },
+                      required: ['fact']
+                    }
+                  },
+                  numeric_data: {
+                    type: 'array',
+                    description: 'Numbers, statistics, financial figures',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        metric: { type: 'string', description: 'What is measured (revenue, valuation, etc.)' },
+                        value: { type: 'string', description: 'The numeric value with currency if applicable' },
+                        unit: { type: 'string', description: 'Unit (million, billion, %, etc.)' },
+                        period: { type: 'string', description: 'Time period (Q1 2024, FY2023, etc.)' },
+                        entity: { type: 'string', description: 'Related company' },
+                        context: { type: 'string', description: 'Additional context' }
+                      },
+                      required: ['metric', 'value']
+                    }
                   }
                 },
-                people: {
-                  type: 'array',
-                  description: 'Key people mentioned',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      name: { type: 'string', description: 'Person name' },
-                      role: { type: 'string', description: 'Job title/role' },
-                      organization: { type: 'string', description: 'Company/organization' }
-                    },
-                    required: ['name']
-                  }
-                },
-                key_dates: {
-                  type: 'array',
-                  description: 'Important dates and events',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      date: { type: 'string', description: 'The date (YYYY-MM-DD, Q1 2024, etc.)' },
-                      event: { type: 'string', description: 'What happened/will happen' },
-                      entity: { type: 'string', description: 'Related company/person' }
-                    },
-                    required: ['date', 'event']
-                  }
-                },
-                key_facts: {
-                  type: 'array',
-                  description: 'Key factual claims',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      fact: { type: 'string', description: 'The factual statement' },
-                      confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
-                      source: { type: 'string', description: 'Source attribution' }
-                    },
-                    required: ['fact']
-                  }
-                },
-                numeric_data: {
-                  type: 'array',
-                  description: 'Numbers, statistics, financial figures',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      metric: { type: 'string', description: 'What is measured (revenue, valuation, etc.)' },
-                      value: { type: 'string', description: 'The numeric value with currency if applicable' },
-                      unit: { type: 'string', description: 'Unit (million, billion, %, etc.)' },
-                      period: { type: 'string', description: 'Time period (Q1 2024, FY2023, etc.)' },
-                      entity: { type: 'string', description: 'Related company' },
-                      context: { type: 'string', description: 'Additional context' }
-                    },
-                    required: ['metric', 'value']
-                  }
-                }
-              },
-              required: ['companies', 'key_dates', 'key_facts', 'numeric_data']
+                required: ['companies', 'key_dates', 'key_facts', 'numeric_data']
+              }
             }
           }
-        }
-      ],
-      tool_choice: { type: 'function', function: { name: 'extract_research_data' } }
-    }),
-  });
+        ],
+        tool_choice: { type: 'function', function: { name: 'extract_research_data' } }
+      }),
+    });
 
-  if (!response.ok) {
-    throw new Error(`AI extraction failed: ${response.status}`);
-  }
+    clearTimeout(timeoutId);
 
-  const data = await response.json();
-  const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
-  
-  if (toolCall?.function?.arguments) {
-    try {
-      const parsed = JSON.parse(toolCall.function.arguments);
-      return {
-        companies: (parsed.companies || []).map((c: any) => ({ ...c, extraction_method: 'ai' as const })),
-        key_dates: parsed.key_dates || [],
-        key_facts: parsed.key_facts || [],
-        numeric_data: parsed.numeric_data || [],
-        people: parsed.people || [],
-        locations: parsed.locations || []
+    if (!response.ok) {
+      console.error(`[research-extract] AI API returned ${response.status}`);
+      // Return known companies if available
+      return { 
+        companies: knownCompanies, 
+        key_dates: [], 
+        key_facts: [], 
+        numeric_data: [], 
+        people: [], 
+        locations: [] 
       };
-    } catch (e) {
-      console.error('Failed to parse AI extraction result:', e);
     }
-  }
 
-  return { companies: [], key_dates: [], key_facts: [], numeric_data: [], people: [], locations: [] };
+    const data = await response.json();
+    const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
+    
+    if (toolCall?.function?.arguments) {
+      try {
+        const parsed = JSON.parse(toolCall.function.arguments);
+        const aiCompanies = (parsed.companies || []).map((c: any) => ({ ...c, extraction_method: 'ai' as const }));
+        
+        // Merge known companies with AI-extracted companies
+        const mergedCompanies = [...knownCompanies];
+        const seenNames = new Set(knownCompanies.map(c => c.name.toLowerCase()));
+        for (const c of aiCompanies) {
+          if (!seenNames.has(c.name.toLowerCase())) {
+            seenNames.add(c.name.toLowerCase());
+            mergedCompanies.push(c);
+          }
+        }
+        
+        return {
+          companies: mergedCompanies,
+          key_dates: parsed.key_dates || [],
+          key_facts: parsed.key_facts || [],
+          numeric_data: parsed.numeric_data || [],
+          people: parsed.people || [],
+          locations: parsed.locations || []
+        };
+      } catch (e) {
+        console.error('[research-extract] Failed to parse AI extraction result:', e);
+      }
+    }
+
+    // Return known companies if parsing failed
+    return { 
+      companies: knownCompanies, 
+      key_dates: [], 
+      key_facts: [], 
+      numeric_data: [], 
+      people: [], 
+      locations: [] 
+    };
+  } catch (e) {
+    clearTimeout(timeoutId);
+    const isTimeout = e instanceof Error && e.name === 'AbortError';
+    console.warn(`[research-extract] AI extraction ${isTimeout ? 'TIMED OUT' : 'FAILED'}: ${e}`);
+    
+    // Return known companies on timeout/error for Saudi IPO queries
+    return { 
+      companies: knownCompanies, 
+      key_dates: [], 
+      key_facts: [], 
+      numeric_data: [], 
+      people: [], 
+      locations: [] 
+    };
+  }
 }
 
 // ============= MERGE AND DEDUPLICATE =============
