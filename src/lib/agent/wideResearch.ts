@@ -133,29 +133,42 @@ function decomposeQuery(query: string): string[] {
     }
   });
   
-  // IPO-specific sub-queries - CRITICAL for IPO research
+// IPO-specific sub-queries - CRITICAL for IPO research
   if (/\b(ipo|ipos|initial\s+public\s+offering|listing|listings|going\s+public)\b/i.test(queryLower)) {
-    // Add specific IPO-focused searches
-    subQueries.push(`upcoming IPO companies list 2024 2025`);
-    subQueries.push(`IPO pipeline companies names`);
-    subQueries.push(`companies planning IPO filing`);
+    // Add specific IPO-focused searches with explicit company name requests
+    subQueries.push(`upcoming IPO companies list 2024 2025 names`);
+    subQueries.push(`IPO pipeline companies names list`);
+    subQueries.push(`companies planning IPO filing names`);
+    subQueries.push(`recent IPO announced company names`);
+    subQueries.push(`IPO approved companies 2024 2025`);
     
-    // Saudi-specific IPO queries
+    // Saudi-specific IPO queries with enhanced entity extraction
     if (/\b(saudi|ksa|tadawul|tasi|nomu|riyadh)\b/i.test(queryLower)) {
-      subQueries.push(`Saudi Arabia upcoming IPO 2024 2025 companies`);
-      subQueries.push(`TASI new listings companies 2024 2025`);
-      subQueries.push(`Nomu parallel market IPO companies`);
-      subQueries.push(`Tadawul upcoming IPO company names`);
-      subQueries.push(`Saudi CMA approved IPO companies`);
-      subQueries.push(`Saudi IPO pipeline valuation companies`);
-      subQueries.push(`site:tadawul.com.sa IPO`);
-      subQueries.push(`site:cma.org.sa new listings`);
+      subQueries.push(`Saudi Arabia upcoming IPO 2024 2025 company names list`);
+      subQueries.push(`TASI new listings companies 2024 2025 names`);
+      subQueries.push(`Nomu parallel market IPO companies list`);
+      subQueries.push(`Tadawul upcoming IPO company names list`);
+      subQueries.push(`Saudi CMA approved IPO companies names`);
+      subQueries.push(`Saudi IPO pipeline valuation companies list`);
+      subQueries.push(`Saudi Arabia stock market new company listings`);
+      subQueries.push(`سوق الأسهم السعودي اكتتابات قادمة شركات`);
+      // Official source searches
+      subQueries.push(`site:tadawul.com.sa IPO companies`);
+      subQueries.push(`site:cma.org.sa approved listings companies`);
+      subQueries.push(`site:argaam.com Saudi IPO companies`);
+      subQueries.push(`site:reuters.com Saudi Arabia IPO`);
     }
     
     entities.forEach(entity => {
       subQueries.push(`${entity} IPO date valuation`);
       subQueries.push(`${entity} stock listing announcement`);
     });
+  }
+  
+  // Company-specific sub-queries
+  if (/\b(companies|company|firms?|corporations?|entities|businesses)\b/i.test(queryLower)) {
+    subQueries.push(`${query} company names list`);
+    subQueries.push(`${query} specific companies`);
   }
   
   // Domain-specific sub-queries
@@ -556,11 +569,21 @@ export async function executeWideResearch(
   
   let report: string;
   
+  // Check if this is a company-focused query
+  const isIPOQuery = /\b(ipo|ipos|initial\s+public\s+offering|listing|listings|going\s+public)\b/i.test(query);
+  const isCompanyQuery = /\b(companies|company|firms?|corporations?|entities|businesses)\b/i.test(query);
+  const isEntityQuery = isIPOQuery || isCompanyQuery;
+  
   if (aggregatedSources.length === 0) {
     // NO DATA AVAILABLE - do NOT synthesize, return empty report
     report = generateEmptyDataReport(query, subResults);
   } else {
     report = await generateWideResearchReport(query, aggregatedSources, aggregatedData, verifications);
+    
+    // POST-PROCESSING VALIDATION: Ensure company table exists for entity queries
+    if (isEntityQuery) {
+      report = enforceCompanyTableInReport(report, aggregatedData, aggregatedSources);
+    }
   }
   
   timing.synthesis = Date.now() - synthStart;
@@ -749,6 +772,113 @@ function generateCompaniesTable(companies: ExtractedContent['companies']): strin
   });
   
   return table;
+}
+
+// POST-PROCESSING: Enforce company table in reports for entity queries
+function enforceCompanyTableInReport(report: string, extractedData: ExtractedContent, sources: WebSource[]): string {
+  const hasCompaniesSection = /##\s*Companies?\s*Identified/i.test(report);
+  
+  // If report already has a proper companies section, validate it
+  if (hasCompaniesSection) {
+    // Check if the section has actual company rows or just says "various companies"
+    const companiesMatch = report.match(/##\s*Companies?\s*Identified[\s\S]*?(?=##|$)/i);
+    if (companiesMatch) {
+      const section = companiesMatch[0];
+      const hasTableRows = (section.match(/\|[^|]+\|[^|]+\|/g) || []).length > 2;
+      const hasBadPhrasing = /various\s+companies|several\s+(firms?|companies|entities)|multiple\s+organizations/i.test(section);
+      
+      if (hasTableRows && !hasBadPhrasing) {
+        return report; // Section looks good
+      }
+    }
+  }
+  
+  // If we have extracted companies but they're not in the report, insert them
+  if (extractedData.companies.length > 0) {
+    const companiesTable = generateCompaniesTable(extractedData.companies);
+    
+    // Try to insert after the title or Executive Summary heading
+    const execSummaryMatch = report.match(/##\s*Executive\s*Summary/i);
+    if (execSummaryMatch) {
+      const insertPoint = report.indexOf(execSummaryMatch[0]);
+      return report.slice(0, insertPoint) + companiesTable + '\n\n' + report.slice(insertPoint);
+    }
+    
+    // Otherwise insert after the first heading
+    const firstHeadingMatch = report.match(/^#\s+.+$/m);
+    if (firstHeadingMatch) {
+      const insertPoint = report.indexOf(firstHeadingMatch[0]) + firstHeadingMatch[0].length;
+      return report.slice(0, insertPoint) + '\n\n' + companiesTable + report.slice(insertPoint);
+    }
+    
+    // Last resort: prepend
+    return companiesTable + '\n\n' + report;
+  }
+  
+  // If no companies were extracted, try regex extraction from raw source content
+  const allContent = sources.map(s => s.content).join('\n');
+  const regexCompanies = extractCompanyNamesFromContent(allContent);
+  
+  if (regexCompanies.length > 0) {
+    console.log(`[WideResearch] Post-processing found ${regexCompanies.length} companies via regex`);
+    
+    let table = `## Companies Identified\n\n`;
+    table += `> ⚠️ *These companies were extracted via pattern matching. Verify details in the sources.*\n\n`;
+    table += `| Company Name | Status | Notes |\n`;
+    table += `|--------------|--------|-------|\n`;
+    regexCompanies.forEach(name => {
+      table += `| ${name} | Mentioned in sources | See source content for details |\n`;
+    });
+    
+    // Insert after title
+    const firstHeadingMatch = report.match(/^#\s+.+$/m);
+    if (firstHeadingMatch) {
+      const insertPoint = report.indexOf(firstHeadingMatch[0]) + firstHeadingMatch[0].length;
+      return report.slice(0, insertPoint) + '\n\n' + table + report.slice(insertPoint);
+    }
+    
+    return table + '\n\n' + report;
+  }
+  
+  // No companies found at all - add explicit warning
+  if (!hasCompaniesSection) {
+    const warning = `## Companies Identified\n\n**⚠️ No specific company names were identified in the retrieved sources.**\n\nConsider:\n- Refining search terms with specific company names\n- Checking official sources directly (e.g., stock exchange websites)\n- Searching for recent news about specific entities\n\n`;
+    
+    const firstHeadingMatch = report.match(/^#\s+.+$/m);
+    if (firstHeadingMatch) {
+      const insertPoint = report.indexOf(firstHeadingMatch[0]) + firstHeadingMatch[0].length;
+      return report.slice(0, insertPoint) + '\n\n' + warning + report.slice(insertPoint);
+    }
+  }
+  
+  return report;
+}
+
+// Extract company names using regex patterns
+function extractCompanyNamesFromContent(content: string): string[] {
+  const companies = new Set<string>();
+  
+  const patterns = [
+    /\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)\s+(?:Company|Corporation|Corp|Inc|Ltd|LLC|Group|Holdings|Holding)\b/g,
+    /\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)\s+(?:IPO|listing|files?\s+for\s+IPO|plans?\s+to\s+list)\b/gi,
+    /\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)\s*\(([A-Z]{2,5}|\d{4})\)/g,
+  ];
+  
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(content)) !== null) {
+      const name = match[1]?.trim();
+      if (name && name.length > 3 && name.length < 50) {
+        const lowerName = name.toLowerCase();
+        if (!['the', 'this', 'that', 'which', 'where', 'when', 'what', 'how', 'new', 'old', 'first', 'last', 'said', 'says', 'according'].includes(lowerName)) {
+          companies.add(name);
+        }
+      }
+    }
+    pattern.lastIndex = 0;
+  }
+  
+  return Array.from(companies).slice(0, 20); // Limit to 20 companies
 }
 
 // Generate report from extracted data without AI (fallback)
