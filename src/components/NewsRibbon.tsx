@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/popover';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { useNewsMonitor, NewsItem } from '@/hooks/useNewsMonitor';
+import { useNewsSourceSettings } from '@/hooks/useNewsSourceSettings';
 import { cn } from '@/lib/utils';
 import { format, isAfter, isBefore, startOfDay, endOfDay } from 'date-fns';
 
@@ -120,6 +121,8 @@ export function NewsRibbon({ filterState }: NewsRibbonProps) {
     markAsRead,
   } = useNewsMonitor();
 
+  const { isSourceAllowed } = useNewsSourceSettings();
+
   const [isExpanded, setIsExpanded] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -135,8 +138,13 @@ export function NewsRibbon({ filterState }: NewsRibbonProps) {
     return () => stopMonitoring();
   }, []);
 
-  // Filter news based on current filters
+  // Filter news based on current filters AND source settings
   const filteredNews = news.filter(item => {
+    // Source whitelist/blacklist filter
+    if (!isSourceAllowed(item.source)) {
+      return false;
+    }
+    
     // Category filter
     if (!filters.categories.includes('all') && !filters.categories.includes(item.category)) {
       return false;
