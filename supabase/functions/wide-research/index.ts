@@ -246,6 +246,104 @@ async function fetchWithTimeout(
   }
 }
 
+// ============ REAL NEWS (RSS) ============
+function stripHtml(input: string): string {
+  return input
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function toIsoDateOrNow(s?: string | null): string {
+  if (!s) return new Date().toISOString();
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return new Date().toISOString();
+  return d.toISOString();
+}
+
+async function searchNewsRss(query: string, limit: number = 10): Promise<WebSource[]> {
+  // NOTE: RSS feeds return real headlines/links; we do not generate news with an LLM.
+  const rssUrls = [
+    `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`,
+    // Regional business feeds (best-effort; may occasionally rate-limit)
+    'https://www.argaam.com/en/rss/ho-main-news?sectionid=1524',
+    'https://www.zawya.com/en/rss/mena-business.xml',
+  ];
+
+  console.log('[wide-research] RSS search:', { query: query.slice(0, 80), rssUrlsCount: rssUrls.length });
+
+  const responses = await Promise.all(
+    rssUrls.map((u) => fetchWithTimeout(u, 10_000))
+  );
+
+  const out: WebSource[] = [];
+
+  for (let i = 0; i < responses.length; i++) {
+    const resp = responses[i];
+    const rssUrl = rssUrls[i];
+    if (!resp.ok) {
+      console.log('[wide-research] RSS fetch failed:', { rssUrl, status: resp.status, error: resp.error });
+      continue;
+    }
+
+    const doc = new DOMParser().parseFromString(resp.text, 'text/xml');
+    if (!doc) continue;
+
+    const items = doc.querySelectorAll('item');
+    for (const item of items) {
+      if (out.length >= limit) break;
+
+      const titleRaw = item.querySelector('title')?.textContent?.trim() || '';
+      const link = item.querySelector('link')?.textContent?.trim() || '';
+      const pubDateRaw = item.querySelector('pubDate')?.textContent?.trim();
+      const descriptionRaw = item.querySelector('description')?.textContent || '';
+
+      const sourceEl = item.querySelector('source');
+      const sourceName = sourceEl?.textContent?.trim() || '';
+      const sourceUrl = sourceEl?.getAttribute('url') || '';
+
+      if (!titleRaw || !link || !link.startsWith('http')) continue;
+
+      // Google News titles often come as: "Headline - Source"
+      let title = titleRaw;
+      if (sourceName && titleRaw.endsWith(` - ${sourceName}`)) {
+        title = titleRaw.slice(0, titleRaw.length - (` - ${sourceName}`).length).trim();
+      }
+
+      const snippet = stripHtml(descriptionRaw).slice(0, 280);
+
+      // Prefer source URL for domain when present (Google News links are redirects)
+      let domain = 'unknown';
+      try {
+        domain = new URL(sourceUrl || link).hostname.replace('www.', '');
+      } catch {
+        // ignore
+      }
+
+      out.push({
+        url: link,
+        title,
+        domain,
+        content: snippet,
+        markdown: snippet,
+        snippet,
+        fetchedAt: toIsoDateOrNow(pubDateRaw),
+        reliability: 0.9,
+        source: sourceName || domain,
+        relevanceScore: 0.75 + Math.random() * 0.2,
+        status: 'scraped',
+      });
+    }
+
+    if (out.length >= limit) break;
+  }
+
+  console.log('[wide-research] RSS results:', { count: out.length });
+  return out;
+}
+
 // Fallback DuckDuckGo search (may not work due to bot blocking)
 async function searchDuckDuckGoFallback(query: string): Promise<WebSource[]> {
   const results: WebSource[] = [];
@@ -416,10 +514,101 @@ serve(async (req) => {
 
     console.log('[wide-research] Starting:', { query: query.slice(0, 80), isNewsMode, maxResults });
 
-    // Try AI-powered search first (primary method)
-    let sources = await searchWithAI(query, maxResults, isNewsMode);
+    const subQueries = body.items && body.items.length > 0 
+      ? body.items 
+      : decomposeQuery(query);
 
-    // If AI search returned results, we're done
+    let sources: WebSource[] = [];
+
+    // NEWS MODE: Fetch real headlines/links via RSS (no LLM-generated news)
+    if (isNewsMode) {
+      console.log('[wide-research] News mode: trying RSS sources...');
+
+      const rssAll: WebSource[] = [];
+      for (const sq of subQueries.slice(0, 3)) {
+        const rssResults = await searchNewsRss(sq, Math.min(maxResults, 15));
+        rssAll.push(...rssResults);
+      }
+
+      // Deduplicate
+      const seen = new Set<string>();
+      sources = rssAll.filter(s => {
+        if (seen.has(s.url)) return false;
+        seen.add(s.url);
+        return true;
+      }).slice(0, maxResults);
+
+      if (sources.length > 0) {
+        const totalTime = Date.now() - startTime;
+        console.log('[wide-research] News RSS complete:', { totalSources: sources.length, time: totalTime });
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            searchResults: sources,
+            results: sources,
+            metadata: {
+              query,
+              totalSources: sources.length,
+              searchMethod: 'google-news-rss',
+              processingTimeMs: totalTime,
+            },
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      console.log('[wide-research] RSS empty, trying DuckDuckGo fallback...');
+      const ddgAll: WebSource[] = [];
+      for (const sq of subQueries.slice(0, 3)) {
+        const results = await searchDuckDuckGoFallback(sq);
+        ddgAll.push(...results);
+      }
+
+      const ddgSeen = new Set<string>();
+      sources = ddgAll.filter(s => {
+        if (ddgSeen.has(s.url)) return false;
+        ddgSeen.add(s.url);
+        return true;
+      }).slice(0, maxResults);
+
+      for (let i = 0; i < Math.min(sources.length, 5); i++) {
+        const content = await scrapeContent(sources[i].url);
+        if (content && content.length > 100) {
+          sources[i].content = content;
+          sources[i].markdown = content;
+          sources[i].status = 'scraped';
+          sources[i].relevanceScore = Math.min(0.95, (sources[i].relevanceScore || 0.7) + 0.1);
+        }
+      }
+
+      const totalTime = Date.now() - startTime;
+
+      console.log('[wide-research] News complete:', {
+        totalSources: sources.length,
+        searchMethod: sources.length > 0 ? 'duckduckgo-fallback' : 'none',
+        time: totalTime,
+      });
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          searchResults: sources,
+          results: sources,
+          metadata: {
+            query,
+            totalSources: sources.length,
+            searchMethod: sources.length > 0 ? 'duckduckgo-fallback' : 'none',
+            processingTimeMs: totalTime,
+          },
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // RESEARCH MODE: AI-assisted search, then fallback scraping
+    sources = await searchWithAI(query, maxResults, false);
+
     if (sources.length > 0) {
       const totalTime = Date.now() - startTime;
       console.log('[wide-research] AI search complete:', { totalSources: sources.length, time: totalTime });
@@ -440,15 +629,9 @@ serve(async (req) => {
       );
     }
 
-    // Fallback: Try DuckDuckGo scraping
     console.log('[wide-research] AI search empty, trying DuckDuckGo fallback...');
-    
-    const subQueries = body.items && body.items.length > 0 
-      ? body.items 
-      : decomposeQuery(query);
 
     const allResults: WebSource[] = [];
-    
     for (const sq of subQueries.slice(0, 3)) {
       const results = await searchDuckDuckGoFallback(sq);
       allResults.push(...results);
