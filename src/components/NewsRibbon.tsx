@@ -24,10 +24,15 @@ import {
   Banknote,
   Home,
   Cpu,
-  Languages
+  Languages,
+  Settings,
+  Search,
+  X
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { 
   Tooltip,
   TooltipContent,
@@ -38,6 +43,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
 import { useNewsMonitor, NewsItem, NewsCategory as NewsCategoryType } from '@/hooks/useNewsMonitor';
 import { useNewsSourceSettings } from '@/hooks/useNewsSourceSettings';
 import { useNewsNotifications } from '@/hooks/useNewsNotifications';
@@ -184,9 +196,10 @@ export function NewsFilter({ filterState }: NewsFilterProps) {
 
 interface NewsRibbonProps {
   filterState?: ReturnType<typeof useNewsFilterState>;
+  onResearchNews?: (query: string) => void;
 }
 
-export function NewsRibbon({ filterState }: NewsRibbonProps) {
+export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
   const {
     news,
     isMonitoring,
@@ -199,7 +212,14 @@ export function NewsRibbon({ filterState }: NewsRibbonProps) {
   } = useNewsMonitor();
 
   const { isSourceAllowed } = useNewsSourceSettings();
-  const { notifyNewItems } = useNewsNotifications();
+  const { 
+    notifyNewItems, 
+    settings: notificationSettings, 
+    toggleNotifications, 
+    toggleCategory: toggleNotificationCategory,
+    toggleSound,
+    permission 
+  } = useNewsNotifications();
   const { language, setLanguage } = useLanguage();
 
   const languages: { code: Language; label: string; flag: string }[] = [
@@ -208,10 +228,12 @@ export function NewsRibbon({ filterState }: NewsRibbonProps) {
   ];
 
   const [isExpanded, setIsExpanded] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<NewsItem | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
   const previousNewsRef = useRef<Set<string>>(new Set());
 
   const localFilterState = useNewsFilterState();
-  const { filters } = filterState || localFilterState;
+  const { filters, toggleCategory, clearFilters, hasActiveFilters } = filterState || localFilterState;
 
   // Auto-start monitoring on mount
   useEffect(() => {
@@ -253,9 +275,22 @@ export function NewsRibbon({ filterState }: NewsRibbonProps) {
     return `${Math.floor(seconds / 86400)}d`;
   };
 
-  const handleNewsClick = (item: NewsItem) => {
+  const handleNewsClick = (item: NewsItem, openExternal = true) => {
     markAsRead(item.id);
-    window.open(item.url, '_blank', 'noopener,noreferrer');
+    if (openExternal) {
+      window.open(item.url, '_blank', 'noopener,noreferrer');
+    }
+  };
+
+  const handleResearchClick = (item: NewsItem) => {
+    if (onResearchNews) {
+      onResearchNews(item.title);
+    }
+  };
+
+  const handleItemExpand = (item: NewsItem) => {
+    markAsRead(item.id);
+    setSelectedItem(selectedItem?.id === item.id ? null : item);
   };
 
   // Empty state
@@ -424,6 +459,71 @@ export function NewsRibbon({ filterState }: NewsRibbonProps) {
               </TooltipContent>
             </Tooltip>
 
+            {/* Settings */}
+            <Popover open={showSettings} onOpenChange={setShowSettings}>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-7 w-7">
+                  <Settings className={cn("w-3 h-3", hasActiveFilters && "text-primary")} />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-64 p-3">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-medium">News Settings</h4>
+                    {hasActiveFilters && (
+                      <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={clearFilters}>
+                        Clear filters
+                      </Button>
+                    )}
+                  </div>
+                  
+                  {/* Category Filters */}
+                  <div className="space-y-2">
+                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Categories</Label>
+                    <div className="flex flex-wrap gap-1">
+                      {Object.entries(categoryLabels).map(([key, label]) => (
+                        <button
+                          key={key}
+                          onClick={() => toggleCategory(key as NewsCategory)}
+                          className={cn(
+                            "px-2 py-0.5 text-[10px] rounded-full border transition-all",
+                            filters.categories.includes(key as NewsCategory) || filters.categories.includes('all')
+                              ? categoryColors[key as NewsCategoryType]
+                              : "border-border text-muted-foreground hover:border-primary/50"
+                          )}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Notification Settings */}
+                  <div className="space-y-2 pt-2 border-t border-border/50">
+                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Notifications</Label>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs">Push notifications</span>
+                      <Switch 
+                        checked={notificationSettings.enabled} 
+                        onCheckedChange={toggleNotifications}
+                        disabled={permission === 'denied'}
+                      />
+                    </div>
+                    {permission === 'denied' && (
+                      <p className="text-[10px] text-destructive">Notifications blocked by browser</p>
+                    )}
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs">Sound alerts</span>
+                      <Switch 
+                        checked={notificationSettings.soundEnabled} 
+                        onCheckedChange={toggleSound}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+
             {/* Language Toggle */}
             <Popover>
               <PopoverTrigger asChild>
@@ -472,55 +572,116 @@ export function NewsRibbon({ filterState }: NewsRibbonProps) {
 
                 <div className="grid gap-1.5">
                   {filteredNews.slice(0, 20).map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => handleNewsClick(item)}
-                      className={cn(
-                        "flex items-start gap-2 p-2 rounded-md text-left transition-all",
-                        "hover:bg-muted/50 border border-transparent hover:border-border/50",
-                        item.isNew && "bg-primary/5 border-primary/20"
-                      )}
-                    >
-                      <span className={cn(
-                        "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border shrink-0 mt-0.5",
-                        categoryColors[item.category]
-                      )}>
-                        {categoryIcons[item.category]}
-                        {categoryLabels[item.category]}
-                      </span>
-                      
-                      <div className="flex-1 min-w-0">
-                        <p className={cn(
-                          "text-xs leading-tight",
-                          item.isNew ? "text-foreground font-medium" : "text-muted-foreground"
-                        )}>
-                          {item.title}
-                        </p>
-                        {item.snippet && (
-                          <p className="text-[10px] text-muted-foreground/60 mt-0.5 line-clamp-1">
-                            {item.snippet}
-                          </p>
+                    <div key={item.id} className="space-y-1">
+                      <button
+                        onClick={() => handleItemExpand(item)}
+                        className={cn(
+                          "w-full flex items-start gap-2 p-2 rounded-md text-left transition-all",
+                          "hover:bg-muted/50 border border-transparent hover:border-border/50",
+                          item.isNew && "bg-primary/5 border-primary/20",
+                          selectedItem?.id === item.id && "bg-muted/60 border-border"
                         )}
-                        <div className="flex items-center gap-2 mt-1 text-[10px] text-muted-foreground/50">
-                          <span>{item.source}</span>
-                          {item.country && (
-                            <>
-                              <span>•</span>
-                              <span>{item.country}</span>
-                            </>
+                      >
+                        <span className={cn(
+                          "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border shrink-0 mt-0.5",
+                          categoryColors[item.category]
+                        )}>
+                          {categoryIcons[item.category]}
+                          {categoryLabels[item.category]}
+                        </span>
+                        
+                        <div className="flex-1 min-w-0">
+                          <p className={cn(
+                            "text-xs leading-tight",
+                            item.isNew ? "text-foreground font-medium" : "text-muted-foreground"
+                          )}>
+                            {item.title}
+                          </p>
+                          {item.snippet && selectedItem?.id !== item.id && (
+                            <p className="text-[10px] text-muted-foreground/60 mt-0.5 line-clamp-1">
+                              {item.snippet}
+                            </p>
                           )}
-                          <span>•</span>
-                          <span>{formatTimeAgo(item.timestamp)}</span>
-                          {item.isOfficial && (
-                            <Badge variant="outline" className="h-3.5 px-1 text-[8px] border-green-500/30 text-green-500">
-                              Official
-                            </Badge>
-                          )}
+                          <div className="flex items-center gap-2 mt-1 text-[10px] text-muted-foreground/50">
+                            <span>{item.source}</span>
+                            {item.country && (
+                              <>
+                                <span>•</span>
+                                <span>{item.country}</span>
+                              </>
+                            )}
+                            <span>•</span>
+                            <span>{formatTimeAgo(item.timestamp)}</span>
+                            {item.isOfficial && (
+                              <Badge variant="outline" className="h-3.5 px-1 text-[8px] border-green-500/30 text-green-500">
+                                Official
+                              </Badge>
+                            )}
+                          </div>
                         </div>
-                      </div>
+                        
+                        {selectedItem?.id === item.id ? (
+                          <ChevronUp className="w-3 h-3 text-muted-foreground shrink-0 mt-0.5" />
+                        ) : (
+                          <ChevronDown className="w-3 h-3 text-muted-foreground/40 shrink-0 mt-0.5" />
+                        )}
+                      </button>
                       
-                      <ExternalLink className="w-3 h-3 text-muted-foreground/40 shrink-0 mt-0.5" />
-                    </button>
+                      {/* Expanded details */}
+                      <AnimatePresence>
+                        {selectedItem?.id === item.id && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.15 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="ml-8 p-3 rounded-md bg-muted/30 border border-border/50 space-y-2">
+                              {item.snippet && (
+                                <p className="text-xs text-muted-foreground leading-relaxed">
+                                  {item.snippet}
+                                </p>
+                              )}
+                              
+                              {item.companies && item.companies.length > 0 && (
+                                <div className="flex items-center gap-1 flex-wrap">
+                                  <span className="text-[10px] text-muted-foreground/60">Companies:</span>
+                                  {item.companies.map((c, i) => (
+                                    <Badge key={i} variant="secondary" className="text-[10px] h-4 px-1.5">
+                                      {c}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              )}
+                              
+                              <div className="flex items-center gap-2 pt-1">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-6 text-[10px] gap-1"
+                                  onClick={() => handleNewsClick(item, true)}
+                                >
+                                  <ExternalLink className="w-3 h-3" />
+                                  Read Article
+                                </Button>
+                                {onResearchNews && (
+                                  <Button
+                                    size="sm"
+                                    variant="default"
+                                    className="h-6 text-[10px] gap-1"
+                                    onClick={() => handleResearchClick(item)}
+                                  >
+                                    <Search className="w-3 h-3" />
+                                    Deep Research
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
                   ))}
                 </div>
               </div>

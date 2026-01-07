@@ -375,7 +375,12 @@ const Index = () => {
           <TopNavigation newsFilterState={newsFilterState} />
           
           {/* News Monitoring Ribbon */}
-          <NewsRibbon filterState={newsFilterState} />
+          <NewsRibbon 
+            filterState={newsFilterState} 
+            onResearchNews={(query) => {
+              handleSearch(query);
+            }}
+          />
           
           {/* Main Content Area */}
           <main className="flex-1 overflow-auto">
