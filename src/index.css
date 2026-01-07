@@ -2,6 +2,32 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Argaam-style news ticker animation */
+@keyframes scroll-news {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.news-ticker {
+  animation: scroll-news 60s linear infinite;
+}
+
+.news-ticker:hover {
+  animation-play-state: paused;
+}
+
+.news-ticker-fast {
+  animation: scroll-news 30s linear infinite;
+}
+
+.news-ticker-slow {
+  animation: scroll-news 90s linear infinite;
+}
+
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Sora:wght@300;400;500;600;700&display=swap');
 
 @layer base {

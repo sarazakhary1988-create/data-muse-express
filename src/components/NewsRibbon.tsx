@@ -10,17 +10,15 @@ import {
   AlertCircle,
   Building2,
   Globe,
-  ChevronRight,
+  ChevronDown,
+  ChevronUp,
   RefreshCw,
   Sparkles,
-  Calendar,
-  X,
   Handshake,
   FileText,
   Rocket,
   UserPlus,
   Landmark,
-  MapPin,
   Gavel,
   Target,
   Banknote,
@@ -40,13 +38,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { useNewsMonitor, NewsItem, NewsCategory as NewsCategoryType } from '@/hooks/useNewsMonitor';
 import { useNewsSourceSettings } from '@/hooks/useNewsSourceSettings';
 import { useNewsNotifications } from '@/hooks/useNewsNotifications';
 import { useLanguage, Language } from '@/lib/i18n/LanguageContext';
 import { cn } from '@/lib/utils';
-import { format, isAfter, isBefore, startOfDay, endOfDay } from 'date-fns';
+import { isBefore, isAfter, startOfDay, endOfDay } from 'date-fns';
 
 const categoryIcons: Record<NewsCategoryType, React.ReactNode> = {
   ipo: <Building2 className="w-3 h-3" />,
@@ -88,15 +85,15 @@ const categoryLabels: Record<NewsCategoryType, string> = {
   regulatory: 'Regulatory',
   expansion: 'Expansion',
   contract: 'Contract',
-  joint_venture: 'JV/Partnership',
+  joint_venture: 'JV',
   acquisition: 'M&A',
-  appointment: 'Appointments',
-  cma_violation: 'CMA Violation',
+  appointment: 'Exec',
+  cma_violation: 'CMA',
   vision_2030: 'Vision 2030',
   banking: 'Banking',
   real_estate: 'Real Estate',
-  tech_funding: 'Tech Funding',
-  general: 'General',
+  tech_funding: 'Tech',
+  general: 'News',
 };
 
 export type NewsCategory = NewsCategoryType | 'all';
@@ -107,7 +104,6 @@ interface NewsFilterState {
   dateTo: Date | undefined;
 }
 
-// Export filter state for TopNavigation to use
 export const useNewsFilterState = () => {
   const [filters, setFilters] = useState<NewsFilterState>({
     categories: ['all'],
@@ -149,6 +145,43 @@ export const useNewsFilterState = () => {
   return { filters, toggleCategory, setDateRange, clearFilters, hasActiveFilters };
 };
 
+// News category filter chips for TopNavigation
+interface NewsFilterProps {
+  filterState: ReturnType<typeof useNewsFilterState>;
+}
+
+export function NewsFilter({ filterState }: NewsFilterProps) {
+  const { filters, toggleCategory } = filterState;
+  
+  const categories: { key: NewsCategory; label: string }[] = [
+    { key: 'all', label: 'All' },
+    { key: 'ipo', label: 'IPO' },
+    { key: 'acquisition', label: 'M&A' },
+    { key: 'contract', label: 'Contracts' },
+    { key: 'vision_2030', label: 'Vision 2030' },
+    { key: 'cma_violation', label: 'CMA' },
+  ];
+
+  return (
+    <div className="flex items-center gap-1">
+      {categories.map((cat) => (
+        <button
+          key={cat.key}
+          onClick={() => toggleCategory(cat.key)}
+          className={cn(
+            "px-2 py-0.5 text-[10px] rounded-full transition-all",
+            filters.categories.includes(cat.key)
+              ? "bg-primary text-primary-foreground"
+              : "bg-muted/50 text-muted-foreground hover:bg-muted"
+          )}
+        >
+          {cat.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 interface NewsRibbonProps {
   filterState?: ReturnType<typeof useNewsFilterState>;
 }
@@ -166,8 +199,8 @@ export function NewsRibbon({ filterState }: NewsRibbonProps) {
   } = useNewsMonitor();
 
   const { isSourceAllowed } = useNewsSourceSettings();
-  const { notifyNewItems, settings: notificationSettings, permission } = useNewsNotifications();
-  const { language, setLanguage, t } = useLanguage();
+  const { notifyNewItems } = useNewsNotifications();
+  const { language, setLanguage } = useLanguage();
 
   const languages: { code: Language; label: string; flag: string }[] = [
     { code: 'en', label: 'English', flag: '🇺🇸' },
@@ -175,12 +208,8 @@ export function NewsRibbon({ filterState }: NewsRibbonProps) {
   ];
 
   const [isExpanded, setIsExpanded] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [scrollPosition, setScrollPosition] = useState(0);
   const previousNewsRef = useRef<Set<string>>(new Set());
 
-  // Use provided filter state or create local one
   const localFilterState = useNewsFilterState();
   const { filters } = filterState || localFilterState;
 
@@ -194,66 +223,34 @@ export function NewsRibbon({ filterState }: NewsRibbonProps) {
   useEffect(() => {
     if (news.length === 0) return;
     
-    // Find truly new items (not seen before)
     const newItems = news.filter(item => {
       const isNew = !previousNewsRef.current.has(item.id);
       return isNew && item.isNew;
     });
 
     if (newItems.length > 0) {
-      // Send notifications for high-priority items
       notifyNewItems(newItems);
-      
-      // Update seen items
       news.forEach(item => previousNewsRef.current.add(item.id));
     }
   }, [news, notifyNewItems]);
 
-  // Filter news based on current filters AND source settings
+  // Filter news
   const filteredNews = news.filter(item => {
-    // Source whitelist/blacklist filter
-    if (!isSourceAllowed(item.source)) {
-      return false;
-    }
-    
-    // Category filter
-    if (!filters.categories.includes('all') && !filters.categories.includes(item.category)) {
-      return false;
-    }
-    
-    // Date range filter
-    if (filters.dateFrom && isBefore(item.timestamp, startOfDay(filters.dateFrom))) {
-      return false;
-    }
-    if (filters.dateTo && isAfter(item.timestamp, endOfDay(filters.dateTo))) {
-      return false;
-    }
-    
+    if (!isSourceAllowed(item.source)) return false;
+    if (!filters.categories.includes('all') && !filters.categories.includes(item.category)) return false;
+    if (filters.dateFrom && isBefore(item.timestamp, startOfDay(filters.dateFrom))) return false;
+    if (filters.dateTo && isAfter(item.timestamp, endOfDay(filters.dateTo))) return false;
     return true;
   });
-
-  // Auto-scroll animation
-  useEffect(() => {
-    if (isPaused || isExpanded || filteredNews.length === 0) return;
-
-    const interval = setInterval(() => {
-      setScrollPosition(prev => {
-        const maxScroll = filteredNews.length * 320;
-        return prev >= maxScroll ? 0 : prev + 1;
-      });
-    }, 30);
-
-    return () => clearInterval(interval);
-  }, [isPaused, isExpanded, filteredNews.length]);
 
   const newItemsCount = filteredNews.filter(n => n.isNew).length;
 
   const formatTimeAgo = (date: Date) => {
     const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
     if (seconds < 60) return 'Just now';
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-    return `${Math.floor(seconds / 86400)}d ago`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
+    return `${Math.floor(seconds / 86400)}d`;
   };
 
   const handleNewsClick = (item: NewsItem) => {
@@ -261,26 +258,27 @@ export function NewsRibbon({ filterState }: NewsRibbonProps) {
     window.open(item.url, '_blank', 'noopener,noreferrer');
   };
 
+  // Empty state
   if (filteredNews.length === 0 && !isLoading) {
     return (
-      <div className="fixed top-14 left-0 right-0 z-30 bg-background/80 backdrop-blur-sm border-b border-border/50">
-        <div className="flex items-center justify-center gap-3 py-2 px-4">
+      <div className="fixed top-14 left-0 right-0 z-30 h-10 bg-background/95 backdrop-blur-sm border-b border-border/50">
+        <div className="flex items-center justify-center gap-3 h-full px-4">
           <Newspaper className="w-4 h-4 text-muted-foreground" />
-          <span className="text-sm text-muted-foreground">
+          <span className="text-xs text-muted-foreground">
             {news.length > 0 
               ? 'No news matching filters' 
               : isMonitoring 
-                ? 'Monitoring for IPO news...' 
-                : 'Start monitoring to see latest news'}
+                ? 'Loading news feed...' 
+                : 'Start monitoring for news'}
           </span>
-          {isLoading && <RefreshCw className="w-4 h-4 animate-spin text-primary" />}
+          {isLoading && <RefreshCw className="w-3 h-3 animate-spin text-primary" />}
           <Button
             variant="ghost"
             size="sm"
             onClick={isMonitoring ? stopMonitoring : startMonitoring}
-            className="ml-2"
+            className="h-6 px-2"
           >
-            {isMonitoring ? <BellOff className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
+            {isMonitoring ? <BellOff className="w-3 h-3" /> : <Bell className="w-3 h-3" />}
           </Button>
         </div>
       </div>
@@ -289,78 +287,90 @@ export function NewsRibbon({ filterState }: NewsRibbonProps) {
 
   return (
     <>
-      {/* News Ribbon Bar */}
+      {/* Compact News Ribbon */}
       <div 
         className={cn(
-          "fixed top-14 left-0 right-0 z-30 transition-all duration-300",
-          "bg-gradient-to-r from-background via-background/95 to-background",
-          "border-b border-border/50 backdrop-blur-md",
-          isExpanded ? "h-auto" : "h-10"
+          "fixed top-14 left-0 right-0 z-30",
+          "bg-background/95 backdrop-blur-sm border-b border-border/50",
+          "transition-all duration-300"
         )}
-        onMouseEnter={() => setIsPaused(true)}
-        onMouseLeave={() => setIsPaused(false)}
       >
-        <div className="flex items-center h-10 px-4">
-          {/* Live Indicator */}
-          <div className="flex items-center gap-2 pr-4 border-r border-border/50 shrink-0">
+        {/* Main ticker bar - 40px height */}
+        <div className="flex items-center h-10 px-2 gap-2">
+          {/* Live indicator */}
+          <div className="flex items-center gap-1.5 px-2 border-r border-border/50 shrink-0">
             <div className="relative">
-              <Sparkles className="w-4 h-4 text-primary" />
+              <Sparkles className="w-3.5 h-3.5 text-primary" />
               {isMonitoring && (
-                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
               )}
             </div>
-            <span className="text-xs font-medium text-primary hidden sm:inline">LIVE</span>
+            <span className="text-[10px] font-semibold text-primary uppercase tracking-wider hidden sm:inline">
+              LIVE
+            </span>
             {newItemsCount > 0 && (
-              <Badge variant="secondary" className="text-[10px] h-4 px-1.5 bg-primary/20 text-primary">
-                {newItemsCount} new
+              <Badge 
+                variant="secondary" 
+                className="text-[9px] h-4 px-1 bg-primary/20 text-primary font-medium"
+              >
+                {newItemsCount}
               </Badge>
             )}
           </div>
 
-          {/* Scrolling News Ticker */}
-          <div 
-            ref={scrollRef}
-            className="flex-1 overflow-hidden mx-4"
-          >
-            <motion.div
-              className="flex items-center gap-6 whitespace-nowrap"
-              animate={{ x: -scrollPosition }}
-              transition={{ duration: 0, ease: "linear" }}
+          {/* CSS-based scrolling ticker */}
+          <div className="flex-1 overflow-hidden relative">
+            <div 
+              className={cn(
+                "news-ticker flex items-center gap-4 whitespace-nowrap",
+                filteredNews.length < 5 && "news-ticker-slow"
+              )}
             >
-              {/* Duplicate news for seamless loop */}
+              {/* Duplicate items for seamless loop */}
               {[...filteredNews, ...filteredNews].map((item, index) => (
                 <button
                   key={`${item.id}-${index}`}
                   onClick={() => handleNewsClick(item)}
                   className={cn(
-                    "flex items-center gap-2 py-1 px-3 rounded-full transition-all",
-                    "hover:bg-muted/50 cursor-pointer group",
-                    item.isNew && "bg-primary/10"
+                    "inline-flex items-center gap-2 py-1 px-2.5 rounded-md transition-all",
+                    "hover:bg-muted/60 cursor-pointer group shrink-0",
+                    item.isNew && "bg-primary/5"
                   )}
                 >
+                  {/* Category badge */}
                   <span className={cn(
-                    "flex items-center justify-center w-5 h-5 rounded-full border",
+                    "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border",
                     categoryColors[item.category]
                   )}>
                     {categoryIcons[item.category]}
+                    <span className="hidden sm:inline">{categoryLabels[item.category]}</span>
                   </span>
+                  
+                  {/* Title */}
                   <span className={cn(
-                    "text-sm max-w-[250px] truncate",
+                    "text-xs max-w-[200px] sm:max-w-[300px] truncate",
                     item.isNew ? "text-foreground font-medium" : "text-muted-foreground"
                   )}>
                     {item.title}
                   </span>
-                  <span className="text-[10px] text-muted-foreground/60 hidden sm:inline">
+                  
+                  {/* Source & time */}
+                  <span className="text-[10px] text-muted-foreground/60 hidden md:inline">
                     {item.source}
                   </span>
-                  <ExternalLink className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <span className="text-[10px] text-muted-foreground/40">
+                    {formatTimeAgo(item.timestamp)}
+                  </span>
+                  
+                  {/* External link indicator */}
+                  <ExternalLink className="w-2.5 h-2.5 text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity" />
                 </button>
               ))}
-            </motion.div>
+            </div>
           </div>
 
           {/* Controls */}
-          <div className="flex items-center gap-1 pl-4 border-l border-border/50 shrink-0">
+          <div className="flex items-center gap-0.5 pl-2 border-l border-border/50 shrink-0">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -370,10 +380,10 @@ export function NewsRibbon({ filterState }: NewsRibbonProps) {
                   onClick={fetchLatestNews}
                   disabled={isLoading}
                 >
-                  <RefreshCw className={cn("w-3.5 h-3.5", isLoading && "animate-spin")} />
+                  <RefreshCw className={cn("w-3 h-3", isLoading && "animate-spin")} />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Refresh now</TooltipContent>
+              <TooltipContent side="bottom">Refresh</TooltipContent>
             </Tooltip>
 
             <Tooltip>
@@ -384,13 +394,14 @@ export function NewsRibbon({ filterState }: NewsRibbonProps) {
                   className="h-7 w-7"
                   onClick={() => setIsExpanded(!isExpanded)}
                 >
-                  <ChevronRight className={cn(
-                    "w-3.5 h-3.5 transition-transform",
-                    isExpanded && "rotate-90"
-                  )} />
+                  {isExpanded ? (
+                    <ChevronUp className="w-3 h-3" />
+                  ) : (
+                    <ChevronDown className="w-3 h-3" />
+                  )}
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>{isExpanded ? 'Collapse' : 'Expand'}</TooltipContent>
+              <TooltipContent side="bottom">{isExpanded ? 'Collapse' : 'Expand'}</TooltipContent>
             </Tooltip>
 
             <Tooltip>
@@ -402,39 +413,35 @@ export function NewsRibbon({ filterState }: NewsRibbonProps) {
                   onClick={isMonitoring ? stopMonitoring : startMonitoring}
                 >
                   {isMonitoring ? (
-                    <BellOff className="w-3.5 h-3.5" />
+                    <BellOff className="w-3 h-3" />
                   ) : (
-                    <Bell className="w-3.5 h-3.5" />
+                    <Bell className="w-3 h-3" />
                   )}
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>
-                {isMonitoring ? 'Stop monitoring' : 'Start monitoring'}
+              <TooltipContent side="bottom">
+                {isMonitoring ? 'Stop' : 'Start'}
               </TooltipContent>
             </Tooltip>
 
             {/* Language Toggle */}
             <Popover>
               <PopoverTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                >
-                  <Languages className="w-3.5 h-3.5" />
+                <Button variant="ghost" size="icon" className="h-7 w-7">
+                  <Languages className="w-3 h-3" />
                 </Button>
               </PopoverTrigger>
-              <PopoverContent align="end" className="w-36 p-1">
+              <PopoverContent align="end" className="w-28 p-1">
                 {languages.map((lang) => (
                   <Button
                     key={lang.code}
                     variant={language === lang.code ? 'secondary' : 'ghost'}
                     size="sm"
-                    className="w-full justify-start gap-2 h-8"
+                    className="w-full justify-start gap-2 h-7 text-xs"
                     onClick={() => setLanguage(lang.code)}
                   >
                     <span>{lang.flag}</span>
-                    <span className="text-xs">{lang.label}</span>
+                    <span>{lang.label}</span>
                   </Button>
                 ))}
               </PopoverContent>
@@ -449,85 +456,70 @@ export function NewsRibbon({ filterState }: NewsRibbonProps) {
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className="border-t border-border/30 overflow-hidden"
+              transition={{ duration: 0.2 }}
+              className="border-t border-border/30 overflow-hidden bg-background/98"
             >
-              <div className="p-4 max-h-96 overflow-y-auto">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-medium">Business Intelligence Feed</h3>
+              <div className="p-3 max-h-80 overflow-y-auto">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-medium text-foreground">Business Intelligence Feed</h3>
                   {lastCheck && (
-                    <span className="text-xs text-muted-foreground flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      Last checked: {formatTimeAgo(lastCheck)}
+                    <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                      <Clock className="w-2.5 h-2.5" />
+                      Last check: {formatTimeAgo(lastCheck)}
                     </span>
                   )}
                 </div>
 
-                <div className="grid gap-2">
-                  {filteredNews.slice(0, 15).map((item) => (
+                <div className="grid gap-1.5">
+                  {filteredNews.slice(0, 20).map((item) => (
                     <button
                       key={item.id}
                       onClick={() => handleNewsClick(item)}
                       className={cn(
-                        "flex items-start gap-3 p-3 rounded-lg text-left transition-all",
+                        "flex items-start gap-2 p-2 rounded-md text-left transition-all",
                         "hover:bg-muted/50 border border-transparent hover:border-border/50",
                         item.isNew && "bg-primary/5 border-primary/20"
                       )}
                     >
                       <span className={cn(
-                        "flex items-center justify-center w-8 h-8 rounded-lg border shrink-0",
+                        "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border shrink-0 mt-0.5",
                         categoryColors[item.category]
                       )}>
                         {categoryIcons[item.category]}
+                        {categoryLabels[item.category]}
                       </span>
+                      
                       <div className="flex-1 min-w-0">
                         <p className={cn(
-                          "text-sm",
+                          "text-xs leading-tight",
                           item.isNew ? "text-foreground font-medium" : "text-muted-foreground"
                         )}>
                           {item.title}
                         </p>
                         {item.snippet && (
-                          <p className="text-xs text-muted-foreground/70 mt-0.5 line-clamp-1">
+                          <p className="text-[10px] text-muted-foreground/60 mt-0.5 line-clamp-1">
                             {item.snippet}
                           </p>
                         )}
-                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                          <Badge variant="outline" className={cn("text-[10px] h-4", categoryColors[item.category])}>
-                            {categoryLabels[item.category]}
-                          </Badge>
+                        <div className="flex items-center gap-2 mt-1 text-[10px] text-muted-foreground/50">
+                          <span>{item.source}</span>
                           {item.country && (
-                            <Badge variant="outline" className="text-[10px] h-4 gap-0.5">
-                              <MapPin className="w-2.5 h-2.5" />
-                              {item.country}
-                            </Badge>
+                            <>
+                              <span>•</span>
+                              <span>{item.country}</span>
+                            </>
                           )}
+                          <span>•</span>
+                          <span>{formatTimeAgo(item.timestamp)}</span>
                           {item.isOfficial && (
-                            <Badge className="text-[10px] h-4 bg-green-500/20 text-green-500 border-green-500/30">
+                            <Badge variant="outline" className="h-3.5 px-1 text-[8px] border-green-500/30 text-green-500">
                               Official
                             </Badge>
                           )}
-                          <span className="text-xs text-muted-foreground">{item.source}</span>
-                          <span className="text-xs text-muted-foreground/50">•</span>
-                          <span className="text-xs text-muted-foreground/50">
-                            {formatTimeAgo(item.timestamp)}
-                          </span>
                         </div>
-                        {item.companies && item.companies.length > 0 && (
-                          <div className="flex items-center gap-1 mt-1">
-                            {item.companies.map(company => (
-                              <Badge key={company} variant="secondary" className="text-[9px] h-3.5 px-1.5">
-                                {company}
-                              </Badge>
-                            ))}
-                          </div>
-                        )}
                       </div>
-                      {item.isNew && (
-                        <Badge className="text-[10px] bg-primary/20 text-primary border-primary/30 shrink-0">
-                          NEW
-                        </Badge>
-                      )}
-                      <ExternalLink className="w-4 h-4 text-muted-foreground shrink-0" />
+                      
+                      <ExternalLink className="w-3 h-3 text-muted-foreground/40 shrink-0 mt-0.5" />
                     </button>
                   ))}
                 </div>
@@ -537,144 +529,8 @@ export function NewsRibbon({ filterState }: NewsRibbonProps) {
         </AnimatePresence>
       </div>
 
-      {/* Spacer to prevent content overlap */}
+      {/* Spacer to prevent content from going under the ribbon */}
       <div className="h-10" />
     </>
-  );
-}
-
-// News Filter Component for TopNavigation
-interface NewsFilterProps {
-  filterState: ReturnType<typeof useNewsFilterState>;
-}
-
-export function NewsFilter({ filterState }: NewsFilterProps) {
-  const { filters, toggleCategory, setDateRange, clearFilters, hasActiveFilters } = filterState;
-  const [datePickerOpen, setDatePickerOpen] = useState(false);
-  
-  const categories: { value: NewsCategory; label: string; icon: React.ReactNode; color: string }[] = [
-    { value: 'all', label: 'All', icon: <Globe className="w-3 h-3" />, color: 'bg-muted text-foreground' },
-    { value: 'ipo', label: 'IPO', icon: <Building2 className="w-3 h-3" />, color: categoryColors.ipo },
-    { value: 'cma_violation', label: 'CMA', icon: <Gavel className="w-3 h-3" />, color: categoryColors.cma_violation },
-    { value: 'vision_2030', label: 'Vision 2030', icon: <Target className="w-3 h-3" />, color: categoryColors.vision_2030 },
-    { value: 'banking', label: 'Banking', icon: <Banknote className="w-3 h-3" />, color: categoryColors.banking },
-    { value: 'real_estate', label: 'Real Estate', icon: <Home className="w-3 h-3" />, color: categoryColors.real_estate },
-    { value: 'tech_funding', label: 'Tech', icon: <Cpu className="w-3 h-3" />, color: categoryColors.tech_funding },
-    { value: 'contract', label: 'Contracts', icon: <FileText className="w-3 h-3" />, color: categoryColors.contract },
-    { value: 'acquisition', label: 'M&A', icon: <Landmark className="w-3 h-3" />, color: categoryColors.acquisition },
-    { value: 'joint_venture', label: 'JV', icon: <Handshake className="w-3 h-3" />, color: categoryColors.joint_venture },
-    { value: 'appointment', label: 'Execs', icon: <UserPlus className="w-3 h-3" />, color: categoryColors.appointment },
-    { value: 'expansion', label: 'Expansion', icon: <Rocket className="w-3 h-3" />, color: categoryColors.expansion },
-    { value: 'market', label: 'Market', icon: <TrendingUp className="w-3 h-3" />, color: categoryColors.market },
-    { value: 'regulatory', label: 'Regulatory', icon: <AlertCircle className="w-3 h-3" />, color: categoryColors.regulatory },
-  ];
-
-  return (
-    <div className="flex items-center gap-1.5">
-      {/* Category Filter Chips */}
-      {categories.map((cat) => {
-        const isActive = filters.categories.includes(cat.value);
-        return (
-          <Button
-            key={cat.value}
-            variant="ghost"
-            size="sm"
-            onClick={() => toggleCategory(cat.value)}
-            className={cn(
-              "h-7 px-2 gap-1 text-xs rounded-full transition-all",
-              isActive 
-                ? cn(cat.color, "border") 
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {cat.icon}
-            <span className="hidden sm:inline">{cat.label}</span>
-          </Button>
-        );
-      })}
-
-      {/* Date Range Picker */}
-      <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
-            className={cn(
-              "h-7 px-2 gap-1 text-xs rounded-full",
-              (filters.dateFrom || filters.dateTo) 
-                ? "bg-primary/20 text-primary border border-primary/30" 
-                : "text-muted-foreground"
-            )}
-          >
-            <Calendar className="w-3 h-3" />
-            {filters.dateFrom || filters.dateTo ? (
-              <span className="hidden sm:inline">
-                {filters.dateFrom && filters.dateTo
-                  ? `${format(filters.dateFrom, 'MMM d')} - ${format(filters.dateTo, 'MMM d')}`
-                  : filters.dateFrom
-                    ? `From ${format(filters.dateFrom, 'MMM d')}`
-                    : `To ${format(filters.dateTo!, 'MMM d')}`}
-              </span>
-            ) : (
-              <span className="hidden sm:inline">Date</span>
-            )}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-auto p-0" align="end">
-          <div className="p-3 border-b border-border">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Date Range</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setDateRange(undefined, undefined);
-                  setDatePickerOpen(false);
-                }}
-                className="h-6 px-2 text-xs"
-              >
-                Clear
-              </Button>
-            </div>
-          </div>
-          <div className="flex">
-            <div className="border-r border-border p-2">
-              <p className="text-xs text-muted-foreground mb-2 px-2">From</p>
-              <CalendarComponent
-                mode="single"
-                selected={filters.dateFrom}
-                onSelect={(date) => setDateRange(date, filters.dateTo)}
-                initialFocus
-              />
-            </div>
-            <div className="p-2">
-              <p className="text-xs text-muted-foreground mb-2 px-2">To</p>
-              <CalendarComponent
-                mode="single"
-                selected={filters.dateTo}
-                onSelect={(date) => setDateRange(filters.dateFrom, date)}
-              />
-            </div>
-          </div>
-        </PopoverContent>
-      </Popover>
-
-      {/* Clear Filters */}
-      {hasActiveFilters && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={clearFilters}
-              className="h-7 w-7 text-muted-foreground hover:text-destructive"
-            >
-              <X className="w-3.5 h-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Clear filters</TooltipContent>
-        </Tooltip>
-      )}
-    </div>
   );
 }

@@ -126,19 +126,20 @@ export function useNewsMonitor() {
     try {
       console.log('[NewsMonitor] Fetching business news...');
       
-      // Multiple queries for different news categories
+      // Diversified queries for comprehensive news coverage
       const queries = [
-        'IPO announcements latest filings 2025 2026 Tadawul CMA',
-        'Saudi Arabia business expansion news contract award',
-        'MENA joint venture partnership announcement',
-        'company acquisition merger Saudi UAE',
-        'executive appointment CEO chairman Saudi Arabia',
-        'Aramco SABIC STC news announcement',
-        'CMA violation fine penalty Saudi Arabia regulatory',
-        'Vision 2030 Saudi initiative government project',
-        'Saudi Arabia banking sector SNB Al Rajhi update',
-        'Saudi Arabia real estate property market ROSHN NEOM',
-        'Saudi Arabia tech startup funding investment fintech',
+        'Saudi Arabia IPO Tadawul NOMU CMA approval listing 2025',
+        'Saudi Arabia M&A acquisition merger deal announcement',
+        'Saudi Arabia contract award billion SAR project construction',
+        'Saudi Arabia CEO CFO chairman appointment executive',
+        'NEOM Red Sea Qiddiya Vision 2030 project update',
+        'Saudi Arabia banking sector Al Rajhi SNB profit earnings',
+        'Saudi Arabia real estate ROSHN property development',
+        'Saudi Arabia fintech startup funding investment',
+        'CMA Saudi Arabia violation penalty fine regulatory',
+        'Aramco SABIC ACWA Power STC company news',
+        'UAE Dubai Abu Dhabi business deal investment',
+        'MENA region joint venture partnership announcement',
       ];
       
       const allResults: any[] = [];
