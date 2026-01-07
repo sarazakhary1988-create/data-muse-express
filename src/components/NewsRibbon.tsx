@@ -11,9 +11,10 @@ import {
   Building2,
   Globe,
   ChevronRight,
-  X,
   RefreshCw,
-  Sparkles
+  Sparkles,
+  Calendar,
+  X
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -22,8 +23,15 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { useNewsMonitor, NewsItem } from '@/hooks/useNewsMonitor';
 import { cn } from '@/lib/utils';
+import { format, isAfter, isBefore, startOfDay, endOfDay } from 'date-fns';
 
 const categoryIcons: Record<NewsItem['category'], React.ReactNode> = {
   ipo: <Building2 className="w-3 h-3" />,
@@ -39,7 +47,68 @@ const categoryColors: Record<NewsItem['category'], string> = {
   general: 'bg-muted text-muted-foreground border-border',
 };
 
-export function NewsRibbon() {
+const categoryLabels: Record<NewsItem['category'], string> = {
+  ipo: 'IPO',
+  market: 'Market',
+  regulatory: 'Regulatory',
+  general: 'General',
+};
+
+export type NewsCategory = NewsItem['category'] | 'all';
+
+interface NewsFilterState {
+  categories: NewsCategory[];
+  dateFrom: Date | undefined;
+  dateTo: Date | undefined;
+}
+
+// Export filter state for TopNavigation to use
+export const useNewsFilterState = () => {
+  const [filters, setFilters] = useState<NewsFilterState>({
+    categories: ['all'],
+    dateFrom: undefined,
+    dateTo: undefined,
+  });
+
+  const toggleCategory = (category: NewsCategory) => {
+    setFilters(prev => {
+      if (category === 'all') {
+        return { ...prev, categories: ['all'] };
+      }
+      
+      const withoutAll = prev.categories.filter(c => c !== 'all');
+      const hasCategory = withoutAll.includes(category);
+      
+      if (hasCategory) {
+        const newCats = withoutAll.filter(c => c !== category);
+        return { ...prev, categories: newCats.length === 0 ? ['all'] : newCats };
+      } else {
+        return { ...prev, categories: [...withoutAll, category] };
+      }
+    });
+  };
+
+  const setDateRange = (from: Date | undefined, to: Date | undefined) => {
+    setFilters(prev => ({ ...prev, dateFrom: from, dateTo: to }));
+  };
+
+  const clearFilters = () => {
+    setFilters({ categories: ['all'], dateFrom: undefined, dateTo: undefined });
+  };
+
+  const hasActiveFilters = 
+    !filters.categories.includes('all') || 
+    filters.dateFrom !== undefined || 
+    filters.dateTo !== undefined;
+
+  return { filters, toggleCategory, setDateRange, clearFilters, hasActiveFilters };
+};
+
+interface NewsRibbonProps {
+  filterState?: ReturnType<typeof useNewsFilterState>;
+}
+
+export function NewsRibbon({ filterState }: NewsRibbonProps) {
   const {
     news,
     isMonitoring,
@@ -56,27 +125,49 @@ export function NewsRibbon() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollPosition, setScrollPosition] = useState(0);
 
+  // Use provided filter state or create local one
+  const localFilterState = useNewsFilterState();
+  const { filters } = filterState || localFilterState;
+
   // Auto-start monitoring on mount
   useEffect(() => {
     startMonitoring();
     return () => stopMonitoring();
   }, []);
 
+  // Filter news based on current filters
+  const filteredNews = news.filter(item => {
+    // Category filter
+    if (!filters.categories.includes('all') && !filters.categories.includes(item.category)) {
+      return false;
+    }
+    
+    // Date range filter
+    if (filters.dateFrom && isBefore(item.timestamp, startOfDay(filters.dateFrom))) {
+      return false;
+    }
+    if (filters.dateTo && isAfter(item.timestamp, endOfDay(filters.dateTo))) {
+      return false;
+    }
+    
+    return true;
+  });
+
   // Auto-scroll animation
   useEffect(() => {
-    if (isPaused || isExpanded || news.length === 0) return;
+    if (isPaused || isExpanded || filteredNews.length === 0) return;
 
     const interval = setInterval(() => {
       setScrollPosition(prev => {
-        const maxScroll = news.length * 320; // Approximate width per item
+        const maxScroll = filteredNews.length * 320;
         return prev >= maxScroll ? 0 : prev + 1;
       });
     }, 30);
 
     return () => clearInterval(interval);
-  }, [isPaused, isExpanded, news.length]);
+  }, [isPaused, isExpanded, filteredNews.length]);
 
-  const newItemsCount = news.filter(n => n.isNew).length;
+  const newItemsCount = filteredNews.filter(n => n.isNew).length;
 
   const formatTimeAgo = (date: Date) => {
     const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
@@ -91,13 +182,17 @@ export function NewsRibbon() {
     window.open(item.url, '_blank', 'noopener,noreferrer');
   };
 
-  if (news.length === 0 && !isLoading) {
+  if (filteredNews.length === 0 && !isLoading) {
     return (
-      <div className="fixed top-16 left-0 right-0 z-40 bg-background/80 backdrop-blur-sm border-b border-border/50">
+      <div className="fixed top-14 left-0 right-0 z-30 bg-background/80 backdrop-blur-sm border-b border-border/50">
         <div className="flex items-center justify-center gap-3 py-2 px-4">
           <Newspaper className="w-4 h-4 text-muted-foreground" />
           <span className="text-sm text-muted-foreground">
-            {isMonitoring ? 'Monitoring for IPO news...' : 'Start monitoring to see latest news'}
+            {news.length > 0 
+              ? 'No news matching filters' 
+              : isMonitoring 
+                ? 'Monitoring for IPO news...' 
+                : 'Start monitoring to see latest news'}
           </span>
           {isLoading && <RefreshCw className="w-4 h-4 animate-spin text-primary" />}
           <Button
@@ -118,7 +213,7 @@ export function NewsRibbon() {
       {/* News Ribbon Bar */}
       <div 
         className={cn(
-          "fixed top-16 left-0 right-0 z-40 transition-all duration-300",
+          "fixed top-14 left-0 right-0 z-30 transition-all duration-300",
           "bg-gradient-to-r from-background via-background/95 to-background",
           "border-b border-border/50 backdrop-blur-md",
           isExpanded ? "h-auto" : "h-10"
@@ -154,7 +249,7 @@ export function NewsRibbon() {
               transition={{ duration: 0, ease: "linear" }}
             >
               {/* Duplicate news for seamless loop */}
-              {[...news, ...news].map((item, index) => (
+              {[...filteredNews, ...filteredNews].map((item, index) => (
                 <button
                   key={`${item.id}-${index}`}
                   onClick={() => handleNewsClick(item)}
@@ -262,7 +357,7 @@ export function NewsRibbon() {
                 </div>
 
                 <div className="grid gap-2">
-                  {news.slice(0, 10).map((item) => (
+                  {filteredNews.slice(0, 10).map((item) => (
                     <button
                       key={item.id}
                       onClick={() => handleNewsClick(item)}
@@ -286,6 +381,9 @@ export function NewsRibbon() {
                           {item.title}
                         </p>
                         <div className="flex items-center gap-2 mt-1">
+                          <Badge variant="outline" className={cn("text-[10px] h-4", categoryColors[item.category])}>
+                            {categoryLabels[item.category]}
+                          </Badge>
                           <span className="text-xs text-muted-foreground">{item.source}</span>
                           <span className="text-xs text-muted-foreground/50">•</span>
                           <span className="text-xs text-muted-foreground/50">
@@ -311,5 +409,131 @@ export function NewsRibbon() {
       {/* Spacer to prevent content overlap */}
       <div className="h-10" />
     </>
+  );
+}
+
+// News Filter Component for TopNavigation
+interface NewsFilterProps {
+  filterState: ReturnType<typeof useNewsFilterState>;
+}
+
+export function NewsFilter({ filterState }: NewsFilterProps) {
+  const { filters, toggleCategory, setDateRange, clearFilters, hasActiveFilters } = filterState;
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
+  
+  const categories: { value: NewsCategory; label: string; icon: React.ReactNode; color: string }[] = [
+    { value: 'all', label: 'All', icon: <Globe className="w-3 h-3" />, color: 'bg-muted text-foreground' },
+    { value: 'ipo', label: 'IPO', icon: <Building2 className="w-3 h-3" />, color: categoryColors.ipo },
+    { value: 'market', label: 'Market', icon: <TrendingUp className="w-3 h-3" />, color: categoryColors.market },
+    { value: 'regulatory', label: 'Regulatory', icon: <AlertCircle className="w-3 h-3" />, color: categoryColors.regulatory },
+  ];
+
+  return (
+    <div className="flex items-center gap-1.5">
+      {/* Category Filter Chips */}
+      {categories.map((cat) => {
+        const isActive = filters.categories.includes(cat.value);
+        return (
+          <Button
+            key={cat.value}
+            variant="ghost"
+            size="sm"
+            onClick={() => toggleCategory(cat.value)}
+            className={cn(
+              "h-7 px-2 gap-1 text-xs rounded-full transition-all",
+              isActive 
+                ? cn(cat.color, "border") 
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {cat.icon}
+            <span className="hidden sm:inline">{cat.label}</span>
+          </Button>
+        );
+      })}
+
+      {/* Date Range Picker */}
+      <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn(
+              "h-7 px-2 gap-1 text-xs rounded-full",
+              (filters.dateFrom || filters.dateTo) 
+                ? "bg-primary/20 text-primary border border-primary/30" 
+                : "text-muted-foreground"
+            )}
+          >
+            <Calendar className="w-3 h-3" />
+            {filters.dateFrom || filters.dateTo ? (
+              <span className="hidden sm:inline">
+                {filters.dateFrom && filters.dateTo
+                  ? `${format(filters.dateFrom, 'MMM d')} - ${format(filters.dateTo, 'MMM d')}`
+                  : filters.dateFrom
+                    ? `From ${format(filters.dateFrom, 'MMM d')}`
+                    : `To ${format(filters.dateTo!, 'MMM d')}`}
+              </span>
+            ) : (
+              <span className="hidden sm:inline">Date</span>
+            )}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0" align="end">
+          <div className="p-3 border-b border-border">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Date Range</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setDateRange(undefined, undefined);
+                  setDatePickerOpen(false);
+                }}
+                className="h-6 px-2 text-xs"
+              >
+                Clear
+              </Button>
+            </div>
+          </div>
+          <div className="flex">
+            <div className="border-r border-border p-2">
+              <p className="text-xs text-muted-foreground mb-2 px-2">From</p>
+              <CalendarComponent
+                mode="single"
+                selected={filters.dateFrom}
+                onSelect={(date) => setDateRange(date, filters.dateTo)}
+                initialFocus
+              />
+            </div>
+            <div className="p-2">
+              <p className="text-xs text-muted-foreground mb-2 px-2">To</p>
+              <CalendarComponent
+                mode="single"
+                selected={filters.dateTo}
+                onSelect={(date) => setDateRange(filters.dateFrom, date)}
+              />
+            </div>
+          </div>
+        </PopoverContent>
+      </Popover>
+
+      {/* Clear Filters */}
+      {hasActiveFilters && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={clearFilters}
+              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+            >
+              <X className="w-3.5 h-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Clear filters</TooltipContent>
+        </Tooltip>
+      )}
+    </div>
   );
 }

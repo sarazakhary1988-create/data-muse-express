@@ -22,7 +22,7 @@ import { ResearchTemplates } from '@/components/templates/ResearchTemplates';
 import { HypothesisLab } from '@/components/hypothesis/HypothesisLab';
 import { LeadEnrichment } from '@/components/leads/LeadEnrichment';
 import { IntegrationsPage } from '@/components/integrations/IntegrationsPage';
-import { NewsRibbon } from '@/components/NewsRibbon';
+import { NewsRibbon, useNewsFilterState } from '@/components/NewsRibbon';
 
 
 import { useResearchStore, ResearchTask } from '@/store/researchStore';
@@ -33,6 +33,9 @@ const Index = () => {
   const [activeView, setActiveView] = useState<ViewType>('search');
   const [researchSteps, setResearchSteps] = useState(defaultResearchSteps);
   const [lastQuery, setLastQuery] = useState('');
+  
+  // Shared news filter state between TopNavigation and NewsRibbon
+  const newsFilterState = useNewsFilterState();
   
   const { 
     isSearching, 
@@ -369,10 +372,10 @@ const Index = () => {
         {/* Main Content */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Top Navigation */}
-          <TopNavigation />
+          <TopNavigation newsFilterState={newsFilterState} />
           
           {/* News Monitoring Ribbon */}
-          <NewsRibbon />
+          <NewsRibbon filterState={newsFilterState} />
           
           {/* Main Content Area */}
           <main className="flex-1 overflow-auto">
