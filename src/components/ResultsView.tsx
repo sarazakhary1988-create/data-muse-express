@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { FileText, ArrowLeft, Filter, SortDesc, Activity, LayoutList, Scale, Loader2, Sparkles, XCircle, Link2, Download } from 'lucide-react';
+import { FileText, ArrowLeft, Filter, SortDesc, Activity, LayoutList, Scale, Loader2, Sparkles, XCircle, Link2, Download, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -10,6 +10,7 @@ import { ResearchTrace } from '@/components/ResearchTrace';
 import { DiscrepancyReport } from '@/components/DiscrepancyReport';
 import { EvidenceChainPanel, EvidenceSource, DerivedClaim } from '@/components/EvidenceChainPanel';
 import { ExtractionQualityPanel, ExtractedEntity } from '@/components/ExtractionQualityPanel';
+import { CompanyIntelligencePanel, CompanyEntity } from '@/components/CompanyIntelligencePanel';
 import { ReportExportButton } from '@/components/ReportExportButton';
 import { ResearchTask, useResearchStore } from '@/store/researchStore';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
@@ -202,12 +203,21 @@ export const ResultsView = ({ task, onBack, onViewReport }: ResultsViewProps) =>
         </div>
       </div>
 
-      {/* Tabs: Sources vs Evidence Chain vs Validation vs Trace */}
+      {/* Tabs: Sources vs Companies vs Evidence Chain vs Validation vs Trace */}
       <Tabs defaultValue="sources" className="w-full">
-        <TabsList className="mb-4">
+        <TabsList className="mb-4 flex-wrap">
           <TabsTrigger value="sources" className="gap-2">
             <LayoutList className="w-4 h-4" />
             {t.common.sources}
+          </TabsTrigger>
+          <TabsTrigger value="companies" className="gap-2">
+            <Building2 className="w-4 h-4" />
+            {isRTL ? 'الشركات' : 'Companies'}
+            {consolidation?.consolidatedData?.companies?.length > 0 && (
+              <Badge variant="secondary" className="ml-1 h-5 px-1.5">
+                {consolidation.consolidatedData.companies.length}
+              </Badge>
+            )}
           </TabsTrigger>
           <TabsTrigger value="evidence" className="gap-2">
             <Link2 className="w-4 h-4" />
@@ -268,6 +278,92 @@ export const ResultsView = ({ task, onBack, onViewReport }: ResultsViewProps) =>
                 ))}
             </AnimatePresence>
           </div>
+        </TabsContent>
+
+        <TabsContent value="companies">
+          <CompanyIntelligencePanel 
+            companies={(() => {
+              const companyEntities: CompanyEntity[] = [];
+              
+              if (consolidation?.consolidatedData?.companies) {
+                consolidation.consolidatedData.companies.forEach((c: any) => {
+                  // Find sources that mention this company
+                  const companyName = typeof c === 'string' ? c : c.name;
+                  const matchingSources = task.results
+                    .filter(r => 
+                      r.title?.toLowerCase().includes(companyName.toLowerCase()) ||
+                      r.summary?.toLowerCase().includes(companyName.toLowerCase()) ||
+                      r.content?.toLowerCase().includes(companyName.toLowerCase())
+                    )
+                    .slice(0, 3)
+                    .map(r => ({
+                      url: r.url,
+                      domain: r.metadata?.domain || new URL(r.url).hostname,
+                      title: r.title,
+                      snippet: r.summary?.slice(0, 150),
+                    }));
+                  
+                  // Find related data for this company
+                  const relatedDates = consolidation.consolidatedData?.key_dates
+                    ?.filter((d: any) => {
+                      const dateStr = typeof d === 'string' ? d : `${d.date}: ${d.event}`;
+                      return dateStr.toLowerCase().includes(companyName.toLowerCase());
+                    })
+                    .map((d: any) => typeof d === 'string' ? d : `${d.date}: ${d.event}`)
+                    .slice(0, 3) || [];
+                  
+                  const relatedFinancials = consolidation.consolidatedData?.numeric_data
+                    ?.filter((n: any) => {
+                      const label = n.label || n.metric || '';
+                      return label.toLowerCase().includes(companyName.toLowerCase());
+                    })
+                    .map((n: any) => ({
+                      label: n.label || n.metric || 'Value',
+                      value: String(n.value || n.amount),
+                    }))
+                    .slice(0, 4) || [];
+                  
+                  const relatedPeople = consolidation.consolidatedData?.people
+                    ?.filter((p: any) => {
+                      const role = typeof p === 'string' ? '' : p.role || '';
+                      return role.toLowerCase().includes(companyName.toLowerCase());
+                    })
+                    .map((p: any) => ({
+                      name: typeof p === 'string' ? p : p.name,
+                      role: typeof p === 'string' ? undefined : p.role,
+                    }))
+                    .slice(0, 3) || [];
+                  
+                  const relatedFacts = consolidation.consolidatedData?.key_facts
+                    ?.filter((f: any) => {
+                      const factStr = typeof f === 'string' ? f : f.fact || '';
+                      return factStr.toLowerCase().includes(companyName.toLowerCase());
+                    })
+                    .map((f: any) => typeof f === 'string' ? f : f.fact)
+                    .slice(0, 3) || [];
+                  
+                  companyEntities.push({
+                    name: companyName,
+                    ticker: c.ticker,
+                    market: c.market,
+                    action: c.action,
+                    confidence: c.confidence || 'medium',
+                    extractionMethod: c.extraction_method || 'ai',
+                    sources: matchingSources.length > 0 ? matchingSources : undefined,
+                    relatedData: (relatedDates.length > 0 || relatedFinancials.length > 0 || relatedPeople.length > 0 || relatedFacts.length > 0) ? {
+                      dates: relatedDates.length > 0 ? relatedDates : undefined,
+                      financials: relatedFinancials.length > 0 ? relatedFinancials : undefined,
+                      people: relatedPeople.length > 0 ? relatedPeople : undefined,
+                      facts: relatedFacts.length > 0 ? relatedFacts : undefined,
+                    } : undefined,
+                  });
+                });
+              }
+              
+              return companyEntities;
+            })()}
+            totalSources={task.results.length}
+          />
         </TabsContent>
 
         <TabsContent value="evidence">
