@@ -43,7 +43,7 @@ interface NewsMonitorState {
   error: string | null;
 }
 
-const NEWS_CHECK_INTERVAL = 60 * 60 * 1000; // 1 hour
+const NEWS_CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes
 const NEWS_STORAGE_KEY = 'orkestra_monitored_news';
 const LAST_CHECK_KEY = 'orkestra_last_news_check';
 
