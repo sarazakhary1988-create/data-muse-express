@@ -163,10 +163,11 @@ Examples:
             ? 'Web sources unavailable — generated from model knowledge + provided inputs' 
             : 'Generated from model knowledge');
       
-      // Detect if this is an entity/company-focused query
+      // Detect query types for specialized sections
       const queryLower = (query || '').toLowerCase();
       const isIPOQuery = /\b(ipo|ipos|initial\s+public\s+offering|listing|listings|going\s+public)\b/i.test(queryLower);
       const isCompanyQuery = /\b(companies|company|firms?|corporations?|entities|businesses|startups?)\b/i.test(queryLower);
+      const isFinancialQuery = /\b(financials?|revenue|profit|earnings|valuation|market\s*cap|stock|shares?|investors?|funding|returns?|p\/e|ebitda|assets?|liabilities?)\b/i.test(queryLower);
       const isEntityQuery = isIPOQuery || isCompanyQuery;
       
       // MANDATORY entity extraction section for company/IPO queries
@@ -189,6 +190,83 @@ INSTRUCTIONS FOR THIS TABLE:
 AFTER completing this table, proceed to:
 ` : '';
 
+      // IPO-SPECIFIC sections
+      const ipoSpecificSections = isIPOQuery ? `
+## IPO Pipeline Overview
+
+| Company | Sector | Exchange | Expected Date | Offer Size | Status | Lead Underwriter |
+|---------|--------|----------|---------------|------------|--------|------------------|
+| [List each IPO with available details] |
+
+## IPO Timeline & Milestones
+
+| Date/Period | Company | Milestone | Details |
+|-------------|---------|-----------|---------|
+| [Key dates: filings, approvals, pricing, trading start] |
+
+## IPO Market Analysis
+
+### Market Conditions
+- Current IPO market sentiment
+- Recent comparable IPOs and their performance
+- Sector-specific trends
+
+### Subscription & Demand Indicators
+- Oversubscription rates (if available)
+- Institutional vs retail allocation
+- Price discovery signals
+
+### Post-IPO Performance Tracking
+| Company | IPO Price | Current/First Day Price | Return | Notes |
+|---------|-----------|-------------------------|--------|-------|
+| [For completed IPOs, track performance] |
+
+` : '';
+
+      // FINANCIAL ANALYSIS sections
+      const financialAnalysisSections = isFinancialQuery ? `
+## Financial Overview
+
+### Key Financial Metrics
+| Metric | Value | Period | YoY Change | Source |
+|--------|-------|--------|------------|--------|
+| Revenue | [Amount] | [Period] | [%] | [Source] |
+| Net Income | [Amount] | [Period] | [%] | [Source] |
+| EBITDA | [Amount] | [Period] | [%] | [Source] |
+| Total Assets | [Amount] | [Period] | [%] | [Source] |
+| Total Liabilities | [Amount] | [Period] | [%] | [Source] |
+
+### Valuation Metrics
+| Metric | Value | Industry Avg | Notes |
+|--------|-------|--------------|-------|
+| P/E Ratio | | | |
+| P/B Ratio | | | |
+| EV/EBITDA | | | |
+| Market Cap | | | |
+
+### Financial Health Indicators
+- **Liquidity**: Current ratio, quick ratio
+- **Leverage**: Debt-to-equity, interest coverage
+- **Profitability**: ROE, ROA, profit margins
+- **Growth**: Revenue CAGR, earnings growth
+
+## Financial Trends & Analysis
+
+### Historical Performance
+[Year-over-year trends with specific numbers from sources]
+
+### Peer Comparison
+| Company | Revenue | Profit Margin | P/E | Market Cap |
+|---------|---------|---------------|-----|------------|
+| [Compare to industry peers if data available] |
+
+### Risk Factors
+- Identified financial risks
+- Market exposure
+- Regulatory considerations
+
+` : '';
+
       const baseInstructions = `You are an expert research analyst powered by OpenAI GPT-4o generating a STRUCTURED research report.
 
 CURRENT DATE: ${currentDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
@@ -204,6 +282,23 @@ This query asks for SPECIFIC COMPANIES/ENTITIES. You MUST:
 3. NEVER summarize as "various companies" - always list by name
 4. If no companies found, explicitly state this
 ` : ''}
+${isIPOQuery ? `
+⚠️ IPO ANALYSIS MODE ACTIVE ⚠️
+This query is about IPOs. You MUST include:
+1. IPO Pipeline Overview table with ALL companies planning/undergoing IPOs
+2. IPO Timeline with key dates and milestones
+3. Market analysis with subscription data if available
+4. Post-IPO performance for completed listings
+` : ''}
+${isFinancialQuery ? `
+⚠️ FINANCIAL ANALYSIS MODE ACTIVE ⚠️
+This query requires financial data. You MUST:
+1. Extract ALL numeric financial data from sources
+2. Present data in structured tables with periods and sources
+3. Include valuation metrics where available
+4. Compare to peers/industry if data exists
+5. NEVER invent financial numbers - mark unavailable data as "N/A"
+` : ''}
 ${originalPrompt ? `
 IMPORTANT: Include the original research prompt at the very beginning of the report in a blockquote, like this:
 > **Research Prompt:** ${originalPrompt}
@@ -213,11 +308,15 @@ REQUIRED REPORT STRUCTURE (Markdown):
 # [Title Based on Query - Be Specific]
 
 ${entityExtractionSection}
+${ipoSpecificSections}
+${financialAnalysisSections}
 ## Executive Summary
 - [5-8 bullet points summarizing key findings]
 - Each bullet must be specific and actionable
 - Include metrics, dates, and names where available
 ${isEntityQuery ? '- LIST any company names in bullet points' : ''}
+${isIPOQuery ? '- Highlight upcoming IPO dates and key companies' : ''}
+${isFinancialQuery ? '- Include key financial figures with sources' : ''}
 
 ## Key Findings
 1. **[Finding 1 Title]**: [Detailed explanation with evidence]

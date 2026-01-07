@@ -193,16 +193,39 @@ function decomposeQuery(query: string): string[] {
     });
   }
   
-  if (/\b(financials?|revenue|profit|earnings)\b/i.test(queryLower)) {
+  // Enhanced financial analysis queries
+  if (/\b(financials?|revenue|profit|earnings|valuation|market\s*cap|p\/e|ebitda)\b/i.test(queryLower)) {
+    subQueries.push(`${query} financial data numbers`);
+    subQueries.push(`${query} revenue profit figures`);
+    
     entities.forEach(entity => {
-      subQueries.push(`${entity} financial results 2024`);
-      subQueries.push(`${entity} annual report`);
+      subQueries.push(`${entity} financial results 2024 2025`);
+      subQueries.push(`${entity} annual report financial statements`);
+      subQueries.push(`${entity} revenue profit margin`);
+      subQueries.push(`${entity} market capitalization valuation`);
+      subQueries.push(`${entity} P/E ratio EBITDA`);
+      subQueries.push(`${entity} investor presentation financials`);
+    });
+    
+    // Financial data source searches
+    if (/\b(saudi|ksa|tadawul)\b/i.test(queryLower)) {
+      subQueries.push(`site:tadawul.com.sa financial statements`);
+      subQueries.push(`site:argaam.com financial results`);
+    }
+  }
+  
+  // Stock/investment queries
+  if (/\b(stock|shares?|investment|trading|dividend)\b/i.test(queryLower)) {
+    entities.forEach(entity => {
+      subQueries.push(`${entity} stock price performance`);
+      subQueries.push(`${entity} dividend history yield`);
+      subQueries.push(`${entity} trading volume`);
     });
   }
   
   // Deduplicate and limit
   const uniqueQueries = [...new Set(subQueries)];
-  return uniqueQueries.slice(0, 15); // Increased to 15 for IPO queries
+  return uniqueQueries.slice(0, 20); // Increased to 20 for comprehensive research
 }
 
 // Execute a single sub-agent search (100% real web scraping)
