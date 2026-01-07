@@ -25,7 +25,8 @@ import {
   Target,
   Banknote,
   Home,
-  Cpu
+  Cpu,
+  Languages
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -43,6 +44,7 @@ import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { useNewsMonitor, NewsItem, NewsCategory as NewsCategoryType } from '@/hooks/useNewsMonitor';
 import { useNewsSourceSettings } from '@/hooks/useNewsSourceSettings';
 import { useNewsNotifications } from '@/hooks/useNewsNotifications';
+import { useLanguage, Language } from '@/lib/i18n/LanguageContext';
 import { cn } from '@/lib/utils';
 import { format, isAfter, isBefore, startOfDay, endOfDay } from 'date-fns';
 
@@ -165,6 +167,12 @@ export function NewsRibbon({ filterState }: NewsRibbonProps) {
 
   const { isSourceAllowed } = useNewsSourceSettings();
   const { notifyNewItems, settings: notificationSettings, permission } = useNewsNotifications();
+  const { language, setLanguage, t } = useLanguage();
+
+  const languages: { code: Language; label: string; flag: string }[] = [
+    { code: 'en', label: 'English', flag: '🇺🇸' },
+    { code: 'ar', label: 'العربية', flag: '🇸🇦' },
+  ];
 
   const [isExpanded, setIsExpanded] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -404,6 +412,33 @@ export function NewsRibbon({ filterState }: NewsRibbonProps) {
                 {isMonitoring ? 'Stop monitoring' : 'Start monitoring'}
               </TooltipContent>
             </Tooltip>
+
+            {/* Language Toggle */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                >
+                  <Languages className="w-3.5 h-3.5" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-36 p-1">
+                {languages.map((lang) => (
+                  <Button
+                    key={lang.code}
+                    variant={language === lang.code ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className="w-full justify-start gap-2 h-8"
+                    onClick={() => setLanguage(lang.code)}
+                  >
+                    <span>{lang.flag}</span>
+                    <span className="text-xs">{lang.label}</span>
+                  </Button>
+                ))}
+              </PopoverContent>
+            </Popover>
           </div>
         </div>
 
