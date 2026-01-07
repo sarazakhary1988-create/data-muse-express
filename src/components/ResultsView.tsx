@@ -9,6 +9,7 @@ import { ResultCard } from '@/components/ResultCard';
 import { ResearchTrace } from '@/components/ResearchTrace';
 import { DiscrepancyReport } from '@/components/DiscrepancyReport';
 import { EvidenceChainPanel, EvidenceSource, DerivedClaim } from '@/components/EvidenceChainPanel';
+import { ExtractionQualityPanel, ExtractedEntity } from '@/components/ExtractionQualityPanel';
 import { ReportExportButton } from '@/components/ReportExportButton';
 import { ResearchTask, useResearchStore } from '@/store/researchStore';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
@@ -270,29 +271,134 @@ export const ResultsView = ({ task, onBack, onViewReport }: ResultsViewProps) =>
         </TabsContent>
 
         <TabsContent value="evidence">
-          <EvidenceChainPanel 
-            sources={task.results.map((r, i) => ({
-              id: r.id,
-              url: r.url,
-              domain: r.metadata.domain || new URL(r.url).hostname,
-              title: r.title,
-              status: r.relevanceScore > 0.7 ? 'verified' : r.relevanceScore > 0.4 ? 'partial' : 'unverified',
-              extractedData: [
-                { id: `${r.id}-1`, field: 'Title', value: r.title, sourceSnippet: r.summary.slice(0, 100), confidence: r.relevanceScore },
-                { id: `${r.id}-2`, field: 'Domain', value: r.metadata.domain || '', sourceSnippet: r.url, confidence: 0.95 },
-              ],
-              confidenceScore: r.relevanceScore * 100,
-              wordCount: r.metadata.wordCount || r.content?.length || 500,
-            } as EvidenceSource))}
-            claims={consolidation?.discrepancies?.map((d, i) => ({
-              id: `claim-${i}`,
-              statement: `${d.field}: ${d.resolution.selectedValue}`,
-              supportingSources: d.values.filter(v => v.value === d.resolution.selectedValue).map(v => v.source),
-              contradictingSources: d.values.filter(v => v.value !== d.resolution.selectedValue).map(v => v.source),
-              confidenceScore: 0.75,
-              verificationStatus: 'likely' as const,
-            } as DerivedClaim)) || []}
-          />
+          <div className="grid gap-4 lg:grid-cols-2">
+            {/* Extraction Quality Panel */}
+            <ExtractionQualityPanel 
+              entities={(() => {
+                // Build entities from consolidation data or task results
+                const entities: ExtractedEntity[] = [];
+                
+                // Extract from consolidated data if available
+                if (consolidation?.consolidatedData) {
+                  const data = consolidation.consolidatedData;
+                  
+                  // Extract companies
+                  if (data.companies && Array.isArray(data.companies)) {
+                    data.companies.forEach((c: any) => {
+                      entities.push({
+                        name: typeof c === 'string' ? c : c.name,
+                        type: 'company',
+                        value: typeof c === 'string' ? c : c.name,
+                        confidence: c.confidence || 'medium',
+                        extractionMethod: c.extraction_method || 'ai',
+                        metadata: {
+                          ticker: c.ticker,
+                          market: c.market,
+                          action: c.action,
+                        },
+                      });
+                    });
+                  }
+                  
+                  // Extract dates
+                  if (data.key_dates && Array.isArray(data.key_dates)) {
+                    data.key_dates.forEach((d: any) => {
+                      entities.push({
+                        name: typeof d === 'string' ? d : d.date || d.event,
+                        type: 'date',
+                        value: typeof d === 'string' ? d : `${d.date}: ${d.event}`,
+                        confidence: 'medium',
+                        extractionMethod: 'regex',
+                      });
+                    });
+                  }
+                  
+                  // Extract numeric data
+                  if (data.numeric_data && Array.isArray(data.numeric_data)) {
+                    data.numeric_data.forEach((n: any) => {
+                      entities.push({
+                        name: n.label || n.metric || 'Value',
+                        type: 'numeric',
+                        value: n.value || n.amount,
+                        confidence: n.confidence || 'medium',
+                        extractionMethod: n.extraction_method || 'regex',
+                      });
+                    });
+                  }
+                  
+                  // Extract people
+                  if (data.people && Array.isArray(data.people)) {
+                    data.people.forEach((p: any) => {
+                      entities.push({
+                        name: typeof p === 'string' ? p : p.name,
+                        type: 'person',
+                        value: typeof p === 'string' ? p : `${p.name}${p.role ? ` - ${p.role}` : ''}`,
+                        confidence: 'medium',
+                        extractionMethod: 'ai',
+                      });
+                    });
+                  }
+                  
+                  // Extract key facts
+                  if (data.key_facts && Array.isArray(data.key_facts)) {
+                    data.key_facts.slice(0, 10).forEach((f: any) => {
+                      entities.push({
+                        name: typeof f === 'string' ? f.slice(0, 50) : f.fact?.slice(0, 50) || 'Fact',
+                        type: 'fact',
+                        value: typeof f === 'string' ? f : f.fact || f.value,
+                        confidence: f.confidence || 'medium',
+                        extractionMethod: 'ai',
+                      });
+                    });
+                  }
+                }
+                
+                // Fallback: create entities from result metadata if no consolidation
+                if (entities.length === 0) {
+                  task.results.forEach((r: any) => {
+                    // Add domain as a fact
+                    if (r.metadata?.domain) {
+                      entities.push({
+                        name: r.metadata.domain,
+                        type: 'fact',
+                        value: `Source: ${r.metadata.domain}`,
+                        confidence: 'high',
+                        extractionMethod: 'regex',
+                      });
+                    }
+                  });
+                }
+                
+                return entities;
+              })()}
+              totalSources={task.results.length}
+            />
+
+            {/* Evidence Chain Panel */}
+            <EvidenceChainPanel 
+              sources={task.results.map((r, i) => ({
+                id: r.id,
+                url: r.url,
+                domain: r.metadata.domain || new URL(r.url).hostname,
+                title: r.title,
+                status: r.relevanceScore > 0.7 ? 'verified' : r.relevanceScore > 0.4 ? 'partial' : 'unverified',
+                extractedData: [
+                  { id: `${r.id}-1`, field: 'Title', value: r.title, sourceSnippet: r.summary.slice(0, 100), confidence: r.relevanceScore },
+                  { id: `${r.id}-2`, field: 'Domain', value: r.metadata.domain || '', sourceSnippet: r.url, confidence: 0.95 },
+                ],
+                confidenceScore: r.relevanceScore * 100,
+                wordCount: r.metadata.wordCount || r.content?.length || 500,
+              } as EvidenceSource))}
+              claims={consolidation?.discrepancies?.map((d, i) => ({
+                id: `claim-${i}`,
+                statement: `${d.field}: ${d.resolution.selectedValue}`,
+                supportingSources: d.values.filter(v => v.value === d.resolution.selectedValue).map(v => v.source),
+                contradictingSources: d.values.filter(v => v.value !== d.resolution.selectedValue).map(v => v.source),
+                confidenceScore: 0.75,
+                verificationStatus: 'likely' as const,
+              } as DerivedClaim)) || []}
+            />
+          </div>
         </TabsContent>
 
         <TabsContent value="validation">
