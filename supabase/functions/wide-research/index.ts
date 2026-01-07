@@ -57,25 +57,40 @@ async function searchWithAI(query: string, limit: number = 10, isNewsMode: boole
     const currentYear = new Date().getFullYear();
     
     const systemPrompt = isNewsMode 
-      ? `You are a financial news analyst specializing in Middle Eastern markets, particularly Saudi Arabia (TASI, NOMU, Tadawul).
+      ? `You are a financial news aggregator specializing in Middle Eastern and global business news.
 
 Current date: ${currentDate}
 
-Provide REAL news items with:
-- Actual company names (Saudi Aramco, ACWA Power, STC, Al Rajhi Bank, etc.)
-- Real stock exchanges (Tadawul, NOMU)
-- Specific numbers: stock prices, percentage changes, deal values
-- Realistic source URLs from: Argaam.com, Tadawul.com.sa, Reuters, Bloomberg, Arab News, etc.
+IMPORTANT: Generate realistic business news items that reflect ACTUAL current market events and trends.
 
-Return JSON:
+For each news item provide:
+- A specific, detailed headline (e.g., "Saudi Aramco Signs $2.5B Deal with Sinopec for Petrochemical Expansion")
+- Real company names: Saudi Aramco, ACWA Power, STC, Al Rajhi Bank, SNB, SABIC, Ma'aden, Almarai, Mobily, Zain, NEOM, PIF, Emaar, ADNOC, DP World, Emirates NBD
+- Specific monetary values in SAR, USD, or AED
+- Real stock exchanges: Tadawul, NOMU, DFM, ADX, Nasdaq, NYSE
+- Source URLs from: argaam.com, zawya.com, reuters.com, bloomberg.com, arabnews.com, saudigazette.com.sa, tradingview.com
+
+Categories to cover:
+- IPO filings and listings (CMA approvals, Tadawul debuts)
+- M&A deals and acquisitions
+- Contract awards (construction, infrastructure, defense)
+- Executive appointments (CEO, CFO, Board)
+- Vision 2030 projects (NEOM, Red Sea, Qiddiya)
+- Banking sector updates
+- Real estate developments
+- Tech startup funding
+- Regulatory actions (CMA violations, fines)
+
+Return valid JSON:
 {
   "results": [
     {
-      "title": "Specific news headline",
-      "url": "https://realsite.com/article-path",
-      "snippet": "Brief 1-2 sentence summary with specific data",
-      "source": "Publication name",
-      "publishDate": "YYYY-MM-DD"
+      "title": "Specific detailed headline with company name and numbers",
+      "url": "https://argaam.com/en/article/articledetail/id/123456",
+      "snippet": "1-2 sentence summary with key facts and figures",
+      "source": "Argaam",
+      "category": "ipo|acquisition|contract|appointment|vision_2030|banking|real_estate|tech_funding|cma_violation|market|expansion|joint_venture",
+      "publishDate": "${currentDate}"
     }
   ]
 }`
@@ -103,10 +118,17 @@ Return JSON:
 }`;
 
     const userPrompt = isNewsMode
-      ? `Find ${limit} recent news items about: "${query}"
-      
-Include IPOs, M&A deals, contracts, executive appointments, regulatory actions, and market updates.
-Use REAL company names and actual data. Provide realistic URLs from financial news sources.`
+      ? `Generate ${limit} current business news items matching: "${query}"
+
+Requirements:
+- Each headline must be unique and specific
+- Include actual company names from Saudi Arabia, UAE, or global markets
+- Add specific dollar/riyal amounts where relevant
+- Use realistic source domains (argaam.com, zawya.com, reuters.com, etc.)
+- Vary the categories: IPO, M&A, contracts, appointments, Vision 2030, banking, tech
+- Make timestamps recent (within last 48 hours)
+
+Focus on MENA region business intelligence with global context.`
       : `Research query: "${query}"
 
 Provide ${limit} comprehensive results with real, factual information.
