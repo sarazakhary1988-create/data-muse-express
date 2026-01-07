@@ -181,19 +181,28 @@ export function useNewsMonitor() {
             seenNewsIds.current.add(id);
           }
           
-          const source = extractDomain(result.url);
-          const text = `${result.title} ${result.snippet || ''}`;
+          const source = (typeof result.source === 'string' && result.source.trim().length > 0)
+            ? result.source
+            : extractDomain(result.url);
+
+          const snippet = (result.snippet || result.content || '').toString();
+          const text = `${result.title} ${snippet}`;
           const country = detectCountry(text);
-          
+
+          // Prefer published timestamp from the backend when available
+          const tsCandidate = result.fetchedAt || result.publishDate || result.publishedAt;
+          const parsedTs = tsCandidate ? new Date(tsCandidate) : new Date();
+          const timestamp = Number.isNaN(parsedTs.getTime()) ? new Date() : parsedTs;
+
           return {
             id,
             title: result.title,
             source,
             url: result.url,
-            timestamp: new Date(),
-            category: categorizeNews(result.title, result.snippet || ''),
+            timestamp,
+            category: categorizeNews(result.title, snippet),
             isNew,
-            snippet: result.snippet?.slice(0, 200) || '',
+            snippet: snippet.slice(0, 200) || '',
             country,
             region: country ? REGION_MAP[country] : 'global',
             companies: extractCompanies(text),
