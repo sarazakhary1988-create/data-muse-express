@@ -42,6 +42,7 @@ import {
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { useNewsMonitor, NewsItem, NewsCategory as NewsCategoryType } from '@/hooks/useNewsMonitor';
 import { useNewsSourceSettings } from '@/hooks/useNewsSourceSettings';
+import { useNewsNotifications } from '@/hooks/useNewsNotifications';
 import { cn } from '@/lib/utils';
 import { format, isAfter, isBefore, startOfDay, endOfDay } from 'date-fns';
 
@@ -163,11 +164,13 @@ export function NewsRibbon({ filterState }: NewsRibbonProps) {
   } = useNewsMonitor();
 
   const { isSourceAllowed } = useNewsSourceSettings();
+  const { notifyNewItems, settings: notificationSettings, permission } = useNewsNotifications();
 
   const [isExpanded, setIsExpanded] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollPosition, setScrollPosition] = useState(0);
+  const previousNewsRef = useRef<Set<string>>(new Set());
 
   // Use provided filter state or create local one
   const localFilterState = useNewsFilterState();
@@ -178,6 +181,25 @@ export function NewsRibbon({ filterState }: NewsRibbonProps) {
     startMonitoring();
     return () => stopMonitoring();
   }, []);
+
+  // Check for new high-priority news and send notifications
+  useEffect(() => {
+    if (news.length === 0) return;
+    
+    // Find truly new items (not seen before)
+    const newItems = news.filter(item => {
+      const isNew = !previousNewsRef.current.has(item.id);
+      return isNew && item.isNew;
+    });
+
+    if (newItems.length > 0) {
+      // Send notifications for high-priority items
+      notifyNewItems(newItems);
+      
+      // Update seen items
+      news.forEach(item => previousNewsRef.current.add(item.id));
+    }
+  }, [news, notifyNewItems]);
 
   // Filter news based on current filters AND source settings
   const filteredNews = news.filter(item => {
