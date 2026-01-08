@@ -352,9 +352,10 @@ export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
     secondsUntilRefresh,
     startMonitoring,
     stopMonitoring,
-    fetchLatestNews,
+    refreshNews,
     markAsRead,
     setRefreshInterval,
+    updateFilters,
   } = useNewsMonitor();
 
   const { isSourceAllowed } = useNewsSourceSettings();
@@ -410,6 +411,15 @@ export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
     startMonitoring();
     return () => stopMonitoring();
   }, []);
+
+  // Update filters in the hook when local filters change
+  useEffect(() => {
+    updateFilters({
+      categories: filters.categories.filter(c => c !== 'all'),
+      countries: filters.countries.filter(c => c !== 'all'),
+      sources: filters.sources.filter(s => s !== 'all'),
+    });
+  }, [filters.categories, filters.countries, filters.sources, updateFilters]);
 
   // Check for new high-priority news and send notifications
   useEffect(() => {
@@ -693,7 +703,7 @@ export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
                   variant="ghost"
                   size="icon"
                   className="h-7 w-7"
-                  onClick={fetchLatestNews}
+                  onClick={refreshNews}
                   disabled={isLoading}
                 >
                   <RefreshCw className={cn("w-3 h-3", isLoading && "animate-spin")} />
