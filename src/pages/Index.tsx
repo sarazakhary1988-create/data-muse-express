@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Helmet } from 'react-helmet-async';
 import { Sparkles, XCircle } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { AnimatedBackground } from '@/components/AnimatedBackground';
@@ -33,6 +34,7 @@ const Index = () => {
   const [activeView, setActiveView] = useState<ViewType>('search');
   const [researchSteps, setResearchSteps] = useState(defaultResearchSteps);
   const [lastQuery, setLastQuery] = useState('');
+  const [ribbonPosition, setRibbonPosition] = useState<'top' | 'bottom'>('top');
   
   // Shared news filter state between TopNavigation and NewsRibbon
   const newsFilterState = useNewsFilterState();
@@ -380,6 +382,7 @@ const Index = () => {
             onResearchNews={(query) => {
               handleSearch(query);
             }}
+            onPositionChange={setRibbonPosition}
           />
           
           {/* Main Content Area */}

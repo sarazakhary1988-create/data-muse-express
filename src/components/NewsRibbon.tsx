@@ -339,9 +339,10 @@ export function NewsFilter({ filterState }: NewsFilterProps) {
 interface NewsRibbonProps {
   filterState?: ReturnType<typeof useNewsFilterState>;
   onResearchNews?: (query: string) => void;
+  onPositionChange?: (position: 'top' | 'bottom') => void;
 }
 
-export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
+export function NewsRibbon({ filterState, onResearchNews, onPositionChange }: NewsRibbonProps) {
   const navigate = useNavigate();
   const {
     news,
@@ -397,14 +398,20 @@ export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
   const activeFilterState = filterState || localFilterState;
   const { filters, toggleCategory, toggleCountry, toggleSource, clearFilters, hasActiveFilters } = activeFilterState;
 
-  // Save position to localStorage
+  // Save position to localStorage and notify parent
   const togglePosition = () => {
     const newPosition = position === 'top' ? 'bottom' : 'top';
     setPosition(newPosition);
+    onPositionChange?.(newPosition);
     try {
       localStorage.setItem(RIBBON_POSITION_KEY, newPosition);
     } catch {}
   };
+
+  // Notify parent of initial position on mount
+  useEffect(() => {
+    onPositionChange?.(position);
+  }, []);
 
   // Auto-start monitoring on mount
   useEffect(() => {
@@ -537,9 +544,9 @@ export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
     return (
       <>
         <div className={cn(
-          "fixed right-0 z-30 h-10 bg-background/95 backdrop-blur-sm border-b border-border/50",
-          "left-[72px] md:left-[72px]",
-          position === 'top' ? "top-14" : "bottom-0 border-t border-b-0"
+          "sticky z-30 h-10 bg-background/95 backdrop-blur-sm border-b border-border/50",
+          "left-0 right-0",
+          position === 'top' ? "top-0" : "bottom-0 border-t border-b-0"
         )}>
           <div className="flex items-center justify-center gap-3 h-full px-4">
             <Newspaper className="w-4 h-4 text-muted-foreground" />
@@ -571,12 +578,11 @@ export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
       {/* Draggable News Ribbon */}
       <div 
         className={cn(
-          "fixed right-0 z-30",
+          "sticky z-30",
           "bg-background/95 backdrop-blur-sm border-border/50",
           "transition-all duration-300",
-          // Leave space for sidebar (72px collapsed, 288px expanded) - we'll use CSS var
-          "left-[72px] md:left-[72px]",
-          position === 'top' ? "top-14 border-b" : "bottom-0 border-t"
+          "left-0 right-0",
+          position === 'top' ? "top-0 border-b" : "bottom-0 border-t"
         )}
       >
         {/* Main ticker bar - 40px height */}
