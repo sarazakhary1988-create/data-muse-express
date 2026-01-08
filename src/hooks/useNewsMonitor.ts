@@ -105,53 +105,90 @@ function buildFilteredQueries(filters?: NewsFilters): string[] {
   if (!filters) return baseQueries;
   
   const queries: string[] = [];
-  
-  // Add country-specific queries
   const activeCountries = filters.countries?.filter(c => c !== 'all') || [];
-  if (activeCountries.length > 0) {
-    const countryTerms = activeCountries.join(' OR ');
-    queries.push(`financial news ${countryTerms}`);
-    queries.push(`business market ${countryTerms}`);
-    queries.push(`IPO listing ${countryTerms}`);
-    queries.push(`M&A acquisition ${countryTerms}`);
-  }
-  
-  // Add category-specific queries
   const activeCategories = filters.categories?.filter(c => c !== 'all') || [];
-  if (activeCategories.length > 0) {
-    const categoryQueryMap: Record<string, string[]> = {
-      ipo: ['IPO listing prospectus public offering Tadawul NOMU'],
-      acquisition: ['M&A merger acquisition takeover buyout'],
-      market: ['stock market trading index shares equity'],
-      regulatory: ['CMA SEC regulation compliance filing'],
-      expansion: ['expansion launch growth new branch office'],
-      contract: ['contract awarded deal agreement billion million SAR'],
-      joint_venture: ['joint venture partnership MOU strategic alliance'],
-      appointment: ['CEO CFO chairman director appointment executive'],
-      cma_violation: ['CMA violation fine penalty sanction breach'],
-      vision_2030: ['Vision 2030 NEOM Red Sea Qiddiya giga project'],
-      banking: ['banking SNB Al Rajhi Riyad Bank profit earnings'],
-      real_estate: ['real estate property ROSHN REIT development'],
-      tech_funding: ['startup fintech venture funding series'],
-    };
-    
-    activeCategories.forEach(cat => {
-      const catQueries = categoryQueryMap[cat];
-      if (catQueries) {
-        queries.push(...catQueries.map(q => 
-          activeCountries.length > 0 ? `${q} ${activeCountries[0]}` : q
-        ));
-      }
-    });
-  }
+  const activeSources = filters.sources?.filter(s => s !== 'all') || [];
   
-  // If no specific filters, use base queries
-  if (queries.length === 0) {
+  // No filters active = use base queries
+  if (activeCountries.length === 0 && activeCategories.length === 0 && activeSources.length === 0) {
     return baseQueries;
   }
+
+  // Category-to-query mapping
+  const categoryQueryMap: Record<string, string> = {
+    ipo: 'IPO listing prospectus public offering Tadawul NOMU CMA',
+    acquisition: 'M&A merger acquisition takeover buyout deal',
+    market: 'stock market trading index shares equity Tadawul',
+    regulatory: 'CMA SEC regulation compliance filing penalty',
+    expansion: 'expansion launch growth new branch office opening',
+    contract: 'contract awarded deal agreement billion million SAR project',
+    joint_venture: 'joint venture partnership MOU strategic alliance',
+    appointment: 'CEO CFO chairman director appointment executive hire',
+    cma_violation: 'CMA violation fine penalty sanction breach warning',
+    vision_2030: 'Vision 2030 NEOM Red Sea Qiddiya giga project',
+    banking: 'banking bank SNB Al Rajhi Riyad Bank profit earnings',
+    real_estate: 'real estate property ROSHN REIT development housing',
+    tech_funding: 'startup fintech venture funding series investment tech',
+  };
+
+  // Source-to-site mapping for search
+  const sourceToSite: Record<string, string> = {
+    argaam: 'site:argaam.com',
+    zawya: 'site:zawya.com',
+    reuters: 'site:reuters.com',
+    bloomberg: 'site:bloomberg.com',
+    arabnews: 'site:arabnews.com',
+    ft: 'site:ft.com',
+    yahoo: 'site:finance.yahoo.com',
+    tadawul: 'site:saudiexchange.sa',
+  };
+
+  // Build country string
+  const countryStr = activeCountries.length > 0 
+    ? activeCountries.join(' OR ') 
+    : '';
+
+  // Build source site string
+  const siteStr = activeSources.length > 0
+    ? activeSources.map(s => sourceToSite[s] || '').filter(Boolean).join(' OR ')
+    : '';
+
+  // Case 1: Countries + Categories
+  if (activeCountries.length > 0 && activeCategories.length > 0) {
+    activeCategories.forEach(cat => {
+      const catQuery = categoryQueryMap[cat] || cat;
+      activeCountries.forEach(country => {
+        queries.push(`${catQuery} ${country}${siteStr ? ' ' + siteStr : ''}`);
+      });
+    });
+  }
+  // Case 2: Countries only
+  else if (activeCountries.length > 0) {
+    activeCountries.forEach(country => {
+      queries.push(`financial news ${country}${siteStr ? ' ' + siteStr : ''}`);
+      queries.push(`business market ${country}${siteStr ? ' ' + siteStr : ''}`);
+      queries.push(`IPO listing ${country}${siteStr ? ' ' + siteStr : ''}`);
+      queries.push(`M&A acquisition ${country}${siteStr ? ' ' + siteStr : ''}`);
+    });
+  }
+  // Case 3: Categories only
+  else if (activeCategories.length > 0) {
+    activeCategories.forEach(cat => {
+      const catQuery = categoryQueryMap[cat] || cat;
+      queries.push(`${catQuery} GCC MENA${siteStr ? ' ' + siteStr : ''}`);
+    });
+  }
+  // Case 4: Sources only
+  else if (activeSources.length > 0) {
+    queries.push(`financial news GCC ${siteStr}`);
+    queries.push(`business Saudi Arabia UAE ${siteStr}`);
+  }
+
+  // Log constructed queries for debugging
+  console.log('[NewsMonitor] Built filtered queries:', queries);
   
-  // Combine with base queries for better coverage
-  return [...new Set([...queries, ...baseQueries.slice(0, 3)])].slice(0, 10);
+  // Ensure we have at least some queries, limit to 10
+  return queries.length > 0 ? [...new Set(queries)].slice(0, 10) : baseQueries.slice(0, 5);
 }
 
 export function useNewsMonitor() {
