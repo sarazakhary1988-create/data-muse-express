@@ -6,6 +6,7 @@ import {
   Monitor, 
   Globe, 
   ChevronDown,
+  ChevronUp,
   BarChart3,
   Keyboard,
   Newspaper,
@@ -30,12 +31,17 @@ import {
   Briefcase,
   MapPin,
   Timer,
-  Filter
+  Filter,
+  Plus,
+  Link,
+  X,
+  ExternalLink
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   DropdownMenu,
@@ -158,6 +164,7 @@ export const TopNavigation = ({ className }: TopNavigationProps) => {
   const { tasks, reports } = useResearchStore();
   const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const tickerRef = useRef<HTMLDivElement>(null);
   const [isPaused, setIsPaused] = useState(false);
 
@@ -165,6 +172,21 @@ export const TopNavigation = ({ className }: TopNavigationProps) => {
   const [selectedCategories, setSelectedCategories] = useState<NewsCategoryType[]>([]);
   const [selectedCountry, setSelectedCountry] = useState('all');
   const [selectedSource, setSelectedSource] = useState('all');
+  
+  // Custom source URLs
+  const [customSources, setCustomSources] = useState<string[]>([]);
+  const [newSourceUrl, setNewSourceUrl] = useState('');
+
+  const addCustomSource = () => {
+    if (newSourceUrl && !customSources.includes(newSourceUrl)) {
+      setCustomSources([...customSources, newSourceUrl]);
+      setNewSourceUrl('');
+    }
+  };
+
+  const removeCustomSource = (url: string) => {
+    setCustomSources(customSources.filter(s => s !== url));
+  };
 
   // News hooks
   const { news, isLoading, secondsUntilRefresh, refreshInterval, refreshNews, setRefreshInterval, startMonitoring, stopMonitoring } = useNewsMonitor();
@@ -489,6 +511,19 @@ export const TopNavigation = ({ className }: TopNavigationProps) => {
 
             <Tooltip>
               <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setIsExpanded(!isExpanded)}>
+                  {isExpanded ? (
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{isExpanded ? 'Collapse' : 'Expand'}</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigate('/news')}>
                   <Maximize2 className="w-3.5 h-3.5" />
                 </Button>
@@ -608,6 +643,50 @@ export const TopNavigation = ({ className }: TopNavigationProps) => {
                     </Select>
                   </div>
 
+                  {/* Custom Source URLs */}
+                  <div className="space-y-3">
+                    <Label className="text-sm font-medium flex items-center gap-2">
+                      <Link className="w-4 h-4" />
+                      Custom Source URLs
+                    </Label>
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="https://example.com/rss"
+                        value={newSourceUrl}
+                        onChange={(e) => setNewSourceUrl(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && addCustomSource()}
+                        className="flex-1"
+                      />
+                      <Button size="sm" onClick={addCustomSource} disabled={!newSourceUrl}>
+                        <Plus className="w-4 h-4" />
+                      </Button>
+                    </div>
+                    {customSources.length > 0 && (
+                      <div className="space-y-2 mt-2">
+                        {customSources.map((url) => (
+                          <div 
+                            key={url} 
+                            className="flex items-center gap-2 p-2 rounded-lg bg-muted/50 border text-xs"
+                          >
+                            <ExternalLink className="w-3 h-3 text-muted-foreground shrink-0" />
+                            <span className="flex-1 truncate">{url}</span>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-5 w-5 shrink-0"
+                              onClick={() => removeCustomSource(url)}
+                            >
+                              <X className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-[10px] text-muted-foreground">
+                      Add custom RSS feeds or news source URLs to monitor
+                    </p>
+                  </div>
+
                   {/* Refresh Interval */}
                   <div className="space-y-3">
                     <Label className="text-sm font-medium flex items-center gap-2">
@@ -665,6 +744,73 @@ export const TopNavigation = ({ className }: TopNavigationProps) => {
             </Sheet>
           </div>
         </div>
+
+        {/* Expanded News Panel */}
+        <AnimatePresence>
+          {isExpanded && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="border-t border-border/30 bg-card/95 backdrop-blur-md overflow-hidden"
+            >
+              <div className="p-4 max-h-64 overflow-y-auto">
+                <div className="grid gap-2">
+                  {filteredNews.slice(0, 20).map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => openNewsUrl(item.url)}
+                      className="flex items-start gap-3 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors text-left group"
+                    >
+                      {/* Category badge */}
+                      <Badge 
+                        variant="outline" 
+                        className={cn(
+                          "text-[9px] px-1.5 py-0 h-5 shrink-0 mt-0.5",
+                          categoryColors[item.category]
+                        )}
+                      >
+                        {categoryLabels[item.category]}
+                      </Badge>
+                      
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium group-hover:text-primary transition-colors line-clamp-1">
+                          {item.title}
+                        </span>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-[10px] text-muted-foreground">
+                            {item.source.split('.')[0]}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground">·</span>
+                          <span className="text-[10px] text-muted-foreground">
+                            {formatTimeAgo(item.timestamp)}
+                          </span>
+                          {item.country && (
+                            <>
+                              <span className="text-[10px] text-muted-foreground">·</span>
+                              <span className="text-[10px] text-muted-foreground">
+                                {item.country}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <ExternalLink className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                    </button>
+                  ))}
+                  
+                  {filteredNews.length === 0 && (
+                    <div className="text-center py-8 text-sm text-muted-foreground">
+                      No news available. Try adjusting your filters.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </header>
 
       {/* Keyboard Shortcuts Dialog */}
