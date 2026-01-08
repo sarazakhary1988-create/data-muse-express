@@ -94,3 +94,21 @@ verify_jwt = false
 
 [functions.manus-realtime]
 verify_jwt = false
+
+[functions.gpt-researcher]
+verify_jwt = false
+
+[functions.crawl4ai]
+verify_jwt = false
+
+[functions.browser-use]
+verify_jwt = false
+
+[functions.deepseek-router]
+verify_jwt = false
+
+[functions.playwright-browser]
+verify_jwt = false
+
+[functions.llm-router]
+verify_jwt = false
