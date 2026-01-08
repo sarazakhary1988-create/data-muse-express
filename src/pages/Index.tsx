@@ -10,7 +10,6 @@ import { Sidebar, ViewType } from '@/components/Sidebar';
 import { TopNavigation } from '@/components/TopNavigation';
 import { SearchInput } from '@/components/SearchInput';
 import { HeroSection } from '@/components/HeroSection';
-// FeatureGrid removed for cleaner landing page
 import { ResearchProgress, defaultResearchSteps, deepVerifyResearchSteps } from '@/components/ResearchProgress';
 import { ResultsView } from '@/components/ResultsView';
 import { ReportViewer } from '@/components/ReportViewer';
@@ -24,6 +23,8 @@ import { HypothesisLab } from '@/components/hypothesis/HypothesisLab';
 import { LeadEnrichment } from '@/components/leads/LeadEnrichment';
 import { IntegrationsPage } from '@/components/integrations/IntegrationsPage';
 import { NewsRibbon, useNewsFilterState } from '@/components/NewsRibbon';
+import { ManusRealtimePanel } from '@/components/ManusRealtimePanel';
+import { useManusRealtime } from '@/hooks/useManusRealtime';
 
 
 import { useResearchStore, ResearchTask } from '@/store/researchStore';
@@ -38,6 +39,17 @@ const Index = () => {
   
   // Shared news filter state between TopNavigation and NewsRibbon
   const newsFilterState = useNewsFilterState();
+  
+  // Manus Realtime connection for live agent progress
+  const manusRealtime = useManusRealtime({
+    autoConnect: false,
+    onComplete: (metrics) => {
+      console.log('[Manus] Research complete:', metrics);
+    },
+    onError: (error) => {
+      console.error('[Manus] Error:', error);
+    },
+  });
   
   const { 
     isSearching, 
@@ -140,6 +152,19 @@ const Index = () => {
     try {
       setLastQuery(query);
       addQuery(); // Track for gamification
+      
+      // Connect to Manus realtime for live agent progress
+      if (!manusRealtime.isConnected) {
+        manusRealtime.connect();
+      }
+      
+      // Start Manus realtime research (parallel to main research)
+      setTimeout(() => {
+        if (manusRealtime.isConnected) {
+          manusRealtime.startResearch(query, { enableExplorium: true });
+        }
+      }, 500);
+      
       await startResearch(query);
       setActiveView('results');
     } catch (error) {
@@ -243,6 +268,15 @@ const Index = () => {
                   
                   <AgentStatusPanel />
                   <SearchEngineIndicator />
+                  
+                  {/* Manus 1.6 MAX Real-time Agent Panel */}
+                  <ManusRealtimePanel 
+                    className="mb-4"
+                    onResearchComplete={() => {
+                      console.log('[Manus] Research cycle complete');
+                    }}
+                  />
+                  
                   <ResearchProgress 
                     steps={researchSteps} 
                     currentProgress={currentTask.progress}
