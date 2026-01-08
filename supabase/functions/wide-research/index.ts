@@ -18,6 +18,13 @@ interface WideResearchRequest {
     minSourcesPerItem?: number;
     country?: string;
   };
+  // LLM config from UI
+  preferLocal?: boolean;
+  endpointOverrides?: {
+    ollamaUrl?: string;
+    vllmUrl?: string;
+    hfTgiUrl?: string;
+  };
 }
 
 interface WebSource {

@@ -22,6 +22,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { withLLMConfig } from '@/lib/llmConfig';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -349,7 +350,9 @@ export const LeadEnrichment = () => {
             country: companyForm.country !== 'All Countries' ? companyForm.country : undefined,
           };
       
-      const { data, error } = await supabase.functions.invoke('lead-enrichment', { body });
+      const { data, error } = await supabase.functions.invoke('lead-enrichment', { 
+        body: withLLMConfig(body) 
+      });
       
       if (error || !data?.success) {
         toast({ 
@@ -456,8 +459,25 @@ export const LeadEnrichment = () => {
     const progressInterval = simulateProgress();
 
     try {
+      // First try Explorium for fast enrichment data
+      let exploriumData: any = null;
+      try {
+        const { data: expData } = await supabase.functions.invoke('explorium-enrich', {
+          body: { 
+            query: `${formData.firstName} ${formData.lastName}${formData.company ? ` ${formData.company}` : ''}`,
+            type: 'person' 
+          },
+        });
+        if (expData?.data && expData?.confidence > 0.5) {
+          exploriumData = expData.data;
+          console.log('[LeadEnrichment] Explorium data retrieved:', exploriumData);
+        }
+      } catch (e) {
+        console.log('[LeadEnrichment] Explorium enrichment skipped:', e);
+      }
+
       const { data, error } = await supabase.functions.invoke('lead-enrichment', {
-        body: {
+        body: withLLMConfig({
           type: 'person',
           firstName: formData.firstName,
           lastName: formData.lastName,
@@ -466,7 +486,8 @@ export const LeadEnrichment = () => {
           linkedinUrl: formData.linkedinUrl,
           email: formData.email,
           reportType: selectedReport,
-        },
+          exploriumData, // Pass Explorium data to enrich results
+        }),
       });
 
       clearInterval(progressInterval);
@@ -537,15 +558,33 @@ export const LeadEnrichment = () => {
     const progressInterval = simulateProgress();
 
     try {
+      // First try Explorium for fast enrichment data
+      let exploriumData: any = null;
+      try {
+        const { data: expData } = await supabase.functions.invoke('explorium-enrich', {
+          body: { 
+            query: formData.companyName || formData.website,
+            type: 'company' 
+          },
+        });
+        if (expData?.data && expData?.confidence > 0.5) {
+          exploriumData = expData.data;
+          console.log('[LeadEnrichment] Explorium company data retrieved:', exploriumData);
+        }
+      } catch (e) {
+        console.log('[LeadEnrichment] Explorium company enrichment skipped:', e);
+      }
+
       const { data, error } = await supabase.functions.invoke('lead-enrichment', {
-        body: {
+        body: withLLMConfig({
           type: 'company',
           companyName: formData.companyName || formData.website,
           industry: formData.industry,
           country: formData.country !== 'All Countries' ? formData.country : undefined,
           website: formData.website,
           reportType: selectedReport,
-        },
+          exploriumData, // Pass Explorium data to enrich results
+        }),
       });
 
       clearInterval(progressInterval);
@@ -617,7 +656,7 @@ export const LeadEnrichment = () => {
       const currentReportContent = JSON.stringify(result, null, 2);
       
       const { data, error } = await supabase.functions.invoke('lead-enrichment', {
-        body: {
+        body: withLLMConfig({
           type: 'chat_edit',
           currentReport: currentReportContent,
           editInstruction: userMessage,
@@ -625,7 +664,7 @@ export const LeadEnrichment = () => {
             name: result.name,
             entityType: result.type,
           },
-        },
+        }),
       });
       
       if (error || !data?.success) {

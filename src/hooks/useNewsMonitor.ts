@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { validateUrl, OFFICIAL_DOMAINS, VERIFIED_DOMAINS, PREMIUM_DOMAINS } from '@/lib/urlValidator';
+import { withLLMConfig } from '@/lib/llmConfig';
 
 // MANUS 1.7 MAX - Complete News Categories per specification
 export type NewsCategory = 
@@ -569,7 +570,7 @@ export function useNewsMonitor() {
         const results = await Promise.all(
           batch.map(query => 
             supabase.functions.invoke('wide-research', {
-              body: { query, maxResults: 15, newsMode: true },
+              body: withLLMConfig({ query, maxResults: 15, newsMode: true }),
             })
           )
         );
