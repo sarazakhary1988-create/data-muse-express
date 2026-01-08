@@ -22,7 +22,7 @@ const MANUS_WS_URL = 'wss://hhkbtwcmztozihipiszm.functions.supabase.co/functions
 interface SubAgentState {
   id: string;
   name: string;
-  type: 'planner' | 'searcher' | 'scraper' | 'analyzer' | 'verifier' | 'writer';
+  type: 'planner' | 'searcher' | 'scraper' | 'analyzer' | 'verifier' | 'writer' | 'enricher' | 'router';
   status: 'idle' | 'running' | 'completed' | 'failed' | 'queued';
   progress: number;
   startTime?: Date;
@@ -32,6 +32,7 @@ interface SubAgentState {
     successRate: number;
   };
   currentTask?: string;
+  source?: string; // Which tool/function is being used
 }
 
 interface VerificationNode {
@@ -76,6 +77,8 @@ const AGENT_CONFIG = {
   analyzer: { icon: Cpu, color: 'text-cyan-500', bg: 'bg-cyan-500/10', label: 'Analyzer' },
   verifier: { icon: Shield, color: 'text-green-500', bg: 'bg-green-500/10', label: 'Verifier' },
   writer: { icon: FileText, color: 'text-pink-500', bg: 'bg-pink-500/10', label: 'Writer' },
+  enricher: { icon: Zap, color: 'text-indigo-500', bg: 'bg-indigo-500/10', label: 'Enricher' },
+  router: { icon: Network, color: 'text-orange-500', bg: 'bg-orange-500/10', label: 'Router' },
 };
 
 // State configurations
@@ -478,18 +481,28 @@ export function AgentOrchestrationDashboard({
     };
   }, []);
 
-  // Helper to map agent types
+  // Helper to map agent types from manus-realtime and command-router
   const mapAgentType = (type: string): SubAgentState['type'] => {
     const typeMap: Record<string, SubAgentState['type']> = {
+      // Manus realtime agent types
       'news': 'searcher',
       'research': 'analyzer',
       'url_validation': 'verifier',
-      'lead_enrichment': 'analyzer',
-      'explorium_enrichment': 'analyzer',
+      'lead_enrichment': 'enricher',
+      'explorium_enrichment': 'enricher',
       'cma_scraper': 'scraper',
       'tadawul_scraper': 'scraper',
       'sama_scraper': 'scraper',
       'custom_source_crawler': 'scraper',
+      // Command router types
+      'ai-scrape-command': 'scraper',
+      'crawl4ai': 'scraper',
+      'gpt-researcher': 'analyzer',
+      'wide-research': 'searcher',
+      'news-search': 'searcher',
+      'research-command-router': 'router',
+      'browser-use': 'scraper',
+      'playwright-browser': 'scraper',
     };
     return typeMap[type] || 'analyzer';
   };

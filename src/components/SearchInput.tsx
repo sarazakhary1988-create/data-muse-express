@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Sparkles, Globe, ArrowRight, Loader2, Link, FileSearch, Shield, ShieldCheck, FileText, Table, FileBarChart, Zap, Clock, MapPin, ChevronDown, Brain, Puzzle, Database, Building2, User } from 'lucide-react';
+import { Search, Sparkles, Globe, ArrowRight, Loader2, Link, FileSearch, Shield, ShieldCheck, FileText, Table, FileBarChart, Zap, Clock, MapPin, ChevronDown, Brain, Puzzle, Database, Building2, User, Route } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useResearchStore, REPORT_FORMAT_OPTIONS, ReportFormat } from '@/store/researchStore';
 import { Badge } from '@/components/ui/badge';
@@ -36,6 +36,139 @@ const MCP_CONNECTORS = [
 interface SearchInputProps {
   onSearch: (query: string) => void;
   onScrapeUrl?: (url: string) => void;
+}
+
+// Query Intent Detection - matches research-command-router logic
+type QueryIntent = 'url_scrape' | 'profile_lookup' | 'company_research' | 'lead_enrichment' | 'news_search' | 'deep_research' | 'general_research';
+
+const URL_PATTERN = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi;
+const LINKEDIN_PATTERN = /linkedin\.com\/(in|company)\/[\w-]+/i;
+const TWITTER_PATTERN = /twitter\.com\/[\w]+|x\.com\/[\w]+/i;
+
+const PROFILE_PATTERNS = [
+  /\b(who is|about|profile|biography|background|career)\b/i,
+  /\b(CEO|CFO|COO|chairman|director|founder|executive)\s+(of|at)\b/i,
+];
+
+const COMPANY_PATTERNS = [
+  /\b(company|corporation|inc|ltd|llc|plc|about company|company profile)\b/i,
+  /\b(business|enterprise|organization|firm)\s+(information|details|overview)\b/i,
+];
+
+const LEAD_PATTERNS = [
+  /\b(find|search|lookup|enrich|discover)\b.*\b(contact|email|phone)\b/i,
+  /\b(lead|prospect|contact)\s+(enrichment|data|information)\b/i,
+];
+
+const NEWS_PATTERNS = [
+  /\b(latest|recent|breaking|today|news|announcement)\b/i,
+  /\b(stock|market|trading|ipo|listing)\s+(news|update)\b/i,
+  /\b(cma|regulation|violation|fine|approval)\b/i,
+];
+
+interface DetectedIntent {
+  intent: QueryIntent;
+  confidence: number;
+  label: string;
+  icon: typeof Sparkles;
+  color: string;
+  description: string;
+}
+
+function detectQueryIntent(query: string): DetectedIntent {
+  const urls = query.match(URL_PATTERN) || [];
+  
+  // URL detected - route to scraping
+  if (urls.length > 0) {
+    if (LINKEDIN_PATTERN.test(query) || TWITTER_PATTERN.test(query)) {
+      return {
+        intent: 'profile_lookup',
+        confidence: 0.95,
+        label: 'Profile Lookup',
+        icon: User,
+        color: 'text-purple-500',
+        description: 'Will scrape and extract profile data',
+      };
+    }
+    return {
+      intent: 'url_scrape',
+      confidence: 0.95,
+      label: 'URL Scrape',
+      icon: Link,
+      color: 'text-amber-500',
+      description: 'Will extract content from URL',
+    };
+  }
+  
+  // Profile lookup
+  if (PROFILE_PATTERNS.some(p => p.test(query))) {
+    return {
+      intent: 'profile_lookup',
+      confidence: 0.85,
+      label: 'Profile Lookup',
+      icon: User,
+      color: 'text-purple-500',
+      description: 'Will search for person profile data',
+    };
+  }
+  
+  // Lead enrichment
+  if (LEAD_PATTERNS.some(p => p.test(query))) {
+    return {
+      intent: 'lead_enrichment',
+      confidence: 0.9,
+      label: 'Lead Enrichment',
+      icon: Zap,
+      color: 'text-blue-500',
+      description: 'Will enrich with contact data',
+    };
+  }
+  
+  // Company research
+  if (COMPANY_PATTERNS.some(p => p.test(query))) {
+    return {
+      intent: 'company_research',
+      confidence: 0.85,
+      label: 'Company Research',
+      icon: Building2,
+      color: 'text-cyan-500',
+      description: 'Will gather company intelligence',
+    };
+  }
+  
+  // News search
+  if (NEWS_PATTERNS.some(p => p.test(query))) {
+    return {
+      intent: 'news_search',
+      confidence: 0.8,
+      label: 'News Search',
+      icon: Globe,
+      color: 'text-green-500',
+      description: 'Will fetch latest news',
+    };
+  }
+  
+  // Deep research for complex queries
+  if (query.length > 100 || query.includes('comprehensive') || query.includes('analysis')) {
+    return {
+      intent: 'deep_research',
+      confidence: 0.75,
+      label: 'Deep Research',
+      icon: Brain,
+      color: 'text-pink-500',
+      description: 'Will perform multi-source analysis',
+    };
+  }
+  
+  // Default: general research
+  return {
+    intent: 'general_research',
+    confidence: 0.5,
+    label: 'Research',
+    icon: Search,
+    color: 'text-primary',
+    description: 'General research query',
+  };
 }
 
 const exampleQueries = [
@@ -88,6 +221,12 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
 
   const detectedUrl = isUrl(searchQuery);
   const charCount = searchQuery.length;
+  
+  // Detect query intent for smart routing indicator
+  const detectedIntent = useMemo(() => {
+    if (!searchQuery.trim() || searchQuery.length < 3) return null;
+    return detectQueryIntent(searchQuery);
+  }, [searchQuery]);
 
   useEffect(() => {
     if (inputRef.current) {
@@ -296,6 +435,49 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
                     <Link className="w-3 h-3 mr-1" />
                     URL
                   </Badge>
+                </motion.div>
+              )}
+            </AnimatePresence>
+            
+            {/* Query Intent Indicator - Smart Routing Badge */}
+            <AnimatePresence mode="wait">
+              {detectedIntent && !detectedUrl && searchQuery.length >= 5 && (
+                <motion.div
+                  initial={{ scale: 0, opacity: 0, x: -10 }}
+                  animate={{ scale: 1, opacity: 1, x: 0 }}
+                  exit={{ scale: 0, opacity: 0, x: -10 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                >
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Badge 
+                          variant="outline" 
+                          className={`text-xs ${detectedIntent.color} border-current/30 bg-current/10 flex items-center gap-1`}
+                        >
+                          <Route className="w-3 h-3" />
+                          {detectedIntent.label}
+                          <span className="text-[9px] opacity-70">
+                            {Math.round(detectedIntent.confidence * 100)}%
+                          </span>
+                        </Badge>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-xs">
+                        <div className="space-y-1">
+                          <p className="font-medium text-xs flex items-center gap-1">
+                            <detectedIntent.icon className="w-3 h-3" />
+                            Smart Routing: {detectedIntent.label}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {detectedIntent.description}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground/70">
+                            Command Router will use optimal agents for this query type.
+                          </p>
+                        </div>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </motion.div>
               )}
             </AnimatePresence>
