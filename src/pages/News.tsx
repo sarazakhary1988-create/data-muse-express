@@ -35,7 +35,6 @@ import { AnimatedBackground } from '@/components/AnimatedBackground';
 import { Sidebar } from '@/components/Sidebar';
 import { TopNavigation } from '@/components/TopNavigation';
 import { useNewsMonitor, NewsItem, NewsCategory as NewsCategoryType, COUNTRY_REGULATORS, COUNTRY_EXCHANGES } from '@/hooks/useNewsMonitor';
-import { useNewsFilterState } from '@/components/NewsRibbon';
 import { useNewsDeduplication } from '@/hooks/useNewsDeduplication';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
@@ -126,7 +125,6 @@ interface NewsSummary {
 
 const News = () => {
   const navigate = useNavigate();
-  const newsFilterState = useNewsFilterState();
   const {
     news,
     isMonitoring,
@@ -285,7 +283,7 @@ const News = () => {
         <Sidebar activeView="search" onViewChange={() => navigate('/')} />
 
         <div className="flex-1 flex flex-col overflow-hidden">
-          <TopNavigation newsFilterState={newsFilterState} />
+          <TopNavigation />
 
           <main className="flex-1 overflow-auto p-4 md:p-6">
             <motion.div

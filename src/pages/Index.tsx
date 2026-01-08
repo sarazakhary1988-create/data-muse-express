@@ -22,7 +22,7 @@ import { ResearchTemplates } from '@/components/templates/ResearchTemplates';
 import { HypothesisLab } from '@/components/hypothesis/HypothesisLab';
 import { LeadEnrichment } from '@/components/leads/LeadEnrichment';
 import { IntegrationsPage } from '@/components/integrations/IntegrationsPage';
-import { NewsRibbon, useNewsFilterState } from '@/components/NewsRibbon';
+import { NewsRibbon } from '@/components/NewsRibbon';
 import { ManusRealtimePanel } from '@/components/ManusRealtimePanel';
 import { StreamedResultsList } from '@/components/StreamedResultsList';
 import { useManusRealtime } from '@/hooks/useManusRealtime';
@@ -37,9 +37,6 @@ const Index = () => {
   const [researchSteps, setResearchSteps] = useState(defaultResearchSteps);
   const [lastQuery, setLastQuery] = useState('');
   const [ribbonPosition, setRibbonPosition] = useState<'top' | 'bottom'>('top');
-  
-  // Shared news filter state between TopNavigation and NewsRibbon
-  const newsFilterState = useNewsFilterState();
   
   // Manus Realtime connection for live agent progress
   const manusRealtime = useManusRealtime({
@@ -418,11 +415,10 @@ const Index = () => {
         {/* Main Content */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Top Navigation */}
-          <TopNavigation newsFilterState={newsFilterState} />
+          <TopNavigation />
           
           {/* News Monitoring Ribbon */}
           <NewsRibbon 
-            filterState={newsFilterState} 
             onResearchNews={(query) => {
               handleSearch(query);
             }}
