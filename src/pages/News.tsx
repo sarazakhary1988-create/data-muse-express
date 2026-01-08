@@ -134,6 +134,7 @@ const News = () => {
     stopMonitoring,
     refreshNews,
     markAsRead,
+    updateFilters,
   } = useNewsMonitor();
   
   const { deduplicateNews, settings: dedupSettings } = useNewsDeduplication();
@@ -156,6 +157,17 @@ const News = () => {
     getCategoryLabels(selectedCountry === 'all' ? undefined : selectedCountry),
     [selectedCountry]
   );
+
+  // Update filters and trigger server-side fetch when selections change
+  useEffect(() => {
+    const filters = {
+      categories: selectedCategories.length > 0 ? selectedCategories : undefined,
+      countries: selectedCountry !== 'all' ? [selectedCountry] : undefined,
+      dateFrom,
+      dateTo,
+    };
+    updateFilters(filters);
+  }, [selectedCategories, selectedCountry, dateFrom, dateTo, updateFilters]);
 
   // Auto-start monitoring
   useEffect(() => {
