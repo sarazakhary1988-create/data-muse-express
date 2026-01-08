@@ -92,6 +92,68 @@ const GCC_NEWS_QUERIES = [
   'Aramco SABIC ACWA Power STC company news',
 ];
 
+export interface NewsFilters {
+  categories?: string[];
+  countries?: string[];
+  sources?: string[];
+}
+
+// Build search queries based on filters
+function buildFilteredQueries(filters?: NewsFilters): string[] {
+  const baseQueries = [...GCC_NEWS_QUERIES];
+  
+  if (!filters) return baseQueries;
+  
+  const queries: string[] = [];
+  
+  // Add country-specific queries
+  const activeCountries = filters.countries?.filter(c => c !== 'all') || [];
+  if (activeCountries.length > 0) {
+    const countryTerms = activeCountries.join(' OR ');
+    queries.push(`financial news ${countryTerms}`);
+    queries.push(`business market ${countryTerms}`);
+    queries.push(`IPO listing ${countryTerms}`);
+    queries.push(`M&A acquisition ${countryTerms}`);
+  }
+  
+  // Add category-specific queries
+  const activeCategories = filters.categories?.filter(c => c !== 'all') || [];
+  if (activeCategories.length > 0) {
+    const categoryQueryMap: Record<string, string[]> = {
+      ipo: ['IPO listing prospectus public offering Tadawul NOMU'],
+      acquisition: ['M&A merger acquisition takeover buyout'],
+      market: ['stock market trading index shares equity'],
+      regulatory: ['CMA SEC regulation compliance filing'],
+      expansion: ['expansion launch growth new branch office'],
+      contract: ['contract awarded deal agreement billion million SAR'],
+      joint_venture: ['joint venture partnership MOU strategic alliance'],
+      appointment: ['CEO CFO chairman director appointment executive'],
+      cma_violation: ['CMA violation fine penalty sanction breach'],
+      vision_2030: ['Vision 2030 NEOM Red Sea Qiddiya giga project'],
+      banking: ['banking SNB Al Rajhi Riyad Bank profit earnings'],
+      real_estate: ['real estate property ROSHN REIT development'],
+      tech_funding: ['startup fintech venture funding series'],
+    };
+    
+    activeCategories.forEach(cat => {
+      const catQueries = categoryQueryMap[cat];
+      if (catQueries) {
+        queries.push(...catQueries.map(q => 
+          activeCountries.length > 0 ? `${q} ${activeCountries[0]}` : q
+        ));
+      }
+    });
+  }
+  
+  // If no specific filters, use base queries
+  if (queries.length === 0) {
+    return baseQueries;
+  }
+  
+  // Combine with base queries for better coverage
+  return [...new Set([...queries, ...baseQueries.slice(0, 3)])].slice(0, 10);
+}
+
 export function useNewsMonitor() {
   const [state, setState] = useState<NewsMonitorState>(() => {
     const savedInterval = localStorage.getItem(REFRESH_INTERVAL_KEY);
@@ -106,6 +168,7 @@ export function useNewsMonitor() {
     };
   });
   
+  const [activeFilters, setActiveFilters] = useState<NewsFilters | undefined>();
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
   const seenNewsIds = useRef<Set<string>>(new Set());
@@ -177,18 +240,27 @@ export function useNewsMonitor() {
     return timestamp >= today;
   };
 
-  const fetchLatestNews = useCallback(async () => {
+  // Update filters for next fetch
+  const updateFilters = useCallback((filters: NewsFilters) => {
+    setActiveFilters(filters);
+  }, []);
+
+  const fetchLatestNews = useCallback(async (filters?: NewsFilters) => {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
     
+    // Use passed filters or stored activeFilters
+    const currentFilters = filters || activeFilters;
+    
     try {
-      console.log('[NewsMonitor] Fetching GCC business news...');
+      const queries = buildFilteredQueries(currentFilters);
+      console.log('[NewsMonitor] Fetching with queries:', queries);
       
       const allResults: any[] = [];
       
-      // Fetch in parallel batches using GCC-focused queries
+      // Fetch in parallel batches using filtered queries
       const batchSize = 3;
-      for (let i = 0; i < GCC_NEWS_QUERIES.length; i += batchSize) {
-        const batch = GCC_NEWS_QUERIES.slice(i, i + batchSize);
+      for (let i = 0; i < queries.length; i += batchSize) {
+        const batch = queries.slice(i, i + batchSize);
         const results = await Promise.all(
           batch.map(query => 
             supabase.functions.invoke('wide-research', {
@@ -292,7 +364,7 @@ export function useNewsMonitor() {
       }));
       return [];
     }
-  }, [persistNews]);
+  }, [persistNews, activeFilters]);
 
   const startMonitoring = useCallback(() => {
     if (intervalRef.current) return;
@@ -372,14 +444,21 @@ export function useNewsMonitor() {
     };
   }, []);
 
+  // Wrapper for click handlers that don't pass filters
+  const refreshNews = useCallback(() => {
+    fetchLatestNews();
+  }, [fetchLatestNews]);
+
   return {
     ...state,
     startMonitoring,
     stopMonitoring,
     fetchLatestNews,
+    refreshNews,
     markAsRead,
     clearAllNews,
     setRefreshInterval,
+    updateFilters,
   };
 }
 

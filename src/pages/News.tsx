@@ -119,7 +119,7 @@ const News = () => {
     lastCheck,
     startMonitoring,
     stopMonitoring,
-    fetchLatestNews,
+    refreshNews,
     markAsRead,
   } = useNewsMonitor();
 
@@ -292,7 +292,7 @@ const News = () => {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={fetchLatestNews}
+                    onClick={refreshNews}
                     disabled={isLoading}
                   >
                     <RefreshCw className={cn("w-4 h-4 mr-2", isLoading && "animate-spin")} />
