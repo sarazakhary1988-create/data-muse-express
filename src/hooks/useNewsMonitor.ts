@@ -96,6 +96,8 @@ export interface NewsFilters {
   categories?: string[];
   countries?: string[];
   sources?: string[];
+  dateFrom?: Date;
+  dateTo?: Date;
 }
 
 // Build search queries based on filters
@@ -270,11 +272,32 @@ export function useNewsMonitor() {
     }
   };
 
-  // Filter for today's news only
-  const isFromToday = (timestamp: Date): boolean => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return timestamp >= today;
+  // Filter news by date range - default to last 7 days
+  const isWithinDateRange = (timestamp: Date, dateFrom?: Date, dateTo?: Date): boolean => {
+    const now = new Date();
+    
+    // If no date range specified, default to last 7 days
+    if (!dateFrom && !dateTo) {
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      sevenDaysAgo.setHours(0, 0, 0, 0);
+      return timestamp >= sevenDaysAgo && timestamp <= now;
+    }
+    
+    // Check custom date range
+    if (dateFrom) {
+      const from = new Date(dateFrom);
+      from.setHours(0, 0, 0, 0);
+      if (timestamp < from) return false;
+    }
+    
+    if (dateTo) {
+      const to = new Date(dateTo);
+      to.setHours(23, 59, 59, 999);
+      if (timestamp > to) return false;
+    }
+    
+    return true;
   };
 
   // Update filters for next fetch
@@ -365,15 +388,15 @@ export function useNewsMonitor() {
             isValidated: true,
           };
         })
-        // Filter for today's news only
-        .filter((item: NewsItem) => isFromToday(item.timestamp));
+        // Filter by date range (last 7 days default, or custom range)
+        .filter((item: NewsItem) => isWithinDateRange(item.timestamp, currentFilters?.dateFrom, currentFilters?.dateTo));
 
       setState(prev => {
         const existingIds = new Set(prev.news.map(n => n.id));
         const uniqueNew = newNewsItems.filter(n => !existingIds.has(n.id));
-        // Keep today's news only when merging
-        const todayNews = prev.news.filter(n => isFromToday(n.timestamp));
-        const merged = [...uniqueNew, ...todayNews].slice(0, 100);
+        // Keep news within date range when merging
+        const validNews = prev.news.filter(n => isWithinDateRange(n.timestamp, currentFilters?.dateFrom, currentFilters?.dateTo));
+        const merged = [...uniqueNew, ...validNews].slice(0, 100);
         
         persistNews(merged);
         
@@ -388,7 +411,7 @@ export function useNewsMonitor() {
 
       const newCount = newNewsItems.filter(n => n.isNew).length;
       if (newCount > 0) {
-        console.log(`[NewsMonitor] Found ${newCount} new news items from today`);
+        console.log(`[NewsMonitor] Found ${newCount} new news items within date range`);
       }
 
       return newNewsItems;

@@ -412,14 +412,16 @@ export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
     return () => stopMonitoring();
   }, []);
 
-  // Update filters in the hook when local filters change
+  // Update filters in the hook when local filters change (including date range)
   useEffect(() => {
     updateFilters({
       categories: filters.categories.filter(c => c !== 'all'),
       countries: filters.countries.filter(c => c !== 'all'),
       sources: filters.sources.filter(s => s !== 'all'),
+      dateFrom: filters.dateFrom,
+      dateTo: filters.dateTo,
     });
-  }, [filters.categories, filters.countries, filters.sources, updateFilters]);
+  }, [filters.categories, filters.countries, filters.sources, filters.dateFrom, filters.dateTo, updateFilters]);
 
   // Check for new high-priority news and send notifications
   useEffect(() => {
