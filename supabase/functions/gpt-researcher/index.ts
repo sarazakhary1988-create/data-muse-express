@@ -65,21 +65,16 @@ const RESEARCH_AGENTS = [
   { id: 'writer', name: 'Report Writer', role: 'Generates comprehensive research report' },
 ];
 
-// LLM Provider configuration - prioritize OpenAI
-interface LLMProvider {
-  key: string;
-  name: string;
-  endpoint: string;
-  model: string;
-  isAnthropic?: boolean;
-}
+// LLM Provider configuration - prioritize local models via LLM Router
+// The LLM Router handles Ollama/vLLM/HuggingFace TGI local inference
+// Fallback chain: Local (DeepSeek/Llama/Qwen) -> OpenAI -> Claude -> Lovable AI
 
-const LLM_PROVIDERS: LLMProvider[] = [
-  { key: 'OPENAI_API_KEY', name: 'openai', endpoint: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o' },
-  { key: 'ANTHROPIC_API_KEY', name: 'anthropic', endpoint: 'https://api.anthropic.com/v1/messages', model: 'claude-3-5-sonnet-20241022', isAnthropic: true },
-  { key: 'GROQ_API_KEY', name: 'groq', endpoint: 'https://api.groq.com/openai/v1/chat/completions', model: 'llama-3.3-70b-versatile' },
-  { key: 'LOVABLE_API_KEY', name: 'lovable', endpoint: 'https://ai.gateway.lovable.dev/v1/chat/completions', model: 'google/gemini-2.5-pro' },
-];
+function getSupabaseClient() {
+  return {
+    url: Deno.env.get('SUPABASE_URL') || '',
+    key: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '',
+  };
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -95,42 +90,29 @@ serve(async (req) => {
       parallelAgents = 3,
       includeFactVerification = true,
       outputFormat = 'markdown',
-      llmProvider: preferredProvider = 'auto',
     } = request;
 
     console.log(`[GPT-Researcher] Starting research: "${query}"`);
     const startTime = Date.now();
 
-    // Get the best available LLM provider
-    const provider = getAvailableProvider(preferredProvider);
-    if (!provider) {
-      return new Response(JSON.stringify({
-        error: 'No AI API key configured',
-        hint: 'Configure OPENAI_API_KEY, ANTHROPIC_API_KEY, or GROQ_API_KEY'
-      }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    console.log(`[GPT-Researcher] Using LLM provider: ${provider.name}`);
+    const supabase = getSupabaseClient();
 
     // PHASE 1: Plan research with sub-questions
-    const subQuestions = await generateSubQuestions(query, provider);
+    const subQuestions = await generateSubQuestions(query, supabase);
     console.log(`[GPT-Researcher] Generated ${subQuestions.length} sub-questions`);
 
     // PHASE 2: Search sources in parallel
-    const sources = await searchSources(query, subQuestions, maxSources);
+    const sources = await searchSources(query, subQuestions, maxSources, supabase);
     console.log(`[GPT-Researcher] Found ${sources.length} sources`);
 
     // PHASE 3: Extract content from sources
-    const extractedSources = await extractContent(sources);
+    const extractedSources = await extractContent(sources, supabase);
     console.log(`[GPT-Researcher] Extracted content from ${extractedSources.length} sources`);
 
     // PHASE 4: Verify facts (if enabled)
     let verifiedFacts: VerifiedFact[] = [];
     if (includeFactVerification && extractedSources.length >= 2) {
-      verifiedFacts = await verifyFacts(extractedSources, provider);
+      verifiedFacts = await verifyFacts(extractedSources, supabase);
       console.log(`[GPT-Researcher] Verified ${verifiedFacts.length} facts`);
     }
 
@@ -140,7 +122,7 @@ serve(async (req) => {
       extractedSources, 
       verifiedFacts, 
       reportType,
-      provider
+      supabase
     );
 
     const result: ResearchResult = {
@@ -152,7 +134,7 @@ serve(async (req) => {
         totalAgents: RESEARCH_AGENTS.length,
         executionTimeMs: Date.now() - startTime,
         queriesExecuted: subQuestions.length + 1,
-        llmProvider: provider.name,
+        llmProvider: 'LLM Router (Local Priority)',
       },
     };
 
@@ -171,110 +153,60 @@ serve(async (req) => {
   }
 });
 
-// Get the best available LLM provider
-function getAvailableProvider(preferred: string): LLMProvider | null {
-  // If preferred provider specified, try it first
-  if (preferred !== 'auto') {
-    const provider = LLM_PROVIDERS.find(p => p.name === preferred);
-    if (provider && Deno.env.get(provider.key)) {
-      return { ...provider, key: Deno.env.get(provider.key)! };
-    }
-  }
-
-  // Otherwise try in priority order
-  for (const provider of LLM_PROVIDERS) {
-    const apiKey = Deno.env.get(provider.key);
-    if (apiKey) {
-      return { ...provider, key: apiKey };
-    }
-  }
-
-  return null;
-}
-
-// Call LLM with the provider
+// Call LLM via the unified LLM Router (prioritizes local inference)
 async function callLLM(
-  provider: LLMProvider,
+  supabase: { url: string; key: string },
   systemPrompt: string,
   userPrompt: string,
-  jsonMode: boolean = false
+  task: 'reasoning' | 'planning' | 'synthesis' | 'research' = 'research'
 ): Promise<string> {
-  const apiKey = Deno.env.get(provider.key);
-  if (!apiKey) throw new Error(`No API key for ${provider.name}`);
-
-  if (provider.isAnthropic) {
-    const response = await fetch(provider.endpoint, {
-      method: 'POST',
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: provider.model,
-        max_tokens: 4096,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }],
-      }),
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Anthropic API error: ${error}`);
-    }
-
-    const data = await response.json();
-    return data.content?.[0]?.text || '';
-  } else {
-    const body: any = {
-      model: provider.model,
+  const response = await fetch(`${supabase.url}/functions/v1/llm-router`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${supabase.key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      max_tokens: 4096,
-    };
+      task,
+      preferLocal: true, // Prioritize DeepSeek/Llama/Qwen local models
+      maxTokens: 4096,
+    }),
+  });
 
-    // Only add response_format for providers that support it
-    if (jsonMode && provider.name !== 'groq') {
-      body.response_format = { type: 'json_object' };
-    }
-
-    const response = await fetch(provider.endpoint, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`${provider.name} API error: ${error}`);
-    }
-
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content || '';
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`LLM Router error: ${error}`);
   }
+
+  const data = await response.json();
+  if (!data.success) {
+    throw new Error(data.error || 'LLM call failed');
+  }
+
+  console.log(`[GPT-Researcher] LLM: ${data.model} (${data.inferenceType})`);
+  return data.content;
 }
 
 // Generate sub-questions for comprehensive research
-async function generateSubQuestions(query: string, provider: LLMProvider): Promise<string[]> {
+async function generateSubQuestions(query: string, supabase: { url: string; key: string }): Promise<string[]> {
   try {
     const content = await callLLM(
-      provider,
+      supabase,
       `You are a research planner. Given a research query, generate 3-5 specific sub-questions 
 that would help comprehensively answer the main query. Return ONLY a JSON object with a "questions" array of strings.`,
       query,
-      true
+      'planning'
     );
 
-    const parsed = JSON.parse(content);
+    const parsed = JSON.parse(content.replace(/```json\n?|\n?```/g, ''));
     return parsed.questions || parsed.subQuestions || [query];
   } catch (error) {
     console.error('Failed to generate sub-questions:', error);
-    return [query]; // Fallback to original query
+    return [query];
   }
 }
 
@@ -282,23 +214,20 @@ that would help comprehensively answer the main query. Return ONLY a JSON object
 async function searchSources(
   mainQuery: string, 
   subQuestions: string[], 
-  maxSources: number
+  maxSources: number,
+  supabase: { url: string; key: string }
 ): Promise<SourceInfo[]> {
-  const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  
   const allSources: SourceInfo[] = [];
   const seenUrls = new Set<string>();
 
-  // Search for main query and each sub-question
   const queries = [mainQuery, ...subQuestions];
   
   for (const query of queries) {
     try {
-      const response = await fetch(`${supabaseUrl}/functions/v1/web-search`, {
+      const response = await fetch(`${supabase.url}/functions/v1/web-search`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${supabaseKey}`,
+          'Authorization': `Bearer ${supabase.key}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ query, maxResults: Math.ceil(maxSources / queries.length) }),
@@ -329,19 +258,15 @@ async function searchSources(
 }
 
 // Extract full content from sources using Playwright browser
-async function extractContent(sources: SourceInfo[]): Promise<SourceInfo[]> {
-  const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  
+async function extractContent(sources: SourceInfo[], supabase: { url: string; key: string }): Promise<SourceInfo[]> {
   const extracted: SourceInfo[] = [];
 
   for (const source of sources) {
     try {
-      // Use playwright-browser for extraction
-      const response = await fetch(`${supabaseUrl}/functions/v1/playwright-browser`, {
+      const response = await fetch(`${supabase.url}/functions/v1/playwright-browser`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${supabaseKey}`,
+          'Authorization': `Bearer ${supabase.key}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ 
@@ -375,17 +300,16 @@ async function extractContent(sources: SourceInfo[]): Promise<SourceInfo[]> {
 }
 
 // Verify facts across sources
-async function verifyFacts(sources: SourceInfo[], provider: LLMProvider): Promise<VerifiedFact[]> {
+async function verifyFacts(sources: SourceInfo[], supabase: { url: string; key: string }): Promise<VerifiedFact[]> {
   if (sources.length < 2) return [];
 
-  // Combine content for analysis
   const combinedContent = sources
     .map(s => `Source: ${s.domain}\n${s.extractedContent.substring(0, 2000)}`)
     .join('\n\n---\n\n');
 
   try {
     const content = await callLLM(
-      provider,
+      supabase,
       `You are a fact verification agent. Analyze the provided sources and identify key claims.
 For each claim, determine if it's verified by multiple sources.
 Return a JSON object with a "facts" array containing objects with:
@@ -394,10 +318,10 @@ Return a JSON object with a "facts" array containing objects with:
 - sources: array of domain names that support this claim
 - confidence: 0-1 score`,
       combinedContent.substring(0, 15000),
-      true
+      'reasoning'
     );
 
-    const parsed = JSON.parse(content);
+    const parsed = JSON.parse(content.replace(/```json\n?|\n?```/g, ''));
     return parsed.facts || [];
   } catch (error) {
     console.error('Fact verification failed:', error);
@@ -411,7 +335,7 @@ async function generateReport(
   sources: SourceInfo[],
   facts: VerifiedFact[],
   reportType: string,
-  provider: LLMProvider
+  supabase: { url: string; key: string }
 ): Promise<string> {
   const sourcesSummary = sources
     .map(s => `- ${s.title} (${s.domain}): ${s.extractedContent.substring(0, 500)}...`)
@@ -423,7 +347,7 @@ async function generateReport(
     .join('\n');
 
   const content = await callLLM(
-    provider,
+    supabase,
     `You are a research report writer creating a ${reportType}.
 Write a comprehensive, well-structured report based on the provided sources and verified facts.
 Include citations, key findings, and actionable insights.
@@ -436,7 +360,8 @@ ${sourcesSummary}
 Verified Facts:
 ${factsSummary}
 
-Generate a comprehensive ${reportType} that answers the research query.`
+Generate a comprehensive ${reportType} that answers the research query.`,
+    'synthesis'
   );
 
   return content;
