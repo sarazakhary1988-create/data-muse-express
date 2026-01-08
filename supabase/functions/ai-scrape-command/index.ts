@@ -149,13 +149,20 @@ Available scraping formats: markdown, html, links, screenshot, branding, summary
             const urlMatch = command.match(/https?:\/\/[^\s]+/);
             const targetUrl = urlMatch?.[0] || url;
 
-            // Determine extraction targets
+            // Determine extraction targets and request type
             const commandLower = command.toLowerCase();
             const extractionTargets: string[] = [];
             if (commandLower.includes("email")) extractionTargets.push("emails");
             if (commandLower.includes("price") || commandLower.includes("cost")) extractionTargets.push("prices");
             if (commandLower.includes("phone") || commandLower.includes("number")) extractionTargets.push("phones");
             if (commandLower.includes("link") || commandLower.includes("url")) extractionTargets.push("links");
+            
+            // Detect if user wants a profile/summary
+            const wantsProfile = commandLower.includes("profile") || commandLower.includes("summary") || 
+                                 commandLower.includes("about") || commandLower.includes("bio") ||
+                                 commandLower.includes("who is") || commandLower.includes("person") ||
+                                 commandLower.includes("executive") || commandLower.includes("leadership") ||
+                                 commandLower.includes("company info") || commandLower.includes("overview");
 
             // If we have a URL, perform the scrape
             if (targetUrl) {
@@ -183,12 +190,14 @@ Available scraping formats: markdown, html, links, screenshot, branding, summary
                   );
 
                   const rawContent = scrapeResult.content || scrapeResult.data?.markdown || "";
+                  const metadata = scrapeResult.metadata || scrapeResult.data?.metadata || {};
 
                   interface ExtractedData {
                     emails?: string[];
                     prices?: string[];
                     phones?: string[];
                     links?: string[];
+                    aiProfileSummary?: string;
                   }
                   const extractedData: ExtractedData = {};
 
@@ -210,6 +219,109 @@ Available scraping formats: markdown, html, links, screenshot, branding, summary
                     extractedData.links = [...new Set(links)].slice(0, 20) as string[];
                   }
 
+                  // If user wants a profile/summary, use OpenAI to generate an AI profile summary
+                  if (wantsProfile && rawContent.length > 100) {
+                    controller.enqueue(
+                      encoder.encode(`data: ${JSON.stringify({ type: "status", message: "Generating AI profile summary..." })}\n\n`),
+                    );
+                    
+                    const openaiKey = Deno.env.get("OPENAI_API_KEY");
+                    if (openaiKey) {
+                      try {
+                        const profilePrompt = `Based on the following webpage content, generate a comprehensive profile summary.
+
+If this is about a PERSON, include:
+- Full name and current title
+- Current company and role
+- Professional background and career trajectory
+- Key achievements and expertise
+- Education (if mentioned)
+- Notable projects or accomplishments
+
+If this is about a COMPANY, include:
+- Company name and industry
+- What they do (products/services)
+- Key leadership mentioned
+- Size/scale indicators
+- Notable achievements or milestones
+- Market position
+
+Generate a professional, well-structured summary in markdown format.
+
+Source URL: ${targetUrl}
+Page Title: ${metadata.title || 'Unknown'}
+
+Content to analyze:
+${rawContent.slice(0, 15000)}`;
+
+                        const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+                          method: "POST",
+                          headers: {
+                            Authorization: `Bearer ${openaiKey}`,
+                            "Content-Type": "application/json",
+                          },
+                          body: JSON.stringify({
+                            model: "gpt-4o",
+                            messages: [
+                              { role: "system", content: "You are an expert at extracting and summarizing professional profiles from web content. Generate detailed, accurate summaries based solely on the provided content." },
+                              { role: "user", content: profilePrompt },
+                            ],
+                            max_tokens: 2000,
+                            temperature: 0.3,
+                          }),
+                        });
+
+                        if (openaiResponse.ok) {
+                          const openaiData = await openaiResponse.json();
+                          const profileSummary = openaiData.choices?.[0]?.message?.content || "";
+                          if (profileSummary) {
+                            extractedData.aiProfileSummary = profileSummary;
+                            controller.enqueue(
+                              encoder.encode(`data: ${JSON.stringify({ type: "delta", content: "\n\n**🤖 AI Profile Summary:**\n\n" + profileSummary })}\n\n`),
+                            );
+                          }
+                        } else {
+                          console.error("[ai-scrape-command] OpenAI profile generation failed:", openaiResponse.status);
+                        }
+                      } catch (profileError) {
+                        console.error("[ai-scrape-command] Profile generation error:", profileError);
+                      }
+                    } else {
+                      // Fallback to Lovable AI if no OpenAI key
+                      try {
+                        const profileResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+                          method: "POST",
+                          headers: {
+                            Authorization: `Bearer ${LOVABLE_API_KEY}`,
+                            "Content-Type": "application/json",
+                          },
+                          body: JSON.stringify({
+                            model: "google/gemini-2.5-flash",
+                            messages: [
+                              { role: "system", content: "Generate a professional profile summary from the provided webpage content. Be specific and factual." },
+                              { role: "user", content: `Summarize this webpage into a profile:\n\nURL: ${targetUrl}\nTitle: ${metadata.title || 'Unknown'}\n\nContent:\n${rawContent.slice(0, 10000)}` },
+                            ],
+                            max_tokens: 1500,
+                            temperature: 0.3,
+                          }),
+                        });
+
+                        if (profileResponse.ok) {
+                          const profileData = await profileResponse.json();
+                          const profileSummary = profileData.choices?.[0]?.message?.content || "";
+                          if (profileSummary) {
+                            extractedData.aiProfileSummary = profileSummary;
+                            controller.enqueue(
+                              encoder.encode(`data: ${JSON.stringify({ type: "delta", content: "\n\n**🤖 AI Profile Summary:**\n\n" + profileSummary })}\n\n`),
+                            );
+                          }
+                        }
+                      } catch (fallbackError) {
+                        console.error("[ai-scrape-command] Fallback profile generation error:", fallbackError);
+                      }
+                    }
+                  }
+
                   // Send scrape results
                   controller.enqueue(
                     encoder.encode(
@@ -217,14 +329,15 @@ Available scraping formats: markdown, html, links, screenshot, branding, summary
                         type: "scrape_complete",
                         url: targetUrl,
                         wordCount: rawContent.split(/\s+/).length,
-                        metadata: scrapeResult.metadata || scrapeResult.data?.metadata,
+                        metadata: metadata,
                         extractedData: Object.keys(extractedData).length > 0 ? extractedData : null,
+                        hasProfileSummary: !!extractedData.aiProfileSummary,
                       })}\n\n`,
                     ),
                   );
 
                   // Add extraction summary to response
-                  if (Object.keys(extractedData).length > 0) {
+                  if (Object.keys(extractedData).length > 0 && !extractedData.aiProfileSummary) {
                     let summary = "\n\n**Extracted Data:**\n";
                     if (extractedData.emails?.length) {
                       summary += `\n📧 **Emails (${extractedData.emails.length}):**\n${extractedData.emails.map((e: string) => `- ${e}`).join("\n")}`;

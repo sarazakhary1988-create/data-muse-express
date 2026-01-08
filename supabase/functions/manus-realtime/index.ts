@@ -108,8 +108,10 @@ interface RelevanceScore {
   passesThreshold: boolean;
 }
 
-// STRICT 2026 DATE CUTOFF - All dates before this are REJECTED
-const MIN_VALID_DATE = new Date('2026-01-01T00:00:00Z');
+// Date filter mode - DISABLED for general research to allow profiles/companies
+// Only enforced for regulatory categories (cma, tadawul, sama)
+const MIN_VALID_DATE = new Date('2024-01-01T00:00:00Z'); // Relaxed to 2024 for general research
+const STRICT_REGULATORY_DATE = new Date('2026-01-01T00:00:00Z'); // Strict only for regulatory
 
 // Strict category-specific queries for CMA
 const STRICT_CATEGORY_QUERIES: Record<string, string> = {
@@ -729,9 +731,15 @@ async function executeAgentWithValidation(
   agent: SubAgentState,
   query: string,
   category: string | undefined,
-  options?: { customUrls?: string[] }
+  options?: { customUrls?: string[]; strictDateFilter?: boolean }
 ): Promise<StreamedResult[]> {
   const results: StreamedResult[] = [];
+  
+  // Determine if strict date filter should apply
+  // Only apply strict 2026 filter for regulatory categories
+  const isRegulatoryCategory = ['cma', 'tadawul', 'sama', 'mof', 'regulatory'].includes(category || '');
+  const strictDateFilter = options?.strictDateFilter ?? isRegulatoryCategory;
+  const effectiveDateCutoff = strictDateFilter ? STRICT_REGULATORY_DATE : MIN_VALID_DATE;
   
   // CMA Scraper Agent - Use REAL web crawling
   if (agent.type === 'cma_scraper') {
@@ -790,18 +798,19 @@ async function executeAgentWithValidation(
     // Validate URL
     const validation = await validateURL(result.data?.url || '');
     
-    // STRICT DATE CHECK - Reject anything before 2026-01-01
+    // DATE CHECK - Use effective date cutoff (strict for regulatory, relaxed for general)
     const publishDate = result.data?.publishDate ? new Date(result.data.publishDate) : null;
-    const isDateValid = publishDate ? publishDate >= MIN_VALID_DATE : false;
+    // For general research (profiles, companies), accept content without dates or with recent dates
+    const isDateValid = !strictDateFilter || !publishDate || publishDate >= effectiveDateCutoff;
     
-    if (!isDateValid) {
+    if (strictDateFilter && publishDate && publishDate < effectiveDateCutoff) {
       result.validationStatus = 'date_rejected';
-      result.rejectionReason = `Date before 2026-01-01: ${result.data?.publishDate || 'unknown'}`;
+      result.rejectionReason = `Date before ${effectiveDateCutoff.toISOString().split('T')[0]}: ${result.data?.publishDate || 'unknown'}`;
       state.metrics.rejectedOldDates++;
       state.metrics.rejectedResults++;
       
-      // Log rejection
-      console.log(`[Manus 1.6 MAX] REJECTED - Old date: ${result.data?.publishDate}`);
+      // Log rejection only for strict mode
+      console.log(`[Manus 1.7 MAX] REJECTED (regulatory mode) - Old date: ${result.data?.publishDate}`);
       
     } else if (validation.isValid && !validation.errors.length) {
       // Check for generic content
