@@ -493,9 +493,17 @@ function buildPersonSearchQueries(request: PersonEnrichmentRequest): string[] {
 
 function buildCompanySearchQueries(request: CompanyEnrichmentRequest): string[] {
   const queries: string[] = [];
-  const company = request.companyName;
+  const company = request.companyName || '';
   
-  queries.push(`"${company}" site:${company.toLowerCase().replace(/\s+/g, '')}.com`);
+  if (!company) {
+    console.warn('[lead-enrichment] buildCompanySearchQueries called with empty companyName');
+    return [];
+  }
+  
+  // Safely handle company name for site: search
+  const normalizedCompany = company.toLowerCase().replace(/\s+/g, '');
+  
+  queries.push(`"${company}" site:${normalizedCompany}.com`);
   queries.push(`"${company}" official website about company overview`);
   queries.push(`"${company}" company overview about headquarters address phone`);
   queries.push(`"${company}" revenue funding valuation financials annual report`);
@@ -2314,6 +2322,49 @@ serve(async (req) => {
         JSON.stringify(result),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+    
+    // Validate request type before processing
+    if (!request.type || (request.type !== 'person' && request.type !== 'company')) {
+      console.error('[lead-enrichment] Invalid or missing request type:', request.type);
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: 'Invalid request format. Expected type: "person" or "company"',
+          hint: 'For company enrichment, provide: { type: "company", companyName: "Company Name", reportType: "full" }'
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    // Validate company request has required field
+    if (request.type === 'company') {
+      const companyReq = request as CompanyEnrichmentRequest;
+      if (!companyReq.companyName || typeof companyReq.companyName !== 'string') {
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            error: 'Missing required field: companyName',
+            hint: 'Provide: { type: "company", companyName: "Company Name", reportType: "full" }'
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+    
+    // Validate person request has required fields
+    if (request.type === 'person') {
+      const personReq = request as PersonEnrichmentRequest;
+      if (!personReq.firstName && !personReq.lastName && !personReq.linkedinUrl) {
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            error: 'Missing required field: firstName, lastName, or linkedinUrl',
+            hint: 'Provide: { type: "person", firstName: "John", lastName: "Doe", reportType: "full" }'
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
     }
     
     console.log('[lead-enrichment] Starting enrichment:', 

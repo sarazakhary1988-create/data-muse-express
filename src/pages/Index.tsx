@@ -26,6 +26,7 @@ import { IntegrationsPage } from '@/components/integrations/IntegrationsPage';
 import { ManusRealtimePanel } from '@/components/ManusRealtimePanel';
 import { StreamedResultsList } from '@/components/StreamedResultsList';
 import { AgentOrchestrationDashboard } from '@/components/AgentOrchestrationDashboard';
+import { LiveSourceIndicator } from '@/components/LiveSourceIndicator';
 import { useManusRealtime } from '@/hooks/useManusRealtime';
 
 
@@ -263,6 +264,9 @@ const Index = () => {
                       <Progress value={reportGenerationStatus.progress} className="h-2" />
                     </motion.div>
                   )}
+                  
+                  {/* Live Source Indicator - Shows real-time sources being searched */}
+                  <LiveSourceIndicator className="mb-4" />
                   
                   <Tabs defaultValue="orchestration" className="w-full">
                     <TabsList className="grid w-full grid-cols-3 mb-4">
