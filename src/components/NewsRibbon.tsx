@@ -23,6 +23,7 @@ import { useNewsSourceSettings } from '@/hooks/useNewsSourceSettings';
 import { useNewsNotifications } from '@/hooks/useNewsNotifications';
 import { useNewsDeduplication } from '@/hooks/useNewsDeduplication';
 import { useCustomCrawlSources } from '@/components/CustomCrawlSourceSettings';
+import { NewsSourceSettings } from '@/components/NewsSourceSettings';
 import { useLanguage, Language } from '@/lib/i18n/LanguageContext';
 import { cn } from '@/lib/utils';
 import { isBefore, isAfter, startOfDay, endOfDay } from 'date-fns';
@@ -452,128 +453,305 @@ export function NewsRibbon({ filterState, onResearchNews, onPositionChange }: Ne
           position === 'top' ? 'top-0' : 'bottom-0'
         )}
       >
-        {/* Collapsed ribbon */}
-        <div className="bg-card/95 backdrop-blur-md border-b shadow-lg">
-          <div className="flex items-center justify-between px-4 py-2">
-            <div className="flex items-center gap-3">
+        {/* Clean minimal ribbon - single line */}
+        <div className="bg-card/95 backdrop-blur-md border-b shadow-sm">
+          <div className="flex items-center h-10 px-2">
+            {/* Left: Grip + LIVE indicator */}
+            <div className="flex items-center gap-2 shrink-0">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button onClick={togglePosition} className="cursor-grab active:cursor-grabbing">
+                  <button onClick={togglePosition} className="cursor-grab active:cursor-grabbing p-1">
                     <GripVertical className="w-4 h-4 text-muted-foreground" />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent>Drag to reposition</TooltipContent>
               </Tooltip>
 
-              <div className="flex items-center gap-2">
-                <Newspaper className="w-4 h-4 text-primary" />
-                <span className="font-medium text-sm">News</span>
+              {/* LIVE Badge */}
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-primary/10 border border-primary/20">
+                <Sparkles className="w-3 h-3 text-primary" />
+                <span className="text-[10px] font-bold text-primary">LIVE</span>
                 {newItemsCount > 0 && (
-                  <Badge className="bg-primary text-primary-foreground text-[10px] px-1.5">
+                  <Badge className="bg-primary text-primary-foreground text-[9px] px-1 py-0 h-4 min-w-4">
                     {newItemsCount}
                   </Badge>
                 )}
+                <span className="text-[10px] text-muted-foreground ml-1">
+                  {Math.floor(secondsUntilRefresh / 60)}:{(secondsUntilRefresh % 60).toString().padStart(2, '0')}
+                </span>
               </div>
-
-              {/* Quick filters */}
-              <div className="hidden md:flex items-center gap-1 ml-4">
-                {(['all', 'tasi', 'nomu', 'regulator_violation', 'management_change', 'merger_acquisition'] as NewsCategory[]).map(cat => (
-                  <button
-                    key={cat}
-                    onClick={() => toggleCategory(cat)}
-                    className={cn(
-                      "px-2 py-0.5 text-[10px] rounded-full transition-all flex items-center gap-1",
-                      filters.categories.includes(cat)
-                        ? cat === 'all' ? "bg-primary text-primary-foreground" : categoryColors[cat as NewsCategoryType]
-                        : "bg-muted/50 text-muted-foreground hover:bg-muted"
-                    )}
-                  >
-                    {cat !== 'all' && categoryIcons[cat as NewsCategoryType]}
-                    {cat === 'all' ? 'All' : categoryLabels[cat as NewsCategoryType]}
-                  </button>
-                ))}
-              </div>
-
-              {/* Country filter */}
-              <Select 
-                value={filters.countries[0] || 'all'} 
-                onValueChange={(val) => toggleCountry(val)}
-              >
-                <SelectTrigger className="w-32 h-7 text-xs">
-                  <MapPin className="w-3 h-3 mr-1" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {COUNTRIES.map(c => (
-                    <SelectItem key={c.code} value={c.code}>
-                      <span className="flex items-center gap-1">
-                        <span>{c.flag}</span>
-                        <span>{c.label}</span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
 
-            <div className="flex items-center gap-2">
-              {/* Timer */}
+            {/* Center: Scrolling news ticker */}
+            <div className="flex-1 overflow-hidden mx-3">
+              <div className="flex items-center gap-4 overflow-x-auto scrollbar-hide">
+                {filteredNews.slice(0, 15).map(item => (
+                  <button
+                    key={item.id}
+                    onClick={() => fetchSummary(item)}
+                    className="flex items-center gap-2 shrink-0 hover:opacity-80 transition-opacity"
+                  >
+                    {/* Source badge */}
+                    <span className="text-[10px] text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
+                      {item.source.split('.')[0].substring(0, 12)}
+                    </span>
+                    
+                    {/* Category badge if notable */}
+                    {['merger_acquisition', 'joint_venture', 'country_outlook', 'regulator_violation', 'listing_approved'].includes(item.category) && (
+                      <Badge 
+                        variant="outline" 
+                        className={cn(
+                          "text-[9px] px-1.5 py-0 h-5 shrink-0",
+                          categoryColors[item.category]
+                        )}
+                      >
+                        {categoryLabels[item.category]}
+                      </Badge>
+                    )}
+                    
+                    {/* Title */}
+                    <span className="text-xs font-medium max-w-[280px] truncate">
+                      {item.title}
+                    </span>
+                    
+                    {/* Time */}
+                    <span className="text-[10px] text-muted-foreground shrink-0">
+                      {formatTimeAgo(item.timestamp)}
+                    </span>
+                  </button>
+                ))}
+                
+                {filteredNews.length === 0 && (
+                  <span className="text-xs text-muted-foreground">No news available</span>
+                )}
+              </div>
+            </div>
+
+            {/* Right: Action icons */}
+            <div className="flex items-center gap-0.5 shrink-0">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <Timer className="w-3 h-3" />
-                    <span>{Math.floor(secondsUntilRefresh / 60)}:{(secondsUntilRefresh % 60).toString().padStart(2, '0')}</span>
-                  </div>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={refreshNews} disabled={isLoading}>
+                    <RefreshCw className={cn("w-3.5 h-3.5", isLoading && "animate-spin")} />
+                  </Button>
                 </TooltipTrigger>
-                <TooltipContent>Next refresh in {Math.floor(secondsUntilRefresh / 60)}m {secondsUntilRefresh % 60}s</TooltipContent>
+                <TooltipContent>Refresh news</TooltipContent>
               </Tooltip>
 
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={refreshNews} disabled={isLoading}>
-                <RefreshCw className={cn("w-4 h-4", isLoading && "animate-spin")} />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setIsExpanded(!isExpanded)}>
+                    <ChevronDown className={cn("w-3.5 h-3.5 transition-transform", isExpanded && "rotate-180")} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{isExpanded ? 'Collapse' : 'Expand'}</TooltipContent>
+              </Tooltip>
 
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigate('/news')}>
-                <Maximize2 className="w-4 h-4" />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigate('/news')}>
+                    <Maximize2 className="w-3.5 h-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Full news view</TooltipContent>
+              </Tooltip>
 
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setIsExpanded(!isExpanded)}>
-                {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-7 w-7"
+                    onClick={() => toggleNotifications(!notificationSettings.enabled)}
+                  >
+                    {notificationSettings.enabled ? (
+                      <Bell className="w-3.5 h-3.5" />
+                    ) : (
+                      <BellOff className="w-3.5 h-3.5 text-muted-foreground" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{notificationSettings.enabled ? 'Disable' : 'Enable'} notifications</TooltipContent>
+              </Tooltip>
+
+              {/* Settings Sheet */}
+              <Sheet open={showSettings} onOpenChange={setShowSettings}>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-7 w-7">
+                    <Settings className="w-3.5 h-3.5" />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent className="w-[400px] sm:w-[540px] overflow-y-auto">
+                  <SheetHeader>
+                    <SheetTitle className="flex items-center gap-2">
+                      <Newspaper className="w-5 h-5" />
+                      News Settings
+                    </SheetTitle>
+                  </SheetHeader>
+                  
+                  <div className="space-y-6 mt-6">
+                    {/* Category Filters */}
+                    <div className="space-y-3">
+                      <Label className="text-sm font-medium">Categories</Label>
+                      <div className="flex flex-wrap gap-1.5">
+                        <button
+                          onClick={() => toggleCategory('all')}
+                          className={cn(
+                            "px-2.5 py-1 text-xs rounded-full border transition-all",
+                            filters.categories.includes('all')
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "border-border text-muted-foreground hover:border-primary/50"
+                          )}
+                        >
+                          All
+                        </button>
+                        {Object.entries(categoryLabels).map(([key, label]) => (
+                          <button
+                            key={key}
+                            onClick={() => toggleCategory(key as NewsCategory)}
+                            className={cn(
+                              "px-2.5 py-1 text-xs rounded-full border transition-all flex items-center gap-1",
+                              filters.categories.includes(key as NewsCategory)
+                                ? categoryColors[key as NewsCategoryType]
+                                : "border-border text-muted-foreground hover:border-primary/50"
+                            )}
+                          >
+                            {categoryIcons[key as NewsCategoryType]}
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Country Filter */}
+                    <div className="space-y-3">
+                      <Label className="text-sm font-medium">Country</Label>
+                      <Select 
+                        value={filters.countries[0] || 'all'} 
+                        onValueChange={(val) => toggleCountry(val)}
+                      >
+                        <SelectTrigger className="w-full">
+                          <MapPin className="w-4 h-4 mr-2" />
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {COUNTRIES.map(c => (
+                            <SelectItem key={c.code} value={c.code}>
+                              <span className="flex items-center gap-2">
+                                <span>{c.flag}</span>
+                                <span>{c.label}</span>
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Refresh Interval */}
+                    <div className="space-y-3">
+                      <Label className="text-sm font-medium">Refresh Interval</Label>
+                      <Select 
+                        value={String(refreshInterval)} 
+                        onValueChange={(val) => setRefreshInterval(Number(val) as RefreshInterval)}
+                      >
+                        <SelectTrigger className="w-full">
+                          <Timer className="w-4 h-4 mr-2" />
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1">Every 1 minute</SelectItem>
+                          <SelectItem value="5">Every 5 minutes</SelectItem>
+                          <SelectItem value="15">Every 15 minutes</SelectItem>
+                          <SelectItem value="30">Every 30 minutes</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Language */}
+                    <div className="space-y-3">
+                      <Label className="text-sm font-medium">Language</Label>
+                      <div className="flex gap-2">
+                        {languages.map(lang => (
+                          <Button
+                            key={lang.code}
+                            variant={language === lang.code ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setLanguage(lang.code)}
+                            className="gap-2"
+                          >
+                            <span>{lang.flag}</span>
+                            <span>{lang.label}</span>
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Source Settings */}
+                    <div className="space-y-3">
+                      <Label className="text-sm font-medium">Source Filters & AI Deduplication</Label>
+                      <NewsSourceSettings />
+                    </div>
+
+                    {/* Notification Settings */}
+                    <div className="space-y-3">
+                      <Label className="text-sm font-medium">Notifications</Label>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border">
+                          <div className="flex items-center gap-2">
+                            <Bell className="w-4 h-4" />
+                            <span className="text-sm">Enable Notifications</span>
+                          </div>
+                          <Switch 
+                            checked={notificationSettings.enabled} 
+                            onCheckedChange={toggleNotifications}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border">
+                          <div className="flex items-center gap-2">
+                            <Languages className="w-4 h-4" />
+                            <span className="text-sm">Sound Alerts</span>
+                          </div>
+                          <Switch 
+                            checked={notificationSettings.soundEnabled} 
+                            onCheckedChange={toggleSound}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Clear Filters */}
+                    {hasActiveFilters && (
+                      <Button 
+                        variant="outline" 
+                        onClick={clearFilters}
+                        className="w-full"
+                      >
+                        <X className="w-4 h-4 mr-2" />
+                        Clear All Filters
+                      </Button>
+                    )}
+                  </div>
+                </SheetContent>
+              </Sheet>
+
+              {/* Language quick toggle */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-7 w-7"
+                    onClick={() => setLanguage(language === 'en' ? 'ar' : 'en')}
+                  >
+                    <Languages className="w-3.5 h-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Switch language</TooltipContent>
+              </Tooltip>
             </div>
           </div>
 
-          {/* Scrolling news ticker */}
-          <AnimatePresence>
-            {!isExpanded && filteredNews.length > 0 && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                className="overflow-hidden border-t"
-              >
-                <div className="flex overflow-x-auto gap-4 px-4 py-2 scrollbar-hide">
-                  {filteredNews.slice(0, 10).map(item => (
-                    <button
-                      key={item.id}
-                      onClick={() => fetchSummary(item)}
-                      className={cn(
-                        "flex-shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all hover:border-primary/50",
-                        item.isNew ? "bg-primary/5 border-primary/30" : "bg-muted/30 border-border"
-                      )}
-                    >
-                      <Badge variant="outline" className={cn("text-[9px] px-1", categoryColors[item.category])}>
-                        {categoryIcons[item.category]}
-                      </Badge>
-                      <span className="text-xs font-medium max-w-[200px] truncate">{item.title}</span>
-                      <span className="text-[10px] text-muted-foreground">{formatTimeAgo(item.timestamp)}</span>
-                    </button>
-                  ))}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Expanded view */}
+          {/* Expanded view - only shows when expanded */}
           <AnimatePresence>
             {isExpanded && (
               <motion.div
@@ -582,26 +760,6 @@ export function NewsRibbon({ filterState, onResearchNews, onPositionChange }: Ne
                 exit={{ height: 0, opacity: 0 }}
                 className="border-t max-h-[50vh] overflow-y-auto"
               >
-                {/* All category chips */}
-                <div className="flex flex-wrap gap-1 px-4 py-2 border-b bg-muted/20">
-                  <span className="text-xs text-muted-foreground mr-2">Categories:</span>
-                  {Object.entries(categoryLabels).map(([key, label]) => (
-                    <button
-                      key={key}
-                      onClick={() => toggleCategory(key as NewsCategory)}
-                      className={cn(
-                        "px-2 py-0.5 text-[10px] rounded-full border transition-all flex items-center gap-1",
-                        filters.categories.includes(key as NewsCategory)
-                          ? categoryColors[key as NewsCategoryType]
-                          : "border-border text-muted-foreground hover:border-primary/50"
-                      )}
-                    >
-                      {categoryIcons[key as NewsCategoryType]}
-                      {label}
-                    </button>
-                  ))}
-                </div>
-
                 {/* News list */}
                 <div className="divide-y">
                   {filteredNews.length === 0 ? (
