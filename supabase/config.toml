@@ -91,3 +91,6 @@ verify_jwt = false
 
 [functions.explorium-enrich]
 verify_jwt = false
+
+[functions.manus-realtime]
+verify_jwt = false
