@@ -610,6 +610,29 @@ export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
                 {newItemsCount}
               </Badge>
             )}
+            {/* Active filter indicators */}
+            {hasActiveFilters && (
+              <div className="hidden lg:flex items-center gap-1">
+                {!filters.countries.includes('all') && filters.countries.map(c => (
+                  <Badge 
+                    key={c}
+                    variant="outline" 
+                    className="text-[8px] h-4 px-1.5 border-blue-500/50 text-blue-400 bg-blue-500/10"
+                  >
+                    {COUNTRIES.find(cc => cc.code === c)?.flag} {c}
+                  </Badge>
+                ))}
+                {!filters.categories.includes('all') && filters.categories.slice(0, 2).map(cat => (
+                  <Badge 
+                    key={cat}
+                    variant="outline" 
+                    className="text-[8px] h-4 px-1.5 border-primary/50 text-primary bg-primary/10"
+                  >
+                    {categoryLabels[cat as NewsCategoryType] || cat}
+                  </Badge>
+                ))}
+              </div>
+            )}
             {/* Countdown timer */}
             {isMonitoring && secondsUntilRefresh > 0 && (
               <span className="text-[9px] text-muted-foreground font-mono hidden md:inline">
