@@ -1,18 +1,23 @@
+import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Wifi, WifiOff, Brain, Globe, Database, Shield, Zap,
-  Check, Loader2, AlertCircle, Activity, Clock, FileSearch
+  Check, Loader2, AlertCircle, Activity, Clock, FileSearch,
+  ChevronDown, ChevronUp, Settings2
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useManusRealtime, ManusRealtimeState, SubAgentStatus } from '@/hooks/useManusRealtime';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { CustomSourceInput } from './CustomSourceInput';
 
 interface ManusRealtimePanelProps {
   onResearchComplete?: (metrics: any) => void;
   className?: string;
+  onSourcesChange?: (sources: string[]) => void;
 }
 
 const getAgentIcon = (type: SubAgentStatus['type']) => {
@@ -50,8 +55,15 @@ const getAgentStatusIcon = (status: SubAgentStatus['status']) => {
   }
 };
 
-export function ManusRealtimePanel({ onResearchComplete, className }: ManusRealtimePanelProps) {
+export function ManusRealtimePanel({ onResearchComplete, className, onSourcesChange }: ManusRealtimePanelProps) {
   const { isRTL } = useLanguage();
+  const [showSourceSettings, setShowSourceSettings] = useState(false);
+  const [customSources, setCustomSources] = useState<string[]>([]);
+  
+  const handleSourcesChange = useCallback((sources: string[]) => {
+    setCustomSources(sources);
+    onSourcesChange?.(sources);
+  }, [onSourcesChange]);
   
   const { 
     isConnected, 
@@ -73,9 +85,12 @@ export function ManusRealtimePanel({ onResearchComplete, className }: ManusRealt
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <Brain className="w-5 h-5 text-primary" />
-          <span className="font-semibold text-sm">Manus 1.6 MAX</span>
+          <span className="font-semibold text-sm">Manus 1.7 MAX</span>
           <Badge variant="outline" className="text-[10px] px-1.5 py-0">
             Realtime
+          </Badge>
+          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-green-500/10 text-green-600">
+            Web Crawl
           </Badge>
         </div>
         
@@ -231,6 +246,37 @@ export function ManusRealtimePanel({ onResearchComplete, className }: ManusRealt
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Source Settings Collapsible */}
+      <Collapsible open={showSourceSettings} onOpenChange={setShowSourceSettings} className="mt-4">
+        <CollapsibleTrigger asChild>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="w-full justify-between text-xs text-muted-foreground hover:text-foreground"
+          >
+            <div className="flex items-center gap-2">
+              <Settings2 className="w-4 h-4" />
+              <span>Configure Research Sources</span>
+              {customSources.length > 0 && (
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                  {customSources.length} sources
+                </Badge>
+              )}
+            </div>
+            {showSourceSettings ? (
+              <ChevronUp className="w-4 h-4" />
+            ) : (
+              <ChevronDown className="w-4 h-4" />
+            )}
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="mt-3">
+          <CustomSourceInput 
+            onSourcesChange={handleSourcesChange}
+          />
+        </CollapsibleContent>
+      </Collapsible>
     </Card>
   );
 }
