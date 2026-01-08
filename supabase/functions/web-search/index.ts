@@ -564,7 +564,9 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
+        // Return in BOTH formats for compatibility
         data: finalResults,
+        results: finalResults,
         totalResults: finalResults.length,
         searchMethod: 'embedded_web_search',
         engines: searchEngine === 'all' ? ['duckduckgo', 'google', 'bing'] : [searchEngine],

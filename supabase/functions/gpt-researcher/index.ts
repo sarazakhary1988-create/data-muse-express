@@ -210,7 +210,7 @@ that would help comprehensively answer the main query. Return ONLY a JSON object
   }
 }
 
-// Search for sources using web search
+// Search for sources using web search - PARALLEL execution
 async function searchSources(
   mainQuery: string, 
   subQuestions: string[], 
@@ -220,9 +220,10 @@ async function searchSources(
   const allSources: SourceInfo[] = [];
   const seenUrls = new Set<string>();
 
-  const queries = [mainQuery, ...subQuestions];
+  const queries = [mainQuery, ...subQuestions.slice(0, 4)];
   
-  for (const query of queries) {
+  // Execute all searches in PARALLEL for speed
+  const searchPromises = queries.map(async (query) => {
     try {
       const response = await fetch(`${supabase.url}/functions/v1/web-search`, {
         method: 'POST',
@@ -230,38 +231,66 @@ async function searchSources(
           'Authorization': `Bearer ${supabase.key}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ query, maxResults: Math.ceil(maxSources / queries.length) }),
+        body: JSON.stringify({ 
+          query, 
+          maxResults: Math.ceil(maxSources / queries.length),
+          searchEngine: 'all',
+          scrapeContent: false,
+        }),
       });
 
-      if (response.ok) {
-        const results = await response.json();
-        for (const result of results.results || []) {
-          if (!seenUrls.has(result.url)) {
-            seenUrls.add(result.url);
-            allSources.push({
-              url: result.url,
-              title: result.title,
-              domain: new URL(result.url).hostname,
-              relevanceScore: result.score || 0.5,
-              extractedContent: result.snippet || '',
-              publishDate: result.publishDate,
-            });
-          }
-        }
+      if (!response.ok) {
+        console.error(`[GPT-Researcher] web-search failed for "${query.slice(0, 40)}": ${response.status}`);
+        return [];
       }
+      
+      const data = await response.json();
+      // web-search returns data in 'data' array, not 'results'
+      const results = data.data || data.results || [];
+      console.log(`[GPT-Researcher] web-search returned ${results.length} results for "${query.slice(0, 40)}"`);
+      
+      return results.map((result: any) => {
+        try {
+          return {
+            url: result.url,
+            title: result.title || 'Untitled',
+            domain: result.url ? new URL(result.url).hostname.replace('www.', '') : 'unknown',
+            relevanceScore: result.score || 0.7,
+            extractedContent: result.description || result.markdown || result.snippet || '',
+            publishDate: result.publishDate || result.fetchedAt,
+          };
+        } catch {
+          return null;
+        }
+      }).filter(Boolean);
     } catch (error) {
-      console.error(`Search failed for query: ${query}`, error);
+      console.error(`[GPT-Researcher] Search failed for query: ${query}`, error);
+      return [];
+    }
+  });
+  
+  const resultsArrays = await Promise.all(searchPromises);
+  
+  // Combine and deduplicate
+  for (const results of resultsArrays) {
+    for (const result of results) {
+      if (result && result.url && !seenUrls.has(result.url)) {
+        seenUrls.add(result.url);
+        allSources.push(result);
+      }
     }
   }
 
+  console.log(`[GPT-Researcher] Total unique sources: ${allSources.length}`);
   return allSources.slice(0, maxSources);
 }
 
-// Extract full content from sources using Playwright browser
+// Extract full content from sources using Playwright browser - PARALLEL execution
 async function extractContent(sources: SourceInfo[], supabase: { url: string; key: string }): Promise<SourceInfo[]> {
-  const extracted: SourceInfo[] = [];
-
-  for (const source of sources) {
+  // Process top sources in parallel (limit to 6 for speed)
+  const topSources = sources.slice(0, 6);
+  
+  const scrapePromises = topSources.map(async (source) => {
     try {
       const response = await fetch(`${supabase.url}/functions/v1/playwright-browser`, {
         method: 'POST',
@@ -272,31 +301,41 @@ async function extractContent(sources: SourceInfo[], supabase: { url: string; ke
         body: JSON.stringify({ 
           url: source.url,
           action: 'scrape',
+          waitTime: 2000,
         }),
       });
 
-      if (response.ok) {
-        const result = await response.json();
-        if (result.success) {
-          extracted.push({
-            ...source,
-            extractedContent: result.content || result.markdown || source.extractedContent,
-            author: result.metadata?.author,
-            publishDate: result.metadata?.publishDate || source.publishDate,
-          });
-        } else {
-          extracted.push(source);
-        }
-      } else {
-        extracted.push(source);
+      if (!response.ok) {
+        console.log(`[GPT-Researcher] playwright scrape failed for ${source.url}: ${response.status}`);
+        return source;
       }
+      
+      const result = await response.json();
+      if (result.success && (result.content || result.markdown)) {
+        const content = (result.content || result.markdown || '').slice(0, 8000);
+        console.log(`[GPT-Researcher] Scraped ${source.domain}: ${content.length} chars`);
+        return {
+          ...source,
+          extractedContent: content || source.extractedContent,
+          author: result.metadata?.author,
+          publishDate: result.metadata?.publishDate || source.publishDate,
+        };
+      }
+      return source;
     } catch (error) {
-      console.error(`Content extraction failed for: ${source.url}`, error);
-      extracted.push(source);
+      console.error(`[GPT-Researcher] Content extraction failed for: ${source.url}`, error);
+      return source;
     }
-  }
-
-  return extracted;
+  });
+  
+  const extracted = await Promise.all(scrapePromises);
+  
+  // Add remaining sources without scraping
+  const remaining = sources.slice(6);
+  
+  console.log(`[GPT-Researcher] Extracted content from ${extracted.filter(s => s.extractedContent.length > 100).length}/${topSources.length} sources`);
+  
+  return [...extracted, ...remaining];
 }
 
 // Verify facts across sources

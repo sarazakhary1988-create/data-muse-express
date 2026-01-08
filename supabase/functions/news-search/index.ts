@@ -325,10 +325,16 @@ async function fetchNewsFromWideResearch(query: string): Promise<any[]> {
       }),
     });
     
-    if (!response.ok) return [];
+    if (!response.ok) {
+      console.log('[NewsSearch] wide-research failed:', response.status);
+      return [];
+    }
     
     const data = await response.json();
-    return data.searchResults || data.results || [];
+    // Handle both response formats
+    const results = data.searchResults || data.results || [];
+    console.log(`[NewsSearch] wide-research returned ${results.length} results for "${query.slice(0, 40)}"`);
+    return results;
   } catch (error) {
     console.error('[NewsSearch] Fetch error:', error);
     return [];
