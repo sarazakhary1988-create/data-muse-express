@@ -548,11 +548,6 @@ export function useNewsMonitor() {
     return true;
   };
 
-  // Update filters
-  const updateFilters = useCallback((filters: NewsFilters) => {
-    setActiveFilters(filters);
-  }, []);
-
   const fetchLatestNews = useCallback(async (filters?: NewsFilters) => {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
     
@@ -769,6 +764,13 @@ export function useNewsMonitor() {
   const refreshNews = useCallback(async () => {
     return fetchLatestNews(activeFilters);
   }, [fetchLatestNews, activeFilters]);
+
+  // Update filters and trigger refresh with server-side filtering
+  const updateFilters = useCallback((filters: NewsFilters) => {
+    setActiveFilters(filters);
+    // Trigger immediate refresh with new filters
+    fetchLatestNews(filters);
+  }, [fetchLatestNews]);
 
   const clearAllNews = useCallback(() => {
     setState(prev => ({ ...prev, news: [] }));
