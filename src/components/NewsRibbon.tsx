@@ -34,12 +34,15 @@ import {
   MapPin,
   GripVertical,
   Timer,
-  Maximize2
+  Maximize2,
+  Plus,
+  Link
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { 
   Tooltip,
   TooltipContent,
@@ -73,10 +76,12 @@ import {
 import { useNewsMonitor, NewsItem, NewsCategory as NewsCategoryType, NewsRegion, RefreshInterval } from '@/hooks/useNewsMonitor';
 import { useNewsSourceSettings } from '@/hooks/useNewsSourceSettings';
 import { useNewsNotifications } from '@/hooks/useNewsNotifications';
+import { useCustomCrawlSources } from '@/components/CustomCrawlSourceSettings';
 import { useLanguage, Language } from '@/lib/i18n/LanguageContext';
 import { cn } from '@/lib/utils';
 import { isBefore, isAfter, startOfDay, endOfDay } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from '@/hooks/use-toast';
 
 const FILTER_STORAGE_KEY = 'orkestra_news_filters';
 const RIBBON_POSITION_KEY = 'orkestra_ribbon_position';
@@ -368,6 +373,8 @@ export function NewsRibbon({ filterState, onResearchNews, onPositionChange }: Ne
     toggleSound,
     permission 
   } = useNewsNotifications();
+  const { sources: customCrawlSources, addSource: addCrawlSource, removeSource: removeCrawlSource } = useCustomCrawlSources();
+  const [newCrawlUrl, setNewCrawlUrl] = useState('');
   const { language, setLanguage } = useLanguage();
 
   const languages: { code: Language; label: string; flag: string }[] = [
@@ -908,6 +915,73 @@ export function NewsRibbon({ filterState, onResearchNews, onPositionChange }: Ne
                         onCheckedChange={toggleSound}
                       />
                     </div>
+                  </div>
+
+                  {/* Custom Crawl Sources */}
+                  <div className="space-y-2 pt-2 border-t border-border/50">
+                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                      <Link className="w-3 h-3" /> Custom News Sources
+                    </Label>
+                    <div className="flex gap-1.5">
+                      <Input
+                        value={newCrawlUrl}
+                        onChange={(e) => setNewCrawlUrl(e.target.value)}
+                        placeholder="e.g. reuters.com"
+                        className="h-7 text-xs flex-1"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && newCrawlUrl.trim()) {
+                            const success = addCrawlSource(newCrawlUrl);
+                            if (success) {
+                              toast({ title: "Source Added", description: `${newCrawlUrl} added` });
+                              setNewCrawlUrl('');
+                            } else {
+                              toast({ title: "Invalid or Duplicate", variant: "destructive" });
+                            }
+                          }
+                        }}
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 w-7 p-0"
+                        onClick={() => {
+                          if (newCrawlUrl.trim()) {
+                            const success = addCrawlSource(newCrawlUrl);
+                            if (success) {
+                              toast({ title: "Source Added", description: `${newCrawlUrl} added` });
+                              setNewCrawlUrl('');
+                            } else {
+                              toast({ title: "Invalid or Duplicate", variant: "destructive" });
+                            }
+                          }
+                        }}
+                      >
+                        <Plus className="w-3 h-3" />
+                      </Button>
+                    </div>
+                    {customCrawlSources.length > 0 && (
+                      <div className="space-y-1 max-h-24 overflow-y-auto">
+                        {customCrawlSources.map((source) => (
+                          <div 
+                            key={source.url}
+                            className="flex items-center justify-between gap-1 px-2 py-1 bg-muted/50 rounded text-[10px]"
+                          >
+                            <span className="truncate flex-1">{source.name}</span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5 shrink-0"
+                              onClick={() => removeCrawlSource(source.url)}
+                            >
+                              <X className="w-2.5 h-2.5" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-[9px] text-muted-foreground">
+                      Add URLs like reuters.com or bloomberg.com to crawl for news
+                    </p>
                   </div>
                 </div>
               </PopoverContent>
