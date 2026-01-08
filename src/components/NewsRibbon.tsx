@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -21,6 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useNewsMonitor, NewsItem, NewsCategory as NewsCategoryType, NewsRegion, RefreshInterval, COUNTRY_REGULATORS, COUNTRY_EXCHANGES } from '@/hooks/useNewsMonitor';
 import { useNewsSourceSettings } from '@/hooks/useNewsSourceSettings';
 import { useNewsNotifications } from '@/hooks/useNewsNotifications';
+import { useNewsDeduplication } from '@/hooks/useNewsDeduplication';
 import { useCustomCrawlSources } from '@/components/CustomCrawlSourceSettings';
 import { useLanguage, Language } from '@/lib/i18n/LanguageContext';
 import { cn } from '@/lib/utils';
@@ -294,6 +295,7 @@ export function NewsRibbon({ filterState, onResearchNews, onPositionChange }: Ne
     notifyNewItems, settings: notificationSettings, toggleNotifications, 
     toggleCategory: toggleNotificationCategory, toggleSound, permission 
   } = useNewsNotifications();
+  const { deduplicateNews, settings: dedupSettings } = useNewsDeduplication();
   const { sources: customCrawlSources, addSource: addCrawlSource, removeSource: removeCrawlSource } = useCustomCrawlSources();
   const [newCrawlUrl, setNewCrawlUrl] = useState('');
   const { language, setLanguage } = useLanguage();
@@ -369,20 +371,26 @@ export function NewsRibbon({ filterState, onResearchNews, onPositionChange }: Ne
     }
   }, [news, notifyNewItems]);
 
-  const filteredNews = news.filter(item => {
-    if (!isSourceAllowed(item.source)) return false;
-    if (!filters.categories.includes('all') && !filters.categories.includes(item.category)) return false;
-    if (!filters.countries.includes('all')) {
-      if (!item.country || !filters.countries.includes(item.country)) return false;
-    }
-    if (!filters.sources.includes('all')) {
-      const sourceMatch = filters.sources.some(s => item.source.toLowerCase().includes(s.toLowerCase()));
-      if (!sourceMatch) return false;
-    }
-    if (filters.dateFrom && isBefore(item.timestamp, startOfDay(filters.dateFrom))) return false;
-    if (filters.dateTo && isAfter(item.timestamp, endOfDay(filters.dateTo))) return false;
-    return true;
-  });
+  // Filter news and apply deduplication
+  const filteredNews = useMemo(() => {
+    let filtered = news.filter(item => {
+      if (!isSourceAllowed(item.source)) return false;
+      if (!filters.categories.includes('all') && !filters.categories.includes(item.category)) return false;
+      if (!filters.countries.includes('all')) {
+        if (!item.country || !filters.countries.includes(item.country)) return false;
+      }
+      if (!filters.sources.includes('all')) {
+        const sourceMatch = filters.sources.some(s => item.source.toLowerCase().includes(s.toLowerCase()));
+        if (!sourceMatch) return false;
+      }
+      if (filters.dateFrom && isBefore(item.timestamp, startOfDay(filters.dateFrom))) return false;
+      if (filters.dateTo && isAfter(item.timestamp, endOfDay(filters.dateTo))) return false;
+      return true;
+    });
+
+    // Apply AI deduplication
+    return deduplicateNews(filtered);
+  }, [news, filters, isSourceAllowed, deduplicateNews]);
 
   const newItemsCount = filteredNews.filter(n => n.isNew).length;
 
