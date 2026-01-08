@@ -483,7 +483,7 @@ function mapEnrichmentToReportFields(enrichment: any, type: 'person' | 'company'
 }
 
 // ============================================================================
-// AI ENHANCEMENT: Generate Enhanced Report Sections
+// AI ENHANCEMENT: Generate Enhanced Report Sections (Uses LLM Router)
 // ============================================================================
 
 async function enhanceReportWithAI(
@@ -496,17 +496,6 @@ async function enhanceReportWithAI(
   strengths: string[];
   recommendations: string[];
 }> {
-  const apiKey = Deno.env.get('OPENAI_API_KEY');
-  if (!apiKey) {
-    console.error('[lead-enrichment] OPENAI_API_KEY not configured for AI enhancement');
-    return {
-      profileSummary: baseData.overview || baseData.profileSummary || '',
-      keyInsights: baseData.keyInsights || [],
-      strengths: baseData.strengths || [],
-      recommendations: baseData.recommendations || [],
-    };
-  }
-
   const entityName = baseData.name || 'Unknown';
   const sourceContent = sources.slice(0, 10).map(s => s.content.slice(0, 2000)).join('\n\n---\n\n');
 
@@ -533,25 +522,23 @@ ${sourceContent.slice(0, 8000)}
 Generate enhanced sections with specific, evidence-based content.`;
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
+    // Use the LLM Router which prioritizes local models (DeepSeek/Llama/Qwen)
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase.functions.invoke('llm-router', {
+      body: {
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
-        max_tokens: 2048,
+        task: 'synthesis',
+        preferLocal: true, // Prefer local models (Ollama/vLLM/HF TGI)
+        maxTokens: 2048,
         temperature: 0.3,
-      }),
+      },
     });
 
-    if (!response.ok) {
-      console.error('[lead-enrichment] AI enhancement failed:', response.status);
+    if (error || !data?.success) {
+      console.error('[lead-enrichment] LLM Router failed:', error || data?.error);
       return {
         profileSummary: baseData.overview || baseData.profileSummary || '',
         keyInsights: baseData.keyInsights || [],
@@ -560,9 +547,7 @@ Generate enhanced sections with specific, evidence-based content.`;
       };
     }
 
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || '';
-    const parsed = safeJsonParseFromModel(content);
+    const parsed = safeJsonParseFromModel(data.content);
 
     if (!parsed) {
       return {
@@ -573,11 +558,12 @@ Generate enhanced sections with specific, evidence-based content.`;
       };
     }
 
-    console.log(`[lead-enrichment] AI enhancement successful for ${entityName}:`, {
+    console.log(`[lead-enrichment] AI enhancement successful for ${entityName} using ${data.model}:`, {
       profileSummaryLength: (parsed.profileSummary || '').length,
       keyInsightsCount: (parsed.keyInsights || []).length,
       strengthsCount: (parsed.strengths || []).length,
       recommendationsCount: Array.isArray(parsed.recommendations) ? parsed.recommendations.length : parsed.recommendations ? 1 : 0,
+      inferenceType: data.inferenceType,
     });
 
     return {

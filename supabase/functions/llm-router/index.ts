@@ -3,190 +3,188 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // ========================================
 // MANUS 1.7 MAX - UNIFIED LLM ROUTER
 // ========================================
-// PRIMARY: OpenAI, DeepSeek, Llama 3.3 70B, Qwen 2.5
-// SECONDARY: Claude, Gemini
-// FREE INFERENCE: HuggingFace, Groq (free tier), Cloudflare Workers AI
-// Orchestration framework patterns: LangGraph, CrewAI, Mastra
+// LOCAL INFERENCE: DeepSeek (Ollama/vLLM), Llama (HF TGI), Qwen (HF TGI)
+// COMMERCIAL: OpenAI, Claude (when API keys available)
+// FALLBACK: Lovable AI (Gemini - always available)
+// Orchestration: LangGraph, CrewAI, Mastra patterns
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Local inference endpoints - configure via environment variables
+const OLLAMA_URL = Deno.env.get('OLLAMA_URL') || 'http://localhost:11434';
+const VLLM_URL = Deno.env.get('VLLM_URL') || 'http://localhost:8000';
+const HF_TGI_URL = Deno.env.get('HF_TGI_URL') || 'http://localhost:8080';
+
 // ============ MODEL CONFIGURATIONS ============
 
 const MODEL_CONFIGS = {
-  // === OPENAI (PRIMARY - User has API key) ===
+  // === LOCAL INFERENCE MODELS (Ollama/vLLM/HuggingFace TGI) ===
+  
+  // DeepSeek via Ollama (local)
+  'deepseek-v3': {
+    name: 'DeepSeek-V3 (Local Ollama)',
+    provider: 'ollama' as const,
+    endpoint: `${OLLAMA_URL}/api/chat`,
+    model: 'deepseek-coder-v2:latest',
+    maxTokens: 8192,
+    capabilities: ['reasoning', 'coding', 'planning', 'tool_use'],
+    tier: 'local' as const,
+    isOllama: true,
+    isAnthropic: false,
+  },
+  
+  // DeepSeek via vLLM (local - alternative)
+  'deepseek-vllm': {
+    name: 'DeepSeek-V3 (Local vLLM)',
+    provider: 'vllm' as const,
+    endpoint: `${VLLM_URL}/v1/chat/completions`,
+    model: 'deepseek-ai/DeepSeek-V3',
+    maxTokens: 8192,
+    capabilities: ['reasoning', 'coding', 'planning', 'tool_use'],
+    tier: 'local' as const,
+    isOllama: false,
+    isAnthropic: false,
+  },
+  
+  // Llama 3.3 70B via HuggingFace TGI (local)
+  'llama-3.3-70b': {
+    name: 'Llama 3.3 70B (Local HF TGI)',
+    provider: 'huggingface-tgi' as const,
+    endpoint: `${HF_TGI_URL}/v1/chat/completions`,
+    model: 'meta-llama/Llama-3.3-70B-Instruct',
+    maxTokens: 4096,
+    capabilities: ['reasoning', 'coding', 'instruction_following'],
+    tier: 'local' as const,
+    isOllama: false,
+    isAnthropic: false,
+  },
+  
+  // Llama via Ollama (local - alternative)
+  'llama-3.3-70b-ollama': {
+    name: 'Llama 3.3 70B (Local Ollama)',
+    provider: 'ollama' as const,
+    endpoint: `${OLLAMA_URL}/api/chat`,
+    model: 'llama3.3:70b',
+    maxTokens: 4096,
+    capabilities: ['reasoning', 'coding', 'instruction_following'],
+    tier: 'local' as const,
+    isOllama: true,
+    isAnthropic: false,
+  },
+  
+  // Qwen 2.5 via HuggingFace TGI (local)
+  'qwen-2.5': {
+    name: 'Qwen 2.5 72B (Local HF TGI)',
+    provider: 'huggingface-tgi' as const,
+    endpoint: `${HF_TGI_URL}/v1/chat/completions`,
+    model: 'Qwen/Qwen2.5-72B-Instruct',
+    maxTokens: 8192,
+    capabilities: ['tool_use', 'instruction_following', 'reasoning'],
+    tier: 'local' as const,
+    isOllama: false,
+    isAnthropic: false,
+  },
+  
+  // Qwen via Ollama (local - alternative)
+  'qwen-2.5-ollama': {
+    name: 'Qwen 2.5 (Local Ollama)',
+    provider: 'ollama' as const,
+    endpoint: `${OLLAMA_URL}/api/chat`,
+    model: 'qwen2.5:72b',
+    maxTokens: 8192,
+    capabilities: ['tool_use', 'instruction_following', 'reasoning'],
+    tier: 'local' as const,
+    isOllama: true,
+    isAnthropic: false,
+  },
+
+  // === COMMERCIAL MODELS (When API keys are available) ===
   'gpt-4o': {
     name: 'GPT-4o',
-    provider: 'openai',
+    provider: 'openai' as const,
     endpoint: 'https://api.openai.com/v1/chat/completions',
     model: 'gpt-4o',
     apiKeyEnv: 'OPENAI_API_KEY',
     maxTokens: 4096,
     capabilities: ['reasoning', 'coding', 'multimodal', 'tool_use'],
-    tier: 'primary',
+    tier: 'commercial' as const,
+    isOllama: false,
+    isAnthropic: false,
   },
   'gpt-4o-mini': {
     name: 'GPT-4o Mini',
-    provider: 'openai',
+    provider: 'openai' as const,
     endpoint: 'https://api.openai.com/v1/chat/completions',
     model: 'gpt-4o-mini',
     apiKeyEnv: 'OPENAI_API_KEY',
     maxTokens: 4096,
     capabilities: ['reasoning', 'coding', 'general'],
-    tier: 'primary',
+    tier: 'commercial' as const,
+    isOllama: false,
+    isAnthropic: false,
   },
   'gpt-4-turbo': {
     name: 'GPT-4 Turbo',
-    provider: 'openai',
+    provider: 'openai' as const,
     endpoint: 'https://api.openai.com/v1/chat/completions',
     model: 'gpt-4-turbo-preview',
     apiKeyEnv: 'OPENAI_API_KEY',
     maxTokens: 4096,
     capabilities: ['reasoning', 'coding', 'planning'],
-    tier: 'primary',
-  },
-
-  // === OPEN SOURCE MODELS (FREE INFERENCE) ===
-  
-  // DeepSeek via their API (has free tier)
-  'deepseek-v3': {
-    name: 'DeepSeek-V3',
-    provider: 'deepseek',
-    endpoint: 'https://api.deepseek.com/v1/chat/completions',
-    model: 'deepseek-chat',
-    apiKeyEnv: 'DEEPSEEK_API_KEY',
-    maxTokens: 8192,
-    capabilities: ['reasoning', 'coding', 'planning', 'tool_use'],
-    tier: 'open-source',
+    tier: 'commercial' as const,
+    isOllama: false,
+    isAnthropic: false,
   },
   
-  // Llama 3.3 70B via Groq (FREE tier - 30 RPM)
-  'llama-3.3-70b-groq': {
-    name: 'Llama 3.3 70B (Groq Free)',
-    provider: 'groq',
-    endpoint: 'https://api.groq.com/openai/v1/chat/completions',
-    model: 'llama-3.3-70b-versatile',
-    apiKeyEnv: 'GROQ_API_KEY',
-    maxTokens: 8192,
-    capabilities: ['reasoning', 'coding', 'instruction_following'],
-    tier: 'open-source-free',
-  },
-  
-  // Llama 3.3 70B via Together.xyz
-  'llama-3.3-70b': {
-    name: 'Llama 3.3 70B Instruct',
-    provider: 'together',
-    endpoint: 'https://api.together.xyz/v1/chat/completions',
-    model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
-    apiKeyEnv: 'TOGETHER_API_KEY',
-    maxTokens: 4096,
-    capabilities: ['reasoning', 'coding', 'instruction_following'],
-    tier: 'open-source',
-  },
-  
-  // Llama via HuggingFace Inference API (FREE)
-  'llama-3.1-70b-hf': {
-    name: 'Llama 3.1 70B (HuggingFace Free)',
-    provider: 'huggingface',
-    endpoint: 'https://api-inference.huggingface.co/models/meta-llama/Llama-3.1-70B-Instruct',
-    model: 'meta-llama/Llama-3.1-70B-Instruct',
-    apiKeyEnv: 'HUGGINGFACE_API_KEY',
-    maxTokens: 4096,
-    capabilities: ['reasoning', 'coding', 'instruction_following'],
-    tier: 'open-source-free',
-  },
-
-  // Qwen 2.5 via Cloudflare Workers AI (FREE)
-  'qwen-2.5-cf': {
-    name: 'Qwen 2.5 (Cloudflare Free)',
-    provider: 'cloudflare',
-    endpoint: 'https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/ai/run/@cf/qwen/qwen1.5-14b-chat-awq',
-    model: 'qwen1.5-14b-chat-awq',
-    apiKeyEnv: 'CLOUDFLARE_API_KEY',
-    maxTokens: 4096,
-    capabilities: ['tool_use', 'instruction_following', 'reasoning'],
-    tier: 'open-source-free',
-  },
-
-  // Qwen 2.5 via DashScope
-  'qwen-2.5': {
-    name: 'Qwen 2.5 (72B)',
-    provider: 'alibaba',
-    endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
-    model: 'qwen-max',
-    apiKeyEnv: 'DASHSCOPE_API_KEY',
-    maxTokens: 8192,
-    capabilities: ['tool_use', 'instruction_following', 'reasoning'],
-    tier: 'open-source',
-  },
-
-  // Qwen via Fireworks
-  'qwen-2.5-fireworks': {
-    name: 'Qwen 2.5 72B (Fireworks)',
-    provider: 'fireworks',
-    endpoint: 'https://api.fireworks.ai/inference/v1/chat/completions',
-    model: 'accounts/fireworks/models/qwen2p5-72b-instruct',
-    apiKeyEnv: 'FIREWORKS_API_KEY',
-    maxTokens: 8192,
-    capabilities: ['tool_use', 'instruction_following', 'reasoning'],
-    tier: 'open-source',
-  },
-
-  // Mistral via their API
-  'mistral-large': {
-    name: 'Mistral Large',
-    provider: 'mistral',
-    endpoint: 'https://api.mistral.ai/v1/chat/completions',
-    model: 'mistral-large-latest',
-    apiKeyEnv: 'MISTRAL_API_KEY',
-    maxTokens: 4096,
-    capabilities: ['reasoning', 'coding', 'multilingual'],
-    tier: 'open-source',
-  },
-
-  // === COMMERCIAL MODELS (FALLBACK) ===
+  // Claude (when API key is available)
   'claude-sonnet': {
     name: 'Claude Sonnet 4',
-    provider: 'anthropic',
+    provider: 'anthropic' as const,
     endpoint: 'https://api.anthropic.com/v1/messages',
     model: 'claude-sonnet-4-20250514',
     apiKeyEnv: 'ANTHROPIC_API_KEY',
     maxTokens: 8192,
     capabilities: ['reasoning', 'coding', 'planning', 'synthesis'],
-    tier: 'premium',
+    tier: 'commercial' as const,
+    isOllama: false,
     isAnthropic: true,
   },
 
   // === LOVABLE AI (Ultimate fallback - always available) ===
   'gemini-2.5-flash': {
     name: 'Gemini 2.5 Flash',
-    provider: 'lovable',
+    provider: 'lovable' as const,
     endpoint: 'https://ai.gateway.lovable.dev/v1/chat/completions',
     model: 'google/gemini-2.5-flash',
     apiKeyEnv: 'LOVABLE_API_KEY',
     maxTokens: 8192,
     capabilities: ['reasoning', 'multimodal', 'synthesis'],
-    tier: 'fallback',
+    tier: 'fallback' as const,
+    isOllama: false,
+    isAnthropic: false,
   },
   'gemini-2.5-pro': {
     name: 'Gemini 2.5 Pro',
-    provider: 'lovable',
+    provider: 'lovable' as const,
     endpoint: 'https://ai.gateway.lovable.dev/v1/chat/completions',
     model: 'google/gemini-2.5-pro',
     apiKeyEnv: 'LOVABLE_API_KEY',
     maxTokens: 8192,
     capabilities: ['reasoning', 'multimodal', 'complex_analysis'],
-    tier: 'premium',
+    tier: 'fallback' as const,
+    isOllama: false,
+    isAnthropic: false,
   },
-} as const;
+};
 
 type ModelId = keyof typeof MODEL_CONFIGS;
+type ModelConfig = typeof MODEL_CONFIGS[ModelId];
 
 // ============ ORCHESTRATION PATTERNS ============
 
-// LangGraph pattern: Graph-based workflow with state
 interface LangGraphState {
   messages: any[];
   currentNode: string;
@@ -194,7 +192,6 @@ interface LangGraphState {
   history: string[];
 }
 
-// CrewAI pattern: Role-based agents
 interface CrewAgent {
   role: string;
   goal: string;
@@ -202,7 +199,6 @@ interface CrewAgent {
   model: ModelId;
 }
 
-// Mastra pattern: Production-ready with monitoring
 interface MastraConfig {
   enableMetrics: boolean;
   retryPolicy: { maxRetries: number; backoffMs: number };
@@ -222,10 +218,8 @@ interface LLMRequest {
   stream?: boolean;
   tools?: any[];
   tool_choice?: any;
-  preferOpenSource?: boolean;
-  // CrewAI specific
+  preferLocal?: boolean;
   agents?: CrewAgent[];
-  // Mastra specific
   mastraConfig?: MastraConfig;
 }
 
@@ -241,6 +235,7 @@ interface LLMResponse {
   };
   fallbacksUsed?: string[];
   orchestration?: string;
+  inferenceType: 'local' | 'commercial' | 'fallback';
   error?: string;
   executionTimeMs: number;
 }
@@ -258,16 +253,17 @@ serve(async (req) => {
       model: request.model || 'auto',
       task: request.task,
       orchestration: request.orchestration || 'simple',
-      preferOpenSource: request.preferOpenSource,
+      preferLocal: request.preferLocal ?? true,
     });
+    console.log('[LLM Router] Local endpoints:', { OLLAMA_URL, VLLM_URL, HF_TGI_URL });
 
-    // Select model based on task if not specified
-    let modelId = request.model === 'auto' || !request.model 
-      ? selectModelForTask(request.task, request.preferOpenSource)
-      : request.model;
+    // Select model based on task if not specified - prioritize local
+    let modelId: ModelId = (request.model === 'auto' || !request.model)
+      ? selectModelForTask(request.task, request.preferLocal ?? true)
+      : request.model as ModelId;
 
-    // Build fallback chain prioritizing open source
-    const fallbackChain = request.fallbackChain || buildFallbackChain(modelId, request.preferOpenSource);
+    // Build fallback chain prioritizing local models
+    const fallbackChain = request.fallbackChain || buildFallbackChain(modelId, request.preferLocal ?? true);
     const usedFallbacks: string[] = [];
 
     // Try models in order until one succeeds
@@ -275,15 +271,22 @@ serve(async (req) => {
       const config = MODEL_CONFIGS[tryModelId];
       if (!config) continue;
 
-      const apiKey = Deno.env.get(config.apiKeyEnv);
-
-      if (!apiKey) {
-        console.log(`[LLM Router] No API key for ${config.name}, trying fallback...`);
-        usedFallbacks.push(tryModelId);
-        continue;
-      }
-
       try {
+        console.log(`[LLM Router] Trying ${config.name}...`);
+        
+        // Check if it needs an API key
+        const apiKeyEnv = (config as any).apiKeyEnv;
+        let apiKey = '';
+        
+        if (apiKeyEnv) {
+          apiKey = Deno.env.get(apiKeyEnv) || '';
+          if (!apiKey) {
+            console.log(`[LLM Router] No API key for ${config.name}, trying fallback...`);
+            usedFallbacks.push(tryModelId);
+            continue;
+          }
+        }
+
         let result;
 
         // Use orchestration pattern
@@ -310,6 +313,7 @@ serve(async (req) => {
             usage: result.usage,
             fallbacksUsed: usedFallbacks.length > 0 ? usedFallbacks : undefined,
             orchestration: request.orchestration || 'simple',
+            inferenceType: config.tier === 'local' ? 'local' : config.tier === 'fallback' ? 'fallback' : 'commercial',
             executionTimeMs: Date.now() - startTime,
           };
 
@@ -326,10 +330,11 @@ serve(async (req) => {
     // All models failed
     return new Response(JSON.stringify({
       success: false,
-      error: 'All models in fallback chain failed',
+      error: 'All models in fallback chain failed. Ensure local inference (Ollama/vLLM/HF TGI) is running or API keys are configured.',
       model: 'none',
       provider: 'none',
       content: '',
+      inferenceType: 'none',
       executionTimeMs: Date.now() - startTime,
     }), {
       status: 500,
@@ -351,85 +356,78 @@ serve(async (req) => {
 
 // ============ MODEL SELECTION ============
 
-function selectModelForTask(task?: string, preferOpenSource?: boolean): ModelId {
-  // Prioritize OpenAI if available and not preferring open source
+function selectModelForTask(task?: string, preferLocal?: boolean): ModelId {
   const hasOpenAI = !!Deno.env.get('OPENAI_API_KEY');
-  const hasGroq = !!Deno.env.get('GROQ_API_KEY');
-  const hasDeepSeek = !!Deno.env.get('DEEPSEEK_API_KEY');
   const hasClaude = !!Deno.env.get('ANTHROPIC_API_KEY');
 
-  if (preferOpenSource) {
-    // Try open source first
-    if (hasGroq) return 'llama-3.3-70b-groq';
-    if (hasDeepSeek) return 'deepseek-v3';
+  // Always prioritize local models first (user's preference)
+  if (preferLocal) {
+    switch (task) {
+      case 'reasoning':
+      case 'coding':
+        return 'deepseek-v3'; // DeepSeek best for reasoning/coding
+      case 'planning':
+        return 'llama-3.3-70b'; // Llama good for planning
+      case 'synthesis':
+      case 'research':
+        return 'qwen-2.5'; // Qwen for synthesis
+      default:
+        return 'deepseek-v3';
+    }
   }
 
+  // Commercial models if local not preferred
   switch (task) {
     case 'reasoning':
       if (hasOpenAI) return 'gpt-4o';
-      if (hasDeepSeek) return 'deepseek-v3';
-      if (hasGroq) return 'llama-3.3-70b-groq';
-      return 'gemini-2.5-pro';
-      
+      return 'deepseek-v3';
     case 'coding':
-      if (hasDeepSeek) return 'deepseek-v3';
-      if (hasOpenAI) return 'gpt-4o';
-      if (hasGroq) return 'llama-3.3-70b-groq';
-      return 'gemini-2.5-flash';
-      
+      return 'deepseek-v3'; // DeepSeek best for coding regardless
     case 'planning':
       if (hasClaude) return 'claude-sonnet';
       if (hasOpenAI) return 'gpt-4o';
-      return 'gemini-2.5-pro';
-      
+      return 'llama-3.3-70b';
     case 'synthesis':
       if (hasOpenAI) return 'gpt-4o';
       if (hasClaude) return 'claude-sonnet';
-      return 'gemini-2.5-pro';
-      
+      return 'qwen-2.5';
     case 'research':
       if (hasOpenAI) return 'gpt-4o';
-      if (hasGroq) return 'llama-3.3-70b-groq';
-      return 'gemini-2.5-flash';
-      
+      return 'llama-3.3-70b';
     default:
-      // Default priority: OpenAI > Groq (free Llama) > DeepSeek > Gemini
       if (hasOpenAI) return 'gpt-4o-mini';
-      if (hasGroq) return 'llama-3.3-70b-groq';
-      if (hasDeepSeek) return 'deepseek-v3';
-      return 'gemini-2.5-flash';
+      return 'deepseek-v3';
   }
 }
 
-function buildFallbackChain(primary: ModelId, preferOpenSource?: boolean): ModelId[] {
+function buildFallbackChain(primary: ModelId, preferLocal?: boolean): ModelId[] {
   const chain: ModelId[] = [];
 
-  // Priority order - OpenAI first since user has API key, then open source free tiers
-  const priorityOrder: ModelId[] = preferOpenSource
+  // Priority: Local models first, then commercial, then Lovable AI fallback
+  const priorityOrder: ModelId[] = preferLocal
     ? [
-        // Open source first
-        'llama-3.3-70b-groq',
+        // Local models first
         'deepseek-v3',
-        'llama-3.1-70b-hf',
+        'deepseek-vllm',
         'llama-3.3-70b',
-        'qwen-2.5-fireworks',
+        'llama-3.3-70b-ollama',
         'qwen-2.5',
-        'mistral-large',
-        // Then commercial
+        'qwen-2.5-ollama',
+        // Commercial if available
         'gpt-4o',
         'gpt-4o-mini',
         'claude-sonnet',
+        // Ultimate fallback
         'gemini-2.5-pro',
         'gemini-2.5-flash',
       ]
     : [
-        // Commercial first (OpenAI has key)
+        // Commercial first
         'gpt-4o',
         'gpt-4o-mini',
         'gpt-4-turbo',
         'claude-sonnet',
-        // Then open source
-        'llama-3.3-70b-groq',
+        // Then local
         'deepseek-v3',
         'llama-3.3-70b',
         'qwen-2.5',
@@ -450,33 +448,33 @@ function buildFallbackChain(primary: ModelId, preferOpenSource?: boolean): Model
 // ============ MODEL CALLING ============
 
 async function callModel(
-  config: typeof MODEL_CONFIGS[ModelId],
+  config: ModelConfig,
   apiKey: string,
   request: LLMRequest
 ): Promise<{ success: boolean; content: string; usage?: any }> {
   
+  // Handle Ollama API
+  if (config.isOllama) {
+    return callOllama(config, request);
+  }
+
   // Handle Anthropic's different API format
-  if ((config as any).isAnthropic) {
+  if (config.isAnthropic) {
     return callAnthropic(config, apiKey, request);
   }
 
-  // Handle HuggingFace
-  if (config.provider === 'huggingface') {
-    return callHuggingFace(config, apiKey, request);
+  // Standard OpenAI-compatible API (vLLM, HF TGI, OpenAI, Lovable)
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  if (apiKey) {
+    headers['Authorization'] = `Bearer ${apiKey}`;
   }
 
-  // Handle Cloudflare Workers AI
-  if (config.provider === 'cloudflare') {
-    return callCloudflare(config, apiKey, request);
-  }
-
-  // Standard OpenAI-compatible API
   const response = await fetch(config.endpoint, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify({
       model: config.model,
       messages: request.messages,
@@ -519,13 +517,52 @@ async function callModel(
   };
 }
 
+// Call Ollama API
+async function callOllama(
+  config: ModelConfig,
+  request: LLMRequest
+): Promise<{ success: boolean; content: string; usage?: any }> {
+  
+  const response = await fetch(config.endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: config.model,
+      messages: request.messages,
+      stream: false,
+      options: {
+        num_predict: Math.min(request.maxTokens || 2048, config.maxTokens),
+        temperature: request.temperature ?? 0.7,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Ollama API error: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json();
+  
+  return {
+    success: true,
+    content: data.message?.content || '',
+    usage: data.prompt_eval_count && data.eval_count ? {
+      promptTokens: data.prompt_eval_count,
+      completionTokens: data.eval_count,
+      totalTokens: data.prompt_eval_count + data.eval_count,
+    } : undefined,
+  };
+}
+
 async function callAnthropic(
-  config: typeof MODEL_CONFIGS[ModelId],
+  config: ModelConfig,
   apiKey: string,
   request: LLMRequest
 ): Promise<{ success: boolean; content: string; usage?: any }> {
   
-  // Convert messages to Anthropic format
   const systemMessage = request.messages.find(m => m.role === 'system');
   const nonSystemMessages = request.messages.filter(m => m.role !== 'system');
 
@@ -565,89 +602,10 @@ async function callAnthropic(
   };
 }
 
-async function callHuggingFace(
-  config: typeof MODEL_CONFIGS[ModelId],
-  apiKey: string,
-  request: LLMRequest
-): Promise<{ success: boolean; content: string; usage?: any }> {
-  
-  // Convert to HuggingFace format
-  const prompt = request.messages
-    .map(m => `${m.role}: ${m.content}`)
-    .join('\n') + '\nassistant:';
-
-  const response = await fetch(config.endpoint, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      inputs: prompt,
-      parameters: {
-        max_new_tokens: Math.min(request.maxTokens || 1024, config.maxTokens),
-        temperature: request.temperature ?? 0.7,
-        return_full_text: false,
-      },
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`HuggingFace API error: ${response.status} - ${errorText}`);
-  }
-
-  const data = await response.json();
-  const content = Array.isArray(data) ? data[0]?.generated_text || '' : data.generated_text || '';
-
-  return {
-    success: true,
-    content,
-  };
-}
-
-async function callCloudflare(
-  config: typeof MODEL_CONFIGS[ModelId],
-  apiKey: string,
-  request: LLMRequest
-): Promise<{ success: boolean; content: string; usage?: any }> {
-  
-  const accountId = Deno.env.get('CF_ACCOUNT_ID');
-  if (!accountId) {
-    throw new Error('CF_ACCOUNT_ID not configured');
-  }
-
-  const endpoint = config.endpoint.replace('${CF_ACCOUNT_ID}', accountId);
-
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      messages: request.messages,
-      max_tokens: Math.min(request.maxTokens || 1024, config.maxTokens),
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Cloudflare AI error: ${response.status} - ${errorText}`);
-  }
-
-  const data = await response.json();
-  return {
-    success: true,
-    content: data.result?.response || '',
-  };
-}
-
 // ============ ORCHESTRATION PATTERNS ============
 
-// LangGraph pattern: Stateful graph execution
 async function executeLangGraph(
-  config: typeof MODEL_CONFIGS[ModelId],
+  config: ModelConfig,
   apiKey: string,
   request: LLMRequest
 ): Promise<{ success: boolean; content: string; usage?: any }> {
@@ -660,7 +618,6 @@ async function executeLangGraph(
     history: [],
   };
 
-  // Graph nodes
   const nodes = ['analyze', 'plan', 'execute', 'observe', 'synthesize'];
   let finalContent = '';
   let totalUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
@@ -690,7 +647,6 @@ async function executeLangGraph(
       totalUsage.totalTokens += result.usage.totalTokens || 0;
     }
 
-    // Add assistant response for next iteration
     state.messages.push({ role: 'assistant', content: result.content });
   }
 
@@ -714,9 +670,8 @@ function getNodeInstruction(node: string): string {
   }
 }
 
-// CrewAI pattern: Role-based agent collaboration
 async function executeCrewAI(
-  config: typeof MODEL_CONFIGS[ModelId],
+  config: ModelConfig,
   apiKey: string,
   request: LLMRequest
 ): Promise<{ success: boolean; content: string; usage?: any }> {
@@ -727,19 +682,19 @@ async function executeCrewAI(
       role: 'Researcher',
       goal: 'Gather comprehensive information from multiple sources',
       backstory: 'Expert researcher with experience in data collection and verification',
-      model: 'gpt-4o' as ModelId,
+      model: 'deepseek-v3' as ModelId,
     },
     {
       role: 'Analyst',
       goal: 'Analyze data and identify patterns, insights, and contradictions',
       backstory: 'Senior analyst skilled in critical thinking and data interpretation',
-      model: 'claude-sonnet' as ModelId,
+      model: 'llama-3.3-70b' as ModelId,
     },
     {
       role: 'Writer',
       goal: 'Produce clear, accurate, and well-structured reports',
       backstory: 'Professional technical writer with expertise in research communication',
-      model: 'gpt-4o' as ModelId,
+      model: 'qwen-2.5' as ModelId,
     },
   ];
 
@@ -782,9 +737,8 @@ Complete your task based on the user's request.`,
   };
 }
 
-// Mastra pattern: Production-ready with retries and monitoring
 async function executeMastra(
-  config: typeof MODEL_CONFIGS[ModelId],
+  config: ModelConfig,
   apiKey: string,
   request: LLMRequest
 ): Promise<{ success: boolean; content: string; usage?: any }> {
@@ -804,11 +758,7 @@ async function executeMastra(
     console.log(`[Mastra] Attempt ${attempt}/${mastraConfig.retryPolicy.maxRetries}`);
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), mastraConfig.timeout);
-
       const result = await callModel(config, apiKey, request);
-      clearTimeout(timeoutId);
 
       if (result.success) {
         console.log(`[Mastra] Success on attempt ${attempt}`);
@@ -818,7 +768,6 @@ async function executeMastra(
       lastError = error instanceof Error ? error : new Error(String(error));
       console.log(`[Mastra] Attempt ${attempt} failed:`, lastError.message);
       
-      // Exponential backoff
       if (attempt < mastraConfig.retryPolicy.maxRetries) {
         await new Promise(resolve => 
           setTimeout(resolve, mastraConfig.retryPolicy.backoffMs * Math.pow(2, attempt - 1))

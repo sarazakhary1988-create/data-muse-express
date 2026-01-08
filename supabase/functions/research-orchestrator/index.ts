@@ -156,32 +156,32 @@ class ToolAdapter {
   }
 
   async summarize(text: string, maxLength: number = 500): Promise<string> {
-    const apiKey = Deno.env.get('LOVABLE_API_KEY');
-    if (!apiKey) {
-      // Simple extractive summary fallback
-      return text.slice(0, maxLength) + (text.length > maxLength ? '...' : '');
-    }
-
     try {
-      const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      // Use LLM Router which prioritizes local models
+      const response = await fetch(`${this.supabaseUrl}/functions/v1/llm-router`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.supabaseKey}`,
         },
         body: JSON.stringify({
-          model: 'google/gemini-2.5-flash',
           messages: [
             { role: 'system', content: 'You are a research summarizer. Provide concise, factual summaries that preserve key claims and evidence. Include specific data points when available.' },
             { role: 'user', content: `Summarize the following text in ${maxLength} characters or less:\n\n${text}` },
           ],
+          task: 'synthesis',
+          preferLocal: true,
+          maxTokens: 1024,
         }),
       });
 
-      if (!response.ok) throw new Error(`Summarize failed: ${response.status}`);
+      if (!response.ok) throw new Error(`LLM Router failed: ${response.status}`);
       
       const data = await response.json();
-      return data.choices?.[0]?.message?.content || text.slice(0, maxLength);
+      if (!data.success) throw new Error(data.error || 'LLM failed');
+      
+      console.log(`[Orchestrator] Summarize using ${data.model} (${data.inferenceType})`);
+      return data.content || text.slice(0, maxLength);
     } catch (error) {
       console.error('Summarize error:', error);
       return text.slice(0, maxLength) + (text.length > maxLength ? '...' : '');
@@ -189,22 +189,17 @@ class ToolAdapter {
   }
 
   async analyze(query: string, sources: Source[]): Promise<Finding[]> {
-    const apiKey = Deno.env.get('LOVABLE_API_KEY');
-    if (!apiKey) {
-      return this.basicAnalysis(sources);
-    }
-
     try {
       const sourceSummaries = sources.map(s => `[${s.domain}]: ${s.content.slice(0, 500)}`).join('\n\n');
       
-      const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      // Use LLM Router which prioritizes local models
+      const response = await fetch(`${this.supabaseUrl}/functions/v1/llm-router`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.supabaseKey}`,
         },
         body: JSON.stringify({
-          model: 'google/gemini-2.5-flash',
           messages: [
             { 
               role: 'system', 
@@ -218,16 +213,21 @@ Respond in JSON format: { "findings": [{ "claim": "...", "evidence": ["..."], "c
             },
             { role: 'user', content: `Query: ${query}\n\nSources:\n${sourceSummaries}` },
           ],
+          task: 'research',
+          preferLocal: true,
+          maxTokens: 2048,
         }),
       });
 
-      if (!response.ok) throw new Error(`Analyze failed: ${response.status}`);
+      if (!response.ok) throw new Error(`LLM Router failed: ${response.status}`);
       
       const data = await response.json();
-      const content = data.choices?.[0]?.message?.content || '{}';
+      if (!data.success) throw new Error(data.error || 'LLM failed');
+      
+      console.log(`[Orchestrator] Analyze using ${data.model} (${data.inferenceType})`);
       
       try {
-        const parsed = JSON.parse(content.replace(/```json\n?|\n?```/g, ''));
+        const parsed = JSON.parse(data.content.replace(/```json\n?|\n?```/g, ''));
         return (parsed.findings || []).map((f: any, i: number) => ({
           id: `finding-${Date.now()}-${i}`,
           claim: f.claim || '',
@@ -260,24 +260,19 @@ Respond in JSON format: { "findings": [{ "claim": "...", "evidence": ["..."], "c
   }
 
   async generateReport(query: string, findings: Finding[], sources: Source[]): Promise<Report> {
-    const apiKey = Deno.env.get('LOVABLE_API_KEY');
     const reportId = `report-${Date.now()}`;
-    
-    if (!apiKey) {
-      return this.basicReport(reportId, query, findings, sources);
-    }
 
     try {
       const findingsSummary = findings.map(f => `- ${f.claim} (confidence: ${(f.confidence * 100).toFixed(0)}%)`).join('\n');
       
-      const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      // Use LLM Router which prioritizes local models
+      const response = await fetch(`${this.supabaseUrl}/functions/v1/llm-router`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.supabaseKey}`,
         },
         body: JSON.stringify({
-          model: 'google/gemini-2.5-flash',
           messages: [
             { 
               role: 'system', 
@@ -291,16 +286,21 @@ Use markdown formatting. Cite sources using [1], [2], etc.`
             },
             { role: 'user', content: `Query: ${query}\n\nKey Findings:\n${findingsSummary}\n\nNumber of sources: ${sources.length}` },
           ],
+          task: 'synthesis',
+          preferLocal: true,
+          maxTokens: 3000,
         }),
       });
 
-      if (!response.ok) throw new Error(`Report generation failed: ${response.status}`);
+      if (!response.ok) throw new Error(`LLM Router failed: ${response.status}`);
       
       const data = await response.json();
-      const content = data.choices?.[0]?.message?.content || '';
+      if (!data.success) throw new Error(data.error || 'LLM failed');
+      
+      console.log(`[Orchestrator] Report generation using ${data.model} (${data.inferenceType})`);
       
       // Parse markdown into sections
-      const sections = this.parseMarkdownSections(content);
+      const sections = this.parseMarkdownSections(data.content);
       
       return {
         id: reportId,
