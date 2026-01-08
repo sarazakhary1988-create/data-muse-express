@@ -85,10 +85,27 @@ interface URLValidation {
   hasSSL: boolean;
   aiPatternScore: number;
   genericContentScore: number;
+  errorPatternScore: number;
   domain: string;
   errors: string[];
   publishDate?: string;
   isDateValid?: boolean;
+  pageTitle?: string;
+  actualContentFetched: boolean;
+  hasDuplicateParagraphs: boolean;
+}
+
+// Full relevance scoring breakdown per spec
+interface RelevanceScore {
+  total: number;
+  breakdown: {
+    keyword: number; // 0-30
+    source: number; // 0-25
+    recency: number; // 0-20
+    depth: number; // 0-15
+    substantive: number; // 0-10
+  };
+  passesThreshold: boolean;
 }
 
 // STRICT 2026 DATE CUTOFF - All dates before this are REJECTED
@@ -166,6 +183,35 @@ const GENERIC_PATTERNS = [
   /without further ado/i,
   /in this article/i,
 ];
+
+// AI-generated content patterns for rejection
+const AI_GENERATED_PATTERNS = [
+  /as an ai language model/i,
+  /i cannot provide/i,
+  /it is important to note that/i,
+  /i hope this helps/i,
+  /please note that/i,
+  /in summary,?\s+we have/i,
+  /this comprehensive guide/i,
+  /let me explain/i,
+];
+
+// Error patterns indicating invalid pages
+const ERROR_PATTERNS = [
+  /404\s*(not\s*found|error)?/i,
+  /403\s*forbidden/i,
+  /500\s*(internal\s*server\s*error)?/i,
+  /page\s*not\s*found/i,
+  /access\s*denied/i,
+  /error\s*loading/i,
+  /this\s*page\s*doesn't\s*exist/i,
+  /content\s*unavailable/i,
+];
+
+// Minimum content requirements
+const MIN_CONTENT_LENGTH = 100;
+const MIN_ARTICLE_LENGTH = 200;
+const MIN_RELEVANCE_SCORE = 70;
 
 // Domain whitelist - OFFICIAL sources take priority
 const VERIFIED_DOMAINS = [
@@ -1251,7 +1297,7 @@ function createResultWithStrictValidation(
   };
 }
 
-async function validateURL(url: string): Promise<URLValidation> {
+async function validateURL(url: string, fetchContent: boolean = false): Promise<URLValidation> {
   const result: URLValidation = {
     isValid: false,
     hasAuthor: false,
@@ -1259,9 +1305,12 @@ async function validateURL(url: string): Promise<URLValidation> {
     hasSSL: false,
     aiPatternScore: 0,
     genericContentScore: 0,
+    errorPatternScore: 0,
     domain: '',
     errors: [],
     isDateValid: true,
+    actualContentFetched: false,
+    hasDuplicateParagraphs: false,
   };
 
   if (!url || typeof url !== 'string') {
@@ -1294,15 +1343,195 @@ async function validateURL(url: string): Promise<URLValidation> {
       result.errors.push('No SSL certificate');
     }
 
+    // ENHANCED: Fetch actual content for validation per MANUS spec
+    if (fetchContent) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'User-Agent': 'Manus-Research-Bot/1.7',
+            'Accept': 'text/html,application/xhtml+xml,application/xml',
+          },
+          signal: controller.signal,
+        });
+        
+        clearTimeout(timeoutId);
+        
+        result.statusCode = response.status;
+        result.actualContentFetched = true;
+        
+        // Check status code per spec
+        if (response.status !== 200) {
+          result.errors.push(`HTTP status ${response.status} (expected 200)`);
+        }
+        
+        const content = await response.text();
+        result.contentLength = content.length;
+        
+        // Check content length per spec (> 100 characters)
+        if (content.length < MIN_CONTENT_LENGTH) {
+          result.errors.push(`Content too short: ${content.length} chars (min: ${MIN_CONTENT_LENGTH})`);
+        }
+        
+        // Extract page title
+        const titleMatch = content.match(/<title[^>]*>([^<]+)<\/title>/i);
+        result.pageTitle = titleMatch ? titleMatch[1].trim() : undefined;
+        
+        // Check for error patterns (404, 403, 500, "not found")
+        let errorMatchCount = 0;
+        for (const pattern of ERROR_PATTERNS) {
+          if (pattern.test(content)) {
+            errorMatchCount++;
+          }
+        }
+        result.errorPatternScore = errorMatchCount / ERROR_PATTERNS.length;
+        if (result.errorPatternScore > 0.1) {
+          result.errors.push('Error page detected (404/403/500 patterns)');
+        }
+        
+        // Check for AI-generated patterns
+        let aiMatchCount = 0;
+        for (const pattern of AI_GENERATED_PATTERNS) {
+          if (pattern.test(content)) {
+            aiMatchCount++;
+          }
+        }
+        result.aiPatternScore = aiMatchCount / AI_GENERATED_PATTERNS.length;
+        if (result.aiPatternScore > 0.2) {
+          result.errors.push('AI-generated content patterns detected');
+        }
+        
+        // Check for generic content
+        result.genericContentScore = checkGenericContent(content);
+        if (result.genericContentScore > 0.3) {
+          result.errors.push('Generic template content detected');
+        }
+        
+        // Check for duplicate paragraphs
+        result.hasDuplicateParagraphs = checkDuplicateParagraphs(content);
+        if (result.hasDuplicateParagraphs) {
+          result.errors.push('Duplicate paragraphs detected');
+        }
+        
+        // Extract author/date from meta tags
+        const authorMatch = content.match(/<meta[^>]*name=["']author["'][^>]*content=["']([^"']+)["']/i) ||
+                           content.match(/<meta[^>]*property=["']article:author["'][^>]*content=["']([^"']+)["']/i);
+        result.hasAuthor = !!authorMatch;
+        
+        const dateMatch = content.match(/<meta[^>]*property=["']article:published_time["'][^>]*content=["']([^"']+)["']/i) ||
+                         content.match(/<time[^>]*datetime=["']([^"']+)["']/i);
+        result.hasDate = !!dateMatch;
+        if (dateMatch) {
+          result.publishDate = dateMatch[1];
+        }
+        
+      } catch (fetchError) {
+        result.errors.push(`Failed to fetch content: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}`);
+      }
+    } else {
+      // Default values when not fetching content
+      result.hasAuthor = true;
+      result.hasDate = true;
+    }
+
     result.isValid = result.errors.length === 0;
-    result.hasAuthor = true;
-    result.hasDate = true;
 
   } catch (e) {
     result.errors.push('Invalid URL format');
   }
 
   return result;
+}
+
+// Calculate relevance score per MANUS spec (0-100)
+function calculateRelevanceScore(
+  content: string,
+  title: string,
+  query: string,
+  source: string,
+  publishDate: string | undefined,
+  wordCount: number
+): RelevanceScore {
+  const queryTerms = query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
+  const contentLower = `${title} ${content}`.toLowerCase();
+  
+  // Keyword match (0-30): How many query terms appear in content
+  let keywordMatches = 0;
+  for (const term of queryTerms) {
+    if (contentLower.includes(term)) {
+      keywordMatches++;
+    }
+  }
+  const keywordScore = Math.min(30, Math.round((keywordMatches / Math.max(queryTerms.length, 1)) * 30));
+  
+  // Source credibility (0-25): Based on domain tier
+  let sourceScore = 10; // default
+  if (OFFICIAL_DOMAINS.some(d => source.includes(d))) {
+    sourceScore = 25;
+  } else if (PREMIUM_DOMAINS.some(d => source.includes(d))) {
+    sourceScore = 22;
+  } else if (VERIFIED_DOMAINS.some(d => source.includes(d))) {
+    sourceScore = 18;
+  }
+  
+  // Recency (0-20): Based on publish date
+  let recencyScore = 10; // default
+  if (publishDate) {
+    const pubDate = new Date(publishDate);
+    const now = new Date();
+    const daysDiff = Math.floor((now.getTime() - pubDate.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysDiff <= 1) recencyScore = 20;
+    else if (daysDiff <= 7) recencyScore = 18;
+    else if (daysDiff <= 30) recencyScore = 15;
+    else if (daysDiff <= 90) recencyScore = 10;
+    else recencyScore = 5;
+  }
+  
+  // Depth (0-15): Based on content length/word count
+  let depthScore = 5; // default
+  if (wordCount >= 1000) depthScore = 15;
+  else if (wordCount >= 500) depthScore = 12;
+  else if (wordCount >= 200) depthScore = 8;
+  
+  // Substantive (0-10): Not generic, has substance
+  let substantiveScore = 10;
+  const genericScore = checkGenericContent(content);
+  if (genericScore > 0.3) substantiveScore = 2;
+  else if (genericScore > 0.1) substantiveScore = 5;
+  if (content.length < MIN_ARTICLE_LENGTH) substantiveScore = Math.max(0, substantiveScore - 5);
+  
+  const total = keywordScore + sourceScore + recencyScore + depthScore + substantiveScore;
+  
+  return {
+    total,
+    breakdown: {
+      keyword: keywordScore,
+      source: sourceScore,
+      recency: recencyScore,
+      depth: depthScore,
+      substantive: substantiveScore,
+    },
+    passesThreshold: total >= MIN_RELEVANCE_SCORE,
+  };
+}
+
+// Check for duplicate paragraphs in content
+function checkDuplicateParagraphs(content: string): boolean {
+  const paragraphs = content.split(/\n\n+|\r\n\r\n+/).map(p => p.trim()).filter(p => p.length > 50);
+  const seen = new Set<string>();
+  
+  for (const para of paragraphs) {
+    const normalized = para.toLowerCase().replace(/\s+/g, ' ').slice(0, 100);
+    if (seen.has(normalized)) {
+      return true;
+    }
+    seen.add(normalized);
+  }
+  
+  return false;
 }
 
 function checkGenericContent(content: string): number {
