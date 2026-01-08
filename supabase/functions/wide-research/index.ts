@@ -50,56 +50,172 @@ const USER_AGENTS = [
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
 ];
 
-// ============ AI-POWERED DIRECT ANSWER (FOR RESEARCH MODE ONLY) ============
-// CRITICAL: This answers the user's EXACT query directly, not generating fake sources
-// The AI acts as a research analyst answering the specific question asked
-async function getDirectAIAnswer(query: string): Promise<{ answer: string; sources: WebSource[] }> {
+// ============ MULTI-AGENT RESEARCH ENGINE (USES BUILT-IN AGENTS) ============
+// Uses: web-search → playwright-browser → LLM synthesis
+// This performs REAL web searches and scrapes REAL content
+
+function getSupabaseConfig() {
+  return {
+    url: Deno.env.get('SUPABASE_URL') || '',
+    key: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '',
+  };
+}
+
+// Step 1: Use web-search agent to find real sources
+async function searchWithWebAgent(query: string, maxResults: number = 10): Promise<WebSource[]> {
+  const { url, key } = getSupabaseConfig();
+  
+  if (!url || !key) {
+    console.error('[wide-research] No Supabase config for web-search');
+    return [];
+  }
+  
+  console.log(`[wide-research] Calling web-search agent for: "${query.slice(0, 60)}..."`);
+  
+  try {
+    const response = await fetch(`${url}/functions/v1/web-search`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query,
+        maxResults,
+        searchEngine: 'all', // Use all search engines
+        scrapeContent: false, // Don't scrape yet, we'll use playwright
+      }),
+    });
+    
+    if (!response.ok) {
+      console.error('[wide-research] web-search failed:', response.status);
+      return [];
+    }
+    
+    const data = await response.json();
+    const results = data.results || [];
+    
+    console.log(`[wide-research] web-search returned ${results.length} results`);
+    
+    return results.map((r: any) => ({
+      url: r.url,
+      title: r.title || 'Untitled',
+      domain: r.domain || (r.url ? new URL(r.url).hostname.replace('www.', '') : 'unknown'),
+      content: r.description || r.markdown || '',
+      markdown: r.markdown || r.description || '',
+      snippet: (r.description || r.markdown || '').slice(0, 280),
+      fetchedAt: r.fetchedAt || new Date().toISOString(),
+      reliability: 0.8,
+      source: r.source || 'web-search',
+      relevanceScore: 0.75,
+      status: 'pending' as const,
+    }));
+  } catch (error) {
+    console.error('[wide-research] web-search error:', error);
+    return [];
+  }
+}
+
+// Step 2: Use playwright-browser agent to extract full content
+async function scrapeWithPlaywright(url: string): Promise<{ content: string; markdown: string; title?: string }> {
+  const { url: supabaseUrl, key } = getSupabaseConfig();
+  
+  if (!supabaseUrl || !key) {
+    return { content: '', markdown: '' };
+  }
+  
+  console.log(`[wide-research] Scraping with playwright: ${url.slice(0, 60)}...`);
+  
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/playwright-browser`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        url,
+        action: 'scrape',
+        waitTime: 3000,
+      }),
+    });
+    
+    if (!response.ok) {
+      console.log(`[wide-research] playwright scrape failed for ${url}:`, response.status);
+      return { content: '', markdown: '' };
+    }
+    
+    const data = await response.json();
+    
+    if (data.success) {
+      return {
+        content: data.content || '',
+        markdown: data.markdown || data.content || '',
+        title: data.title,
+      };
+    }
+    
+    return { content: '', markdown: '' };
+  } catch (error) {
+    console.error(`[wide-research] playwright error for ${url}:`, error);
+    return { content: '', markdown: '' };
+  }
+}
+
+// Step 3: Use LLM to synthesize answer from REAL scraped content
+async function synthesizeAnswer(
+  query: string, 
+  sources: WebSource[]
+): Promise<{ answer: string; confidence: string }> {
   const apiKey = Deno.env.get('LOVABLE_API_KEY');
   
-  if (!apiKey) {
-    console.log('[wide-research] No LOVABLE_API_KEY available');
-    return { answer: '', sources: [] };
+  if (!apiKey || sources.length === 0) {
+    return { answer: '', confidence: 'low' };
   }
-
-  try {
-    const currentDate = new Date().toISOString().split('T')[0];
-
-    // CRITICAL: The system prompt must enforce answering the EXACT question
-    const systemPrompt = `You are a MANUS 1.6 MAX research engine. Your job is to answer the user's EXACT question directly and specifically.
+  
+  // Prepare source content for synthesis
+  const sourceContext = sources
+    .filter(s => s.content && s.content.length > 50)
+    .slice(0, 8)
+    .map((s, i) => `[Source ${i + 1}: ${s.domain}]\n${s.title}\n${s.content.slice(0, 2000)}`)
+    .join('\n\n---\n\n');
+  
+  if (!sourceContext) {
+    return { answer: '', confidence: 'low' };
+  }
+  
+  const currentDate = new Date().toISOString().split('T')[0];
+  
+  const systemPrompt = `You are MANUS 1.6 MAX research synthesis engine. Your job is to analyze REAL source content and provide a direct answer to the user's query.
 
 Current date: ${currentDate}
 
 CRITICAL RULES:
-1. ANSWER THE EXACT QUESTION ASKED - do not provide generic overviews
-2. If the user asks "Did X get CMA approval?" - answer YES or NO with specific details
-3. If the user asks about a specific company - provide THAT company's specific data
-4. If the user asks about a specific event - provide details of THAT event
-5. Include specific dates, numbers, names, and facts
-6. If you don't know the specific answer, say "I could not find specific information about [exact query]"
-7. NEVER give generic industry overviews when a specific question was asked
+1. ONLY use information from the provided sources - DO NOT make up information
+2. Cite which source(s) support each fact using [Source N] notation
+3. If the sources don't contain the answer, say "The sources do not contain specific information about..."
+4. Answer the EXACT question asked - not a generic overview
+5. Include specific dates, numbers, names, and facts FROM THE SOURCES
+6. If sources contradict each other, note the discrepancy
 
 RESPONSE FORMAT (JSON):
 {
-  "directAnswer": "The specific, direct answer to the exact question asked",
-  "keyFacts": ["Specific fact 1 with date/number", "Specific fact 2"],
-  "sources": [
-    {
-      "title": "Relevant source title",
-      "url": "https://authoritative-source.com/specific-article",
-      "snippet": "Key quote or fact from this source",
-      "source": "Source name"
-    }
-  ],
+  "answer": "Direct answer based on source content with [Source N] citations",
+  "keyFacts": ["Fact 1 with [Source N]", "Fact 2 with [Source N]"],
   "confidence": "high/medium/low",
-  "dataDate": "When this information is from (if known)"
+  "sourcesCited": [1, 2, 3]
 }`;
 
-    const userPrompt = `EXACT RESEARCH QUERY: "${query}"
+  const userPrompt = `USER QUERY: "${query}"
 
-Answer this SPECIFIC question directly. Do not provide a generic overview - answer exactly what was asked.`;
+SOURCE CONTENT:
+${sourceContext}
 
-    console.log(`[wide-research] Direct AI answer for: "${query}"`);
+Analyze these sources and provide a direct answer to the query. Only use information from the sources.`;
 
+  try {
+    console.log('[wide-research] Synthesizing answer from real sources...');
+    
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -112,101 +228,129 @@ Answer this SPECIFIC question directly. Do not provide a generic overview - answ
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
-        temperature: 0.2, // Lower temperature for more precise answers
+        temperature: 0.2,
       }),
     });
 
     if (!response.ok) {
-      console.error('[wide-research] AI Gateway error:', response.status);
-      return { answer: '', sources: [] };
+      console.error('[wide-research] Synthesis LLM error:', response.status);
+      return { answer: '', confidence: 'low' };
     }
 
     const aiResponse = await response.json();
     const content = aiResponse.choices?.[0]?.message?.content || '';
 
-    // Parse JSON from response
-    let parsed: { directAnswer: string; keyFacts?: string[]; sources?: any[]; confidence?: string };
+    // Parse JSON response
     try {
       let jsonStr = content;
       const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
       if (jsonMatch) {
         jsonStr = jsonMatch[1].trim();
       }
-      parsed = JSON.parse(jsonStr);
+      const parsed = JSON.parse(jsonStr);
+      
+      let fullAnswer = parsed.answer || '';
+      if (parsed.keyFacts && parsed.keyFacts.length > 0) {
+        fullAnswer += '\n\n**Key Facts:**\n' + parsed.keyFacts.map((f: string) => `• ${f}`).join('\n');
+      }
+      
+      return { 
+        answer: fullAnswer, 
+        confidence: parsed.confidence || 'medium' 
+      };
     } catch {
-      // If JSON parsing fails, use the raw content as the answer
-      console.log('[wide-research] Using raw AI response as answer');
-      return {
-        answer: content,
-        sources: [{
-          url: 'https://ai-research.lovable.dev',
-          title: 'AI Research Analysis',
-          domain: 'ai-research.lovable.dev',
-          content: content,
-          markdown: content,
-          snippet: content.slice(0, 280),
-          fetchedAt: new Date().toISOString(),
-          reliability: 0.7,
-          source: 'AI Analysis',
-          relevanceScore: 0.85,
-          status: 'scraped' as const,
-        }],
-      };
+      // Return raw content if JSON parsing fails
+      return { answer: content, confidence: 'medium' };
     }
-
-    // Build direct answer with key facts
-    let fullAnswer = parsed.directAnswer || '';
-    if (parsed.keyFacts && parsed.keyFacts.length > 0) {
-      fullAnswer += '\n\n**Key Facts:**\n' + parsed.keyFacts.map(f => `• ${f}`).join('\n');
-    }
-    if (parsed.confidence) {
-      fullAnswer += `\n\n_Confidence: ${parsed.confidence}_`;
-    }
-
-    // Transform sources to WebSource format
-    const sources: WebSource[] = (parsed.sources || []).map((r: any, i: number) => {
-      const url = r.url || `https://source-${i}.com`;
-      let domain = 'Unknown';
-      try {
-        domain = new URL(url).hostname.replace('www.', '');
-      } catch {}
-
-      return {
-        url,
-        title: r.title || `Source ${i + 1}`,
-        domain,
-        content: r.snippet || r.content || fullAnswer.slice(0, 500),
-        markdown: r.snippet || r.content || fullAnswer.slice(0, 500),
-        snippet: r.snippet || '',
-        fetchedAt: new Date().toISOString(),
-        reliability: 0.8,
-        source: r.source || 'AI Research',
-        relevanceScore: 0.85,
-        status: 'scraped' as const,
-      };
-    });
-
-    // Always include the direct answer as a source
-    sources.unshift({
-      url: 'https://ai-research.lovable.dev/direct-answer',
-      title: `Direct Answer: ${query.slice(0, 50)}...`,
-      domain: 'ai-research.lovable.dev',
-      content: fullAnswer,
-      markdown: fullAnswer,
-      snippet: parsed.directAnswer?.slice(0, 280) || fullAnswer.slice(0, 280),
-      fetchedAt: new Date().toISOString(),
-      reliability: parsed.confidence === 'high' ? 0.9 : parsed.confidence === 'medium' ? 0.75 : 0.6,
-      source: 'MANUS AI Research',
-      relevanceScore: 0.95,
-      status: 'scraped' as const,
-    });
-
-    console.log(`[wide-research] Direct answer generated with ${sources.length} sources`);
-    return { answer: fullAnswer, sources };
   } catch (error) {
-    console.error('[wide-research] AI answer error:', error);
+    console.error('[wide-research] Synthesis error:', error);
+    return { answer: '', confidence: 'low' };
+  }
+}
+
+// MAIN RESEARCH FUNCTION: Orchestrates multi-agent research
+async function performMultiAgentResearch(
+  query: string, 
+  subQueries: string[],
+  maxResults: number
+): Promise<{ answer: string; sources: WebSource[] }> {
+  console.log('[wide-research] Starting multi-agent research...');
+  
+  // STEP 1: Search using web-search agent (parallel for all subqueries)
+  const searchPromises = subQueries.slice(0, 4).map(sq => searchWithWebAgent(sq, 5));
+  const searchResultArrays = await Promise.all(searchPromises);
+  
+  // Combine and deduplicate results
+  const allSearchResults: WebSource[] = [];
+  const seenUrls = new Set<string>();
+  
+  for (const results of searchResultArrays) {
+    for (const result of results) {
+      if (!seenUrls.has(result.url)) {
+        seenUrls.add(result.url);
+        allSearchResults.push(result);
+      }
+    }
+  }
+  
+  console.log(`[wide-research] Total unique search results: ${allSearchResults.length}`);
+  
+  if (allSearchResults.length === 0) {
+    console.log('[wide-research] No search results, returning empty');
     return { answer: '', sources: [] };
   }
+  
+  // STEP 2: Scrape top results using playwright-browser agent (parallel)
+  const topResults = allSearchResults.slice(0, 6);
+  const scrapePromises = topResults.map(async (source) => {
+    const scraped = await scrapeWithPlaywright(source.url);
+    if (scraped.content && scraped.content.length > 100) {
+      return {
+        ...source,
+        content: scraped.content.slice(0, 8000),
+        markdown: scraped.markdown.slice(0, 8000),
+        title: scraped.title || source.title,
+        status: 'scraped' as const,
+        relevanceScore: 0.85,
+      };
+    }
+    return source;
+  });
+  
+  const scrapedSources = await Promise.all(scrapePromises);
+  
+  // Count how many were successfully scraped
+  const successfulScrapes = scrapedSources.filter(s => s.status === 'scraped').length;
+  console.log(`[wide-research] Successfully scraped ${successfulScrapes}/${topResults.length} sources`);
+  
+  // STEP 3: Synthesize answer from scraped content
+  const { answer, confidence } = await synthesizeAnswer(query, scrapedSources);
+  
+  // Add synthesis result as first source
+  const finalSources: WebSource[] = [];
+  
+  if (answer) {
+    finalSources.push({
+      url: 'manus://research-synthesis',
+      title: `Research Synthesis: ${query.slice(0, 50)}...`,
+      domain: 'manus.research',
+      content: answer,
+      markdown: answer,
+      snippet: answer.slice(0, 280),
+      fetchedAt: new Date().toISOString(),
+      reliability: confidence === 'high' ? 0.95 : confidence === 'medium' ? 0.8 : 0.65,
+      source: 'MANUS Multi-Agent Research',
+      relevanceScore: 0.98,
+      status: 'scraped' as const,
+    });
+  }
+  
+  // Add scraped sources
+  finalSources.push(...scrapedSources.slice(0, maxResults - 1));
+  
+  console.log(`[wide-research] Research complete with ${finalSources.length} sources`);
+  
+  return { answer, sources: finalSources };
 }
 
 // ============ FALLBACK: DIRECT HTML SCRAPING ============
@@ -718,24 +862,24 @@ serve(async (req) => {
       );
     }
 
-    // RESEARCH MODE: Direct AI answer for the EXACT query
-    const { answer, sources: aiSources } = await getDirectAIAnswer(query);
+    // RESEARCH MODE: Use multi-agent research (web-search + playwright + synthesis)
+    const { answer, sources: researchSources } = await performMultiAgentResearch(query, subQueries, maxResults);
     
-    if (aiSources.length > 0) {
-      sources = aiSources.slice(0, maxResults);
+    if (researchSources.length > 0) {
+      sources = researchSources;
       const totalTime = Date.now() - startTime;
-      console.log('[wide-research] Direct AI answer complete:', { totalSources: sources.length, time: totalTime });
+      console.log('[wide-research] Multi-agent research complete:', { totalSources: sources.length, time: totalTime });
 
       return new Response(
         JSON.stringify({
           success: true,
           searchResults: sources,
           results: sources,
-          directAnswer: answer, // Include the direct answer
+          directAnswer: answer,
           metadata: {
             query,
             totalSources: sources.length,
-            searchMethod: 'direct-ai-answer',
+            searchMethod: 'multi-agent-research',
             processingTimeMs: totalTime,
           },
         }),
@@ -743,7 +887,7 @@ serve(async (req) => {
       );
     }
 
-    console.log('[wide-research] AI search empty, trying DuckDuckGo fallback...');
+    console.log('[wide-research] Multi-agent search empty, trying DuckDuckGo fallback...');
 
     const allResults: WebSource[] = [];
     for (const sq of subQueries.slice(0, 3)) {
