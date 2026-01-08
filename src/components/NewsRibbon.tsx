@@ -1256,6 +1256,30 @@ export function NewsRibbon({ filterState, onResearchNews, onPositionChange }: Ne
                   </div>
                 )}
 
+                {summaryData.predictions && summaryData.predictions.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-medium text-muted-foreground uppercase flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-primary" />
+                      AI Predictions
+                    </h4>
+                    <ul className="space-y-1">
+                      {summaryData.predictions.map((prediction: string, i: number) => (
+                        <li key={i} className="text-sm flex items-start gap-2 text-muted-foreground">
+                          <span className="text-accent">→</span>
+                          {prediction}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {summaryData.modelsUsed && summaryData.modelsUsed.length > 0 && (
+                  <div className="text-[10px] text-muted-foreground/60 flex items-center gap-1">
+                    <span>Powered by:</span>
+                    {summaryData.modelsUsed.join(' + ')}
+                  </div>
+                )}
+
                 {summaryData.suggestions.length > 0 && onResearchNews && (
                   <div className="space-y-2">
                     <h4 className="text-xs font-medium text-muted-foreground uppercase">Research Suggestions</h4>
