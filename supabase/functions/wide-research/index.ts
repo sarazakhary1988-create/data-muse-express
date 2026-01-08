@@ -162,12 +162,12 @@ function getRandomUserAgent(): string {
 }
 
 async function fetchWithTimeout(
-  url: string, 
+  url: string,
   timeoutMs = REQUEST_TIMEOUT_MS
 ): Promise<{ ok: boolean; status: number; text: string; error?: string }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  
+
   try {
     const resp = await fetch(url, {
       method: 'GET',
@@ -192,6 +192,38 @@ async function fetchWithTimeout(
   } catch (e) {
     const error = e instanceof Error ? e.message : 'Unknown error';
     return { ok: false, status: 0, text: '', error: error.includes('abort') ? 'Timeout' : error };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function resolveFinalUrl(url: string, timeoutMs = 8_000): Promise<string> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const resp = await fetch(url, {
+      method: 'GET',
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: {
+        'User-Agent': getRandomUserAgent(),
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache',
+      }
+    });
+
+    // We only need the final resolved URL; cancel body download.
+    try {
+      resp.body?.cancel();
+    } catch {
+      // ignore
+    }
+
+    return resp.url || url;
+  } catch {
+    return url;
   } finally {
     clearTimeout(timeout);
   }
@@ -324,18 +356,33 @@ async function searchNewsRss(query: string, limit: number = 10): Promise<WebSour
 
       const snippet = stripHtml(descriptionRaw).slice(0, 280);
 
-      // Get actual URL domain (Google News links redirect, so use source URL if available)
-      let domain = 'news.google.com';
+      // Resolve Google News RSS redirect to the real publisher URL
       let actualUrl = link;
-      
-      if (sourceUrl) {
-        try {
-          domain = new URL(sourceUrl).hostname.replace('www.', '');
-        } catch {}
+      try {
+        const host = new URL(link).hostname;
+        if (host.includes('news.google.com')) {
+          actualUrl = await resolveFinalUrl(link);
+        }
+      } catch {
+        // ignore
+      }
+
+      // Prefer resolved URL domain; fall back to RSS sourceUrl domain
+      let domain = 'news.google.com';
+      try {
+        domain = new URL(actualUrl).hostname.replace('www.', '');
+      } catch {
+        if (sourceUrl) {
+          try {
+            domain = new URL(sourceUrl).hostname.replace('www.', '');
+          } catch {
+            // ignore
+          }
+        }
       }
 
       out.push({
-        url: actualUrl, // This is the real link that will open the actual article
+        url: actualUrl,
         title,
         domain,
         content: snippet,

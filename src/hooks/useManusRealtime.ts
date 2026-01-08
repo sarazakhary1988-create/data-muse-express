@@ -73,7 +73,7 @@ export interface StreamedResult {
   agentId: string;
   confidence: number;
   timestamp: string;
-  validationStatus: 'pending' | 'valid' | 'invalid';
+  validationStatus: 'pending' | 'valid' | 'invalid' | 'date_rejected';
   validation?: {
     urlValid: boolean;
     errors: string[];

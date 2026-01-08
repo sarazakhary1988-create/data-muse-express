@@ -35,16 +35,22 @@ const getCredibilityColor = (badge?: string) => {
 
 const getValidationColor = (status: StreamedResult['validationStatus']) => {
   switch (status) {
-    case 'valid': return 'border-l-emerald-500';
-    case 'invalid': return 'border-l-destructive opacity-60';
-    default: return 'border-l-amber-500';
+    case 'valid':
+      return 'border-l-emerald-500';
+    case 'invalid':
+    case 'date_rejected':
+      return 'border-l-destructive opacity-60';
+    default:
+      return 'border-l-amber-500';
   }
 };
 
 export function StreamedResultsList({ results, isLoading, className }: StreamedResultsListProps) {
-  const validResults = results.filter(r => r.validationStatus === 'valid');
-  const invalidResults = results.filter(r => r.validationStatus === 'invalid');
-  const pendingResults = results.filter(r => r.validationStatus === 'pending');
+  const validResults = results.filter((r) => r.validationStatus === 'valid');
+  const rejectedResults = results.filter(
+    (r) => r.validationStatus === 'invalid' || r.validationStatus === 'date_rejected'
+  );
+  const pendingResults = results.filter((r) => r.validationStatus === 'pending');
 
   if (results.length === 0 && !isLoading) {
     return null;
@@ -66,9 +72,9 @@ export function StreamedResultsList({ results, isLoading, className }: StreamedR
           <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-emerald-500/10 text-emerald-500 border-emerald-500/30">
             {validResults.length} valid
           </Badge>
-          {invalidResults.length > 0 && (
+          {rejectedResults.length > 0 && (
             <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-destructive/10 text-destructive border-destructive/30">
-              {invalidResults.length} rejected
+              {rejectedResults.length} rejected
             </Badge>
           )}
           {pendingResults.length > 0 && (
