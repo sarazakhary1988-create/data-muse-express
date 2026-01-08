@@ -88,3 +88,6 @@ verify_jwt = false
 
 [functions.summarize-news]
 verify_jwt = false
+
+[functions.explorium-enrich]
+verify_jwt = false
