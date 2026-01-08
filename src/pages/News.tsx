@@ -2,11 +2,12 @@ import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Helmet } from 'react-helmet-async';
 import { useNavigate } from 'react-router-dom';
-import { format, startOfDay, endOfDay, isWithinInterval, subDays } from 'date-fns';
+import { format, startOfDay, endOfDay, subDays } from 'date-fns';
 import {
   Newspaper, Clock, ExternalLink, Search, Filter, Calendar, Globe, MapPin,
   RefreshCw, ArrowLeft, Loader2, Building2, TrendingUp, AlertCircle, Rocket,
-  FileText, Handshake, Landmark, UserPlus, Gavel, Target, Banknote, Home, Cpu, X
+  FileText, Handshake, Landmark, UserPlus, Gavel, Target, Banknote, PieChart, X,
+  BarChart3, LineChart, Eye, Users, Scale, BookOpen, Briefcase
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -33,63 +34,73 @@ import {
 import { AnimatedBackground } from '@/components/AnimatedBackground';
 import { Sidebar } from '@/components/Sidebar';
 import { TopNavigation } from '@/components/TopNavigation';
-import { useNewsMonitor, NewsItem, NewsCategory as NewsCategoryType } from '@/hooks/useNewsMonitor';
+import { useNewsMonitor, NewsItem, NewsCategory as NewsCategoryType, COUNTRY_REGULATORS, COUNTRY_EXCHANGES } from '@/hooks/useNewsMonitor';
 import { useNewsFilterState } from '@/components/NewsRibbon';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 
 const categoryIcons: Record<NewsCategoryType, React.ReactNode> = {
-  ipo: <Building2 className="w-4 h-4" />,
-  market: <TrendingUp className="w-4 h-4" />,
-  regulatory: <AlertCircle className="w-4 h-4" />,
-  expansion: <Rocket className="w-4 h-4" />,
-  contract: <FileText className="w-4 h-4" />,
+  tasi: <TrendingUp className="w-4 h-4" />,
+  nomu: <BarChart3 className="w-4 h-4" />,
+  listing_approved: <Building2 className="w-4 h-4" />,
+  stock_market: <LineChart className="w-4 h-4" />,
+  management_change: <UserPlus className="w-4 h-4" />,
+  regulator_announcement: <AlertCircle className="w-4 h-4" />,
+  regulator_regulation: <BookOpen className="w-4 h-4" />,
+  regulator_violation: <Gavel className="w-4 h-4" />,
+  shareholder_change: <Users className="w-4 h-4" />,
+  macroeconomics: <PieChart className="w-4 h-4" />,
+  microeconomics: <BarChart3 className="w-4 h-4" />,
+  country_outlook: <Eye className="w-4 h-4" />,
   joint_venture: <Handshake className="w-4 h-4" />,
-  acquisition: <Landmark className="w-4 h-4" />,
-  appointment: <UserPlus className="w-4 h-4" />,
-  cma: <AlertCircle className="w-4 h-4" />,
-  cma_violation: <Gavel className="w-4 h-4" />,
-  vision_2030: <Target className="w-4 h-4" />,
-  banking: <Banknote className="w-4 h-4" />,
-  real_estate: <Home className="w-4 h-4" />,
-  tech_funding: <Cpu className="w-4 h-4" />,
+  merger_acquisition: <Landmark className="w-4 h-4" />,
+  expansion_contract: <Briefcase className="w-4 h-4" />,
   general: <Globe className="w-4 h-4" />,
 };
 
 const categoryColors: Record<NewsCategoryType, string> = {
-  ipo: 'bg-green-500/20 text-green-400 border-green-500/30',
-  market: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  regulatory: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
-  expansion: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
-  contract: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
-  joint_venture: 'bg-pink-500/20 text-pink-400 border-pink-500/30',
-  acquisition: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
-  appointment: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
-  cma: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-  cma_violation: 'bg-red-500/20 text-red-400 border-red-500/30',
-  vision_2030: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
-  banking: 'bg-sky-500/20 text-sky-400 border-sky-500/30',
-  real_estate: 'bg-teal-500/20 text-teal-400 border-teal-500/30',
-  tech_funding: 'bg-violet-500/20 text-violet-400 border-violet-500/30',
+  tasi: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  nomu: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
+  listing_approved: 'bg-green-500/20 text-green-400 border-green-500/30',
+  stock_market: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
+  management_change: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
+  regulator_announcement: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+  regulator_regulation: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+  regulator_violation: 'bg-red-500/20 text-red-400 border-red-500/30',
+  shareholder_change: 'bg-pink-500/20 text-pink-400 border-pink-500/30',
+  macroeconomics: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+  microeconomics: 'bg-teal-500/20 text-teal-400 border-teal-500/30',
+  country_outlook: 'bg-sky-500/20 text-sky-400 border-sky-500/30',
+  joint_venture: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+  merger_acquisition: 'bg-rose-500/20 text-rose-400 border-rose-500/30',
+  expansion_contract: 'bg-violet-500/20 text-violet-400 border-violet-500/30',
   general: 'bg-muted text-muted-foreground border-border',
 };
 
-const categoryLabels: Record<NewsCategoryType, string> = {
-  ipo: 'IPO',
-  market: 'Market',
-  regulatory: 'Regulatory',
-  expansion: 'Expansion',
-  contract: 'Contract',
-  joint_venture: 'JV',
-  acquisition: 'M&A',
-  appointment: 'Exec',
-  cma: 'CMA',
-  cma_violation: 'CMA Violation',
-  vision_2030: 'Vision 2030',
-  banking: 'Banking',
-  real_estate: 'Real Estate',
-  tech_funding: 'Tech',
-  general: 'News',
+// Dynamic labels based on selected country
+const getCategoryLabels = (country?: string): Record<NewsCategoryType, string> => {
+  const regulator = country ? COUNTRY_REGULATORS[country] : COUNTRY_REGULATORS['Saudi Arabia'];
+  const exchange = country ? COUNTRY_EXCHANGES[country] : COUNTRY_EXCHANGES['Saudi Arabia'];
+  const regulatorName = regulator?.shortName || 'CMA';
+  
+  return {
+    tasi: country === 'Saudi Arabia' || !country ? 'TASI' : `${exchange?.shortName || 'Main'} Index`,
+    nomu: country === 'Saudi Arabia' || !country ? 'NOMU' : 'Parallel Market',
+    listing_approved: 'Approved Listing',
+    stock_market: country === 'Saudi Arabia' || !country ? 'Saudi Market' : `${country} Market`,
+    management_change: 'Mgmt Changes',
+    regulator_announcement: `${regulatorName} News`,
+    regulator_regulation: `${regulatorName} Regulation`,
+    regulator_violation: `${regulatorName} Violation`,
+    shareholder_change: 'Shareholder',
+    macroeconomics: 'Macro',
+    microeconomics: 'Micro',
+    country_outlook: 'Outlook',
+    joint_venture: 'JV',
+    merger_acquisition: 'M&A',
+    expansion_contract: 'Expansion',
+    general: 'News',
+  };
 };
 
 const COUNTRIES = [
@@ -110,10 +121,6 @@ interface NewsSummary {
   keyFacts: string[];
   significance: string;
   suggestions: { topic: string; query: string }[];
-  predictions?: string[];
-  modelsUsed?: string[];
-  confidence?: number;
-  publishDate?: string;
 }
 
 const News = () => {
@@ -142,6 +149,12 @@ const News = () => {
   const [summaryItem, setSummaryItem] = useState<NewsItem | null>(null);
   const [summaryData, setSummaryData] = useState<NewsSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
+
+  // Get dynamic labels based on selected country
+  const categoryLabels = useMemo(() => 
+    getCategoryLabels(selectedCountry === 'all' ? undefined : selectedCountry),
+    [selectedCountry]
+  );
 
   // Auto-start monitoring
   useEffect(() => {
@@ -283,7 +296,7 @@ const News = () => {
                   <div>
                     <h1 className="text-2xl font-bold flex items-center gap-2">
                       <Newspaper className="w-6 h-6 text-primary" />
-                      GCC Business News
+                      {selectedCountry === 'all' ? 'GCC' : selectedCountry} Business News
                     </h1>
                     <p className="text-sm text-muted-foreground">
                       Real-time market intelligence from verified sources
@@ -457,73 +470,68 @@ const News = () => {
                       )}
                       onClick={() => fetchSummary(item)}
                     >
-                      <div className="flex items-start gap-4">
-                        {/* Category icon */}
-                        <div className={cn(
-                          "p-2.5 rounded-lg shrink-0",
-                          categoryColors[item.category].replace('text-', 'bg-').replace(/\/20|\/30/g, '/10')
-                        )}>
-                          {categoryIcons[item.category]}
-                        </div>
-
-                        {/* Content */}
+                      <div className="flex items-start justify-between gap-4">
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between gap-4">
-                            <div>
-                              <h3 className={cn(
-                                "text-base font-medium leading-tight",
-                                item.isNew && "text-foreground"
-                              )}>
-                                {item.title}
-                              </h3>
-                              {item.snippet && (
-                                <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
-                                  {item.snippet}
-                                </p>
-                              )}
-                            </div>
+                          <div className="flex items-center gap-2 mb-2">
                             <Badge 
                               variant="outline" 
-                              className={cn("shrink-0", categoryColors[item.category])}
+                              className={cn("text-[10px]", categoryColors[item.category])}
                             >
-                              {categoryLabels[item.category]}
+                              {categoryIcons[item.category]}
+                              <span className="ml-1">{categoryLabels[item.category]}</span>
                             </Badge>
+                            {item.country && (
+                              <Badge variant="outline" className="text-[10px]">
+                                <MapPin className="w-3 h-3 mr-1" />
+                                {item.country}
+                              </Badge>
+                            )}
+                            {item.isNew && (
+                              <Badge className="bg-primary text-primary-foreground text-[10px]">
+                                NEW
+                              </Badge>
+                            )}
                           </div>
-
-                          {/* Meta */}
-                          <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
+                          
+                          <h3 className="font-medium text-sm mb-1 line-clamp-2">
+                            {item.title}
+                          </h3>
+                          
+                          {item.snippet && (
+                            <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
+                              {item.snippet}
+                            </p>
+                          )}
+                          
+                          <div className="flex items-center gap-4 text-xs text-muted-foreground">
                             <span className="flex items-center gap-1">
                               <Globe className="w-3 h-3" />
                               {item.source}
                             </span>
-                            {item.country && (
-                              <span className="flex items-center gap-1">
-                                <MapPin className="w-3 h-3" />
-                                {item.country}
-                              </span>
-                            )}
                             <span className="flex items-center gap-1">
                               <Clock className="w-3 h-3" />
                               {formatTimeAgo(item.timestamp)}
                             </span>
-                            {item.isOfficial && (
-                              <Badge variant="outline" className="h-4 text-[10px] border-green-500/30 text-green-500">
-                                Official
-                              </Badge>
+                            {item.companies && item.companies.length > 0 && (
+                              <span className="flex items-center gap-1">
+                                <Building2 className="w-3 h-3" />
+                                {item.companies.slice(0, 2).join(', ')}
+                              </span>
                             )}
                           </div>
-
-                          {/* Companies */}
-                          {item.companies && item.companies.length > 0 && (
-                            <div className="flex items-center gap-1 mt-2">
-                              {item.companies.map((company, i) => (
-                                <Badge key={i} variant="secondary" className="text-[10px]">
-                                  {company}
-                                </Badge>
-                              ))}
-                            </div>
-                          )}
                         </div>
+                        
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            window.open(item.url, '_blank');
+                          }}
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </Button>
                       </div>
                     </motion.div>
                   ))
@@ -534,95 +542,78 @@ const News = () => {
         </div>
       </div>
 
-      {/* AI Summary Dialog */}
+      {/* Summary Dialog */}
       <Dialog open={summaryDialogOpen} onOpenChange={setSummaryDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-sm leading-tight pr-6">
+            <DialogTitle className="text-lg font-semibold pr-8">
               {summaryItem?.title}
             </DialogTitle>
           </DialogHeader>
           
-          <div className="space-y-4">
-            {summaryLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                <span className="ml-2 text-sm text-muted-foreground">Generating AI summary...</span>
+          {summaryLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+              <span className="ml-3">Analyzing article...</span>
+            </div>
+          ) : summaryData ? (
+            <div className="space-y-4">
+              <div>
+                <h4 className="font-medium mb-2">Summary</h4>
+                <p className="text-sm text-muted-foreground">{summaryData.summary}</p>
               </div>
-            ) : summaryData ? (
-              <>
-                <div className="space-y-2">
-                  <h4 className="text-xs font-medium text-muted-foreground uppercase">Summary</h4>
-                  <p className="text-sm leading-relaxed">{summaryData.summary}</p>
+              
+              {summaryData.keyFacts.length > 0 && (
+                <div>
+                  <h4 className="font-medium mb-2">Key Facts</h4>
+                  <ul className="list-disc list-inside space-y-1">
+                    {summaryData.keyFacts.map((fact, i) => (
+                      <li key={i} className="text-sm text-muted-foreground">{fact}</li>
+                    ))}
+                  </ul>
                 </div>
-
-                {summaryData.keyFacts.length > 0 && (
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-medium text-muted-foreground uppercase">Key Facts</h4>
-                    <ul className="space-y-1">
-                      {summaryData.keyFacts.map((fact, i) => (
-                        <li key={i} className="text-sm flex items-start gap-2">
-                          <span className="text-primary">•</span>
-                          {fact}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {summaryData.significance && (
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-medium text-muted-foreground uppercase">Business Significance</h4>
-                    <p className="text-sm text-muted-foreground">{summaryData.significance}</p>
-                  </div>
-                )}
-
-                {summaryData.suggestions.length > 0 && (
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-medium text-muted-foreground uppercase">Research Suggestions</h4>
-                    <div className="flex flex-wrap gap-1">
-                      {summaryData.suggestions.map((s, i) => (
-                        <Button
-                          key={i}
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs"
-                          onClick={() => {
-                            setSummaryDialogOpen(false);
-                            handleResearch(s.query);
-                          }}
-                        >
-                          <Search className="w-3 h-3 mr-1" />
-                          {s.topic}
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div className="pt-4 border-t flex gap-2">
-                  <Button
-                    variant="default"
-                    className="flex-1"
-                    onClick={() => window.open(summaryItem?.url, '_blank', 'noopener,noreferrer')}
-                  >
-                    <ExternalLink className="w-4 h-4 mr-2" />
-                    Visit Article
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      setSummaryDialogOpen(false);
-                      if (summaryItem) handleResearch(summaryItem.title);
-                    }}
-                  >
-                    <Search className="w-4 h-4 mr-2" />
-                    Deep Research
-                  </Button>
+              )}
+              
+              {summaryData.significance && (
+                <div>
+                  <h4 className="font-medium mb-2">Significance</h4>
+                  <p className="text-sm text-muted-foreground">{summaryData.significance}</p>
                 </div>
-              </>
-            ) : null}
-          </div>
+              )}
+              
+              {summaryData.suggestions.length > 0 && (
+                <div>
+                  <h4 className="font-medium mb-2">Research Further</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {summaryData.suggestions.map((sug, i) => (
+                      <Button
+                        key={i}
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setSummaryDialogOpen(false);
+                          handleResearch(sug.query);
+                        }}
+                      >
+                        {sug.topic}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              <div className="pt-4 border-t flex justify-between items-center">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.open(summaryItem?.url, '_blank')}
+                >
+                  <ExternalLink className="w-4 h-4 mr-2" />
+                  Read Full Article
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </DialogContent>
       </Dialog>
     </>

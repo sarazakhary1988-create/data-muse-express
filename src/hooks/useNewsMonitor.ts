@@ -2,23 +2,24 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { validateUrl, OFFICIAL_DOMAINS, VERIFIED_DOMAINS, PREMIUM_DOMAINS } from '@/lib/urlValidator';
 
-// Extended categories for lead generation - CMA now has dedicated category
+// MANUS 1.7 MAX - Complete News Categories per specification
 export type NewsCategory = 
-  | 'ipo' 
-  | 'market' 
-  | 'regulatory' 
-  | 'expansion' 
-  | 'contract' 
-  | 'joint_venture' 
-  | 'acquisition' 
-  | 'appointment' 
-  | 'cma'  // NEW: Dedicated CMA category for ALL CMA news
-  | 'cma_violation'
-  | 'vision_2030'
-  | 'banking'
-  | 'real_estate'
-  | 'tech_funding'
-  | 'general';
+  | 'tasi'              // TASI/Main Market
+  | 'nomu'              // NOMU/Parallel Market
+  | 'listing_approved'  // Announced/Approved Listing
+  | 'stock_market'      // Saudi Stock Market / Country Stock Market
+  | 'management_change' // Management Changes
+  | 'regulator_announcement' // CMA Announcements / Country Regulator
+  | 'regulator_regulation'   // CMA Regulations / Country Regulator
+  | 'regulator_violation'    // CMA Violations / Country Regulator
+  | 'shareholder_change'     // Shareholder Changes
+  | 'macroeconomics'         // Macroeconomics
+  | 'microeconomics'         // Microeconomics
+  | 'country_outlook'        // Market outlook and country updates
+  | 'joint_venture'          // JV
+  | 'merger_acquisition'     // M&A
+  | 'expansion_contract'     // Expansion/Contracts
+  | 'general';               // Other news
 
 export type NewsRegion = 'mena' | 'europe' | 'americas' | 'asia_pacific' | 'global';
 
@@ -54,23 +55,52 @@ const NEWS_STORAGE_KEY = 'orkestra_monitored_news';
 const LAST_CHECK_KEY = 'orkestra_last_news_check';
 const REFRESH_INTERVAL_KEY = 'orkestra_news_refresh_interval';
 
-// Official sources for higher trust - CMA domains added
+// Country-specific regulator mapping
+export const COUNTRY_REGULATORS: Record<string, { name: string; shortName: string; domains: string[] }> = {
+  'Saudi Arabia': { name: 'Capital Market Authority', shortName: 'CMA', domains: ['cma.org.sa', 'cma.gov.sa'] },
+  'UAE': { name: 'Securities and Commodities Authority', shortName: 'SCA', domains: ['sca.gov.ae'] },
+  'Dubai': { name: 'Dubai Financial Services Authority', shortName: 'DFSA', domains: ['dfsa.ae'] },
+  'Bahrain': { name: 'Central Bank of Bahrain', shortName: 'CBB', domains: ['cbb.gov.bh'] },
+  'Kuwait': { name: 'Capital Markets Authority', shortName: 'CMA-KW', domains: ['cma.gov.kw'] },
+  'Qatar': { name: 'Qatar Financial Markets Authority', shortName: 'QFMA', domains: ['qfma.org.qa'] },
+  'Oman': { name: 'Capital Market Authority', shortName: 'CMA-OM', domains: ['cma.gov.om'] },
+  'Egypt': { name: 'Financial Regulatory Authority', shortName: 'FRA', domains: ['fra.gov.eg'] },
+  'USA': { name: 'Securities and Exchange Commission', shortName: 'SEC', domains: ['sec.gov'] },
+  'UK': { name: 'Financial Conduct Authority', shortName: 'FCA', domains: ['fca.org.uk'] },
+};
+
+// Country-specific stock exchange mapping
+export const COUNTRY_EXCHANGES: Record<string, { name: string; shortName: string; domains: string[] }> = {
+  'Saudi Arabia': { name: 'Saudi Exchange (Tadawul)', shortName: 'Tadawul', domains: ['saudiexchange.sa', 'tadawul.com.sa'] },
+  'UAE': { name: 'Abu Dhabi Securities Exchange', shortName: 'ADX', domains: ['adx.ae'] },
+  'Dubai': { name: 'Dubai Financial Market', shortName: 'DFM', domains: ['dfm.ae'] },
+  'Bahrain': { name: 'Bahrain Bourse', shortName: 'BHB', domains: ['bahrainbourse.com'] },
+  'Kuwait': { name: 'Boursa Kuwait', shortName: 'BK', domains: ['boursakuwait.com.kw'] },
+  'Qatar': { name: 'Qatar Stock Exchange', shortName: 'QSE', domains: ['qe.com.qa'] },
+  'Oman': { name: 'Muscat Securities Market', shortName: 'MSM', domains: ['msm.gov.om'] },
+  'Egypt': { name: 'Egyptian Exchange', shortName: 'EGX', domains: ['egx.com.eg'] },
+  'USA': { name: 'NYSE/NASDAQ', shortName: 'NYSE', domains: ['nyse.com', 'nasdaq.com'] },
+  'UK': { name: 'London Stock Exchange', shortName: 'LSE', domains: ['londonstockexchange.com'] },
+};
+
+// Official sources for higher trust
 const OFFICIAL_SOURCES = [
   'tadawul', 'saudiexchange', 'cma.org.sa', 'cma.gov.sa', 'argaam', 'zawya',
   'sec.gov', 'nasdaq', 'nyse', 'lseg', 'londonstockexchange',
-  'reuters', 'bloomberg', 'ft.com', 'wsj.com', 'yahoo', 'sama.gov.sa', 'mof.gov.sa'
+  'reuters', 'bloomberg', 'ft.com', 'wsj.com', 'yahoo', 'sama.gov.sa', 'mof.gov.sa',
+  'dfsa.ae', 'sca.gov.ae', 'cbb.gov.bh', 'qfma.org.qa', 'cma.gov.kw', 'cma.gov.om'
 ];
 
 // Country detection patterns
 const COUNTRY_PATTERNS: Record<string, RegExp> = {
-  'Saudi Arabia': /\b(saudi|ksa|riyadh|jeddah|tadawul|aramco|sabic|stc)\b/i,
-  'UAE': /\b(uae|dubai|abu dhabi|emirates|adx|dfm)\b/i,
+  'Saudi Arabia': /\b(saudi|ksa|riyadh|jeddah|tadawul|aramco|sabic|stc|tasi|nomu)\b/i,
+  'UAE': /\b(uae|dubai|abu dhabi|emirates|adx|dfm|emaar)\b/i,
   'Kuwait': /\b(kuwait|boursa)\b/i,
   'Qatar': /\b(qatar|doha|qse)\b/i,
-  'Bahrain': /\b(bahrain|manama)\b/i,
+  'Bahrain': /\b(bahrain|manama|bhb)\b/i,
   'Oman': /\b(oman|muscat|msm)\b/i,
   'Egypt': /\b(egypt|cairo|egx)\b/i,
-  'USA': /\b(usa|us|nasdaq|nyse|american|sec)\b/i,
+  'USA': /\b(usa|us market|nasdaq|nyse|american|sec)\b/i,
   'UK': /\b(uk|britain|london|lse|ftse)\b/i,
 };
 
@@ -79,20 +109,6 @@ const REGION_MAP: Record<string, NewsRegion> = {
   'Bahrain': 'mena', 'Oman': 'mena', 'Egypt': 'mena',
   'USA': 'americas', 'UK': 'europe',
 };
-
-// GCC-focused news queries
-const GCC_NEWS_QUERIES = [
-  'IPO listing Saudi Arabia Tadawul NOMU CMA',
-  'M&A acquisition merger MENA GCC Saudi Arabia',
-  'CMA violation fine Saudi Arabia financial',
-  'CEO CFO chairman director Saudi Arabia UAE appointment',
-  'real estate development Saudi Arabia UAE Kuwait NEOM',
-  'banking sector profit earnings Gulf region GCC',
-  'technology startup funding Saudi Arabia UAE',
-  'Vision 2030 project update Saudi Arabia',
-  'contract awarded construction Saudi Arabia',
-  'Aramco SABIC ACWA Power STC company news',
-];
 
 export interface NewsFilters {
   categories?: string[];
@@ -103,34 +119,130 @@ export interface NewsFilters {
 }
 
 // MANUS 1.7 MAX - Category-specific keyword mapping
-// Each category uses specific keyword-tuned queries (NOT generic)
-// CMA now has dedicated category separate from cma_violation
-const MANUS_CATEGORY_KEYWORDS: Record<string, string[]> = {
-  // Dedicated CMA category - ALL CMA news (not just violations)
-  cma: ['CMA', 'Capital Market Authority', 'هيئة السوق المالية', 'cma.org.sa', 'cma.gov.sa', 'CMA announcement', 'CMA regulation', 'CMA approval', 'CMA license'],
-  cma_violation: ['CMA violation', 'CMA fine', 'Capital Market Authority penalty', 'CMA suspension', 'CMA warning', 'CMA enforcement'],
-  ipo: ['IPO', 'initial public offering', 'listing', 'prospectus', 'public float', 'stock debut', 'goes public', 'IPO filing'],
-  acquisition: ['merger', 'acquisition', 'M&A', 'buyout', 'takeover', 'deal closed', 'acquiring company'],
-  banking: ['banking sector', 'bank profit', 'bank earnings', 'SNB', 'Al Rajhi Bank', 'banking services', 'loan growth', 'bank assets'],
-  real_estate: ['real estate', 'property development', 'construction project', 'housing', 'commercial property', 'ROSHN', 'property market', 'real estate investment'],
-  tech_funding: ['technology startup', 'fintech', 'venture capital', 'series A', 'series B', 'tech investment', 'software company', 'startup funding'],
-  vision_2030: ['Vision 2030', 'Saudi Vision 2030', 'NEOM', 'giga project', 'Qiddiya', 'Red Sea Project', 'Diriyah', 'THE LINE'],
-  expansion: ['expansion', 'new opening', 'launch', 'new branch', 'entering market', 'growth plan', 'new facility', 'market expansion'],
-  contract: ['contract awarded', 'billion deal', 'agreement signed', 'project contract', 'tender won', 'SAR million contract'],
-  joint_venture: ['joint venture', 'JV partnership', 'MOU signed', 'strategic alliance', 'business partnership'],
-  appointment: ['CEO appointed', 'chairman named', 'executive hire', 'board member appointed', 'CFO announcement', 'director named'],
-  regulatory: ['regulation', 'compliance', 'regulatory filing', 'SEC filing', 'CMA announcement', 'regulatory approval'],
-  market: ['stock market', 'trading update', 'index movement', 'market cap', 'shares trading', 'equity market', 'TASI'],
+const MANUS_CATEGORY_KEYWORDS: Record<NewsCategory, string[]> = {
+  // TASI/Main Market
+  tasi: [
+    'TASI', 'Main Market', 'Tadawul main', 'Saudi Exchange main market', 
+    'TASI index', 'main market listing', 'TASI performance', 'blue chip Saudi'
+  ],
+  // NOMU/Parallel Market
+  nomu: [
+    'NOMU', 'Parallel Market', 'NOMU listing', 'parallel market Saudi',
+    'NOMU index', 'NOMU performance', 'SME market Saudi'
+  ],
+  // Announced/Approved Listing
+  listing_approved: [
+    'CMA approval listing', 'approved for listing', 'IPO approval', 
+    'listing prospectus approved', 'CMA listing approval', 'going public',
+    'initial public offering approval', 'Tadawul listing approved'
+  ],
+  // Stock Market
+  stock_market: [
+    'stock market', 'Saudi stock market', 'market update', 'market performance',
+    'trading session', 'market close', 'index movement', 'equity market',
+    'stock exchange', 'market capitalization', 'trading volume'
+  ],
+  // Management Changes
+  management_change: [
+    'CEO appointed', 'CEO resigned', 'chairman appointed', 'chairman resigned',
+    'board member', 'executive appointment', 'CFO', 'director resignation',
+    'management change', 'board of directors', 'executive resignation',
+    'COO appointed', 'managing director'
+  ],
+  // Regulator Announcements
+  regulator_announcement: [
+    'CMA announcement', 'regulator announcement', 'Capital Market Authority',
+    'CMA notice', 'regulatory notice', 'CMA circular', 'authority announcement',
+    'licensed', 'license granted', 'authorization', 'registration approved'
+  ],
+  // Regulator Regulations
+  regulator_regulation: [
+    'CMA regulation', 'new regulation', 'regulatory update', 'rules amendment',
+    'compliance requirement', 'regulatory framework', 'market rules',
+    'governance rules', 'disclosure rules', 'trading rules'
+  ],
+  // Regulator Violations
+  regulator_violation: [
+    'CMA violation', 'fine imposed', 'penalty', 'regulatory fine',
+    'market manipulation', 'insider trading', 'disclosure violation',
+    'suspended', 'trading suspension', 'enforcement action'
+  ],
+  // Shareholder Changes
+  shareholder_change: [
+    'shareholder change', 'stake acquisition', 'shareholding change',
+    'ownership change', 'major shareholder', 'stake sale', 'block trade',
+    'share disposal', 'share acquisition', 'ownership disclosure'
+  ],
+  // Macroeconomics
+  macroeconomics: [
+    'GDP', 'inflation', 'interest rate', 'central bank', 'monetary policy',
+    'fiscal policy', 'government spending', 'national budget', 'economic growth',
+    'unemployment rate', 'trade balance', 'foreign reserves'
+  ],
+  // Microeconomics
+  microeconomics: [
+    'company earnings', 'profit margin', 'revenue growth', 'cost reduction',
+    'market share', 'pricing strategy', 'consumer demand', 'supply chain',
+    'operational efficiency', 'sector performance'
+  ],
+  // Country Outlook
+  country_outlook: [
+    'market outlook', 'economic outlook', 'country outlook', 'investment outlook',
+    'growth forecast', 'economic forecast', 'sector outlook', 'market analysis',
+    'economic analysis', 'country report'
+  ],
+  // Joint Ventures
+  joint_venture: [
+    'joint venture', 'JV agreement', 'partnership agreement', 'strategic alliance',
+    'MOU signed', 'collaboration agreement', 'business partnership'
+  ],
+  // Mergers & Acquisitions
+  merger_acquisition: [
+    'merger', 'acquisition', 'M&A', 'buyout', 'takeover', 'merger agreement',
+    'acquisition completed', 'deal closed', 'consolidation'
+  ],
+  // Expansion/Contracts
+  expansion_contract: [
+    'expansion', 'contract awarded', 'new project', 'contract signed',
+    'project contract', 'tender won', 'expansion plan', 'new facility',
+    'market entry', 'growth investment'
+  ],
+  // General News
+  general: [
+    'news', 'update', 'announcement', 'report', 'statement'
+  ],
 };
 
-// Build search queries based on filters - MANUS KEYWORD-SPECIFIC FILTERING
+// Get regulator-specific keywords based on country
+function getRegulatorKeywords(country: string, category: NewsCategory): string[] {
+  const regulator = COUNTRY_REGULATORS[country];
+  const exchange = COUNTRY_EXCHANGES[country];
+  
+  const baseKeywords = MANUS_CATEGORY_KEYWORDS[category] || [];
+  
+  if (!regulator) return baseKeywords;
+  
+  // Replace generic CMA keywords with country-specific regulator
+  return baseKeywords.map(keyword => {
+    if (keyword.toLowerCase().includes('cma') && country !== 'Saudi Arabia') {
+      return keyword.replace(/CMA/gi, regulator.shortName);
+    }
+    return keyword;
+  }).concat([
+    regulator.name,
+    regulator.shortName,
+    ...regulator.domains
+  ]);
+}
+
+// Build search queries based on filters
 function buildFilteredQueries(filters?: NewsFilters): string[] {
   const queries: string[] = [];
   const activeCountries = filters?.countries?.filter(c => c !== 'all') || [];
   const activeCategories = filters?.categories?.filter(c => c !== 'all') || [];
   const activeSources = filters?.sources?.filter(s => s !== 'all') || [];
   
-  // Source-to-site mapping for search
+  // Source-to-site mapping
   const sourceToSite: Record<string, string> = {
     argaam: 'site:argaam.com',
     zawya: 'site:zawya.com',
@@ -143,55 +255,184 @@ function buildFilteredQueries(filters?: NewsFilters): string[] {
     cma: 'site:cma.org.sa OR site:cma.gov.sa',
   };
 
-  // Build source site string
   const siteStr = activeSources.length > 0
     ? activeSources.map(s => sourceToSite[s] || '').filter(Boolean).join(' OR ')
     : '';
 
-  // MANUS KEYWORD-SPECIFIC: If categories are active, use ONLY category-specific keywords
+  // Category-specific queries with country awareness
   if (activeCategories.length > 0) {
     activeCategories.forEach(category => {
-      const keywords = MANUS_CATEGORY_KEYWORDS[category];
-      if (keywords && keywords.length > 0) {
-        // Use first 3 keywords for focused search
-        const keywordQuery = keywords.slice(0, 3).join(' OR ');
-        
-        if (activeCountries.length > 0) {
-          activeCountries.forEach(country => {
-            queries.push(`(${keywordQuery}) ${country}${siteStr ? ' ' + siteStr : ''}`);
-          });
-        } else {
-          // Default to MENA/GCC region
-          queries.push(`(${keywordQuery}) Saudi Arabia GCC${siteStr ? ' ' + siteStr : ''}`);
-          queries.push(`(${keywordQuery}) MENA${siteStr ? ' ' + siteStr : ''}`);
+      const countries = activeCountries.length > 0 ? activeCountries : ['Saudi Arabia'];
+      
+      countries.forEach(country => {
+        const keywords = getRegulatorKeywords(country, category as NewsCategory);
+        if (keywords.length > 0) {
+          const keywordQuery = keywords.slice(0, 4).join(' OR ');
+          queries.push(`(${keywordQuery}) ${country}${siteStr ? ' ' + siteStr : ''}`);
         }
-      }
+      });
     });
   }
-  // Countries only - use general financial news for those countries
+  // Countries only
   else if (activeCountries.length > 0) {
     activeCountries.forEach(country => {
+      const regulator = COUNTRY_REGULATORS[country];
+      const exchange = COUNTRY_EXCHANGES[country];
+      
       queries.push(`financial news ${country}${siteStr ? ' ' + siteStr : ''}`);
-      queries.push(`business market ${country}${siteStr ? ' ' + siteStr : ''}`);
-      queries.push(`stock exchange ${country}${siteStr ? ' ' + siteStr : ''}`);
+      queries.push(`stock market ${exchange?.shortName || country}${siteStr ? ' ' + siteStr : ''}`);
+      if (regulator) {
+        queries.push(`${regulator.shortName} announcement ${country}${siteStr ? ' ' + siteStr : ''}`);
+      }
     });
   }
   // Sources only
   else if (activeSources.length > 0) {
     queries.push(`financial news GCC ${siteStr}`);
-    queries.push(`business Saudi Arabia UAE ${siteStr}`);
-    queries.push(`market update MENA ${siteStr}`);
+    queries.push(`Saudi Arabia market ${siteStr}`);
   }
-  // No filters - use base GCC queries
+  // No filters - default Saudi queries
   else {
-    return [...GCC_NEWS_QUERIES].slice(0, 5);
+    queries.push('TASI Tadawul main market performance');
+    queries.push('NOMU parallel market Saudi');
+    queries.push('CMA announcement Saudi Arabia');
+    queries.push('CMA violation fine Saudi');
+    queries.push('CEO chairman appointment resignation Tadawul');
+    queries.push('shareholder change stake Saudi');
+    queries.push('IPO listing approval CMA Tadawul');
+    queries.push('Saudi Arabia economic outlook GDP');
+    queries.push('joint venture merger acquisition Saudi');
   }
 
-  // Log constructed queries for debugging
   console.log('[NewsMonitor] MANUS keyword-specific queries:', queries);
+  return [...new Set(queries)].slice(0, 12);
+}
+
+// Categorize news based on content
+function categorizeNews(title: string, snippet: string, country?: string): NewsCategory {
+  const text = `${title} ${snippet}`.toLowerCase();
   
-  // Limit to 10 unique queries
-  return [...new Set(queries)].slice(0, 10);
+  // Order matters - more specific categories first
+  
+  // TASI/Main Market
+  if (/\b(tasi|main market|tadawul main|blue chip)\b/.test(text) && 
+      !/\bnomu\b/.test(text)) {
+    return 'tasi';
+  }
+  
+  // NOMU/Parallel Market
+  if (/\b(nomu|parallel market|sme market)\b/.test(text)) {
+    return 'nomu';
+  }
+  
+  // Listing Approved
+  if (/\b(listing approv|ipo approv|prospectus approv|cma approv.*listing|approved for listing)\b/.test(text)) {
+    return 'listing_approved';
+  }
+  
+  // Management Changes
+  if (/\b(ceo|cfo|coo|chairman|director|board member|executive).*(appoint|resign|named|hire|step down|departure)\b/.test(text) ||
+      /\b(appoint|resign|named|hire).*(ceo|cfo|coo|chairman|director|board member|executive)\b/.test(text)) {
+    return 'management_change';
+  }
+  
+  // Regulator Violations
+  if (/\b(violation|fine|penalty|suspended|enforcement|insider trading|manipulation)\b/.test(text) &&
+      /\b(cma|regulator|authority|sec|dfsa|cbb|sca)\b/.test(text)) {
+    return 'regulator_violation';
+  }
+  
+  // Regulator Regulations
+  if (/\b(regulation|rules|framework|compliance|amendment|governance)\b/.test(text) &&
+      /\b(cma|regulator|authority|sec|dfsa|cbb|sca|new)\b/.test(text)) {
+    return 'regulator_regulation';
+  }
+  
+  // Regulator Announcements
+  if (/\b(cma|regulator|authority|sec|dfsa|cbb|sca)\b/.test(text) &&
+      /\b(announcement|announce|circular|notice|license|authorization)\b/.test(text)) {
+    return 'regulator_announcement';
+  }
+  
+  // Shareholder Changes
+  if (/\b(shareholder|stake|ownership|block trade|share disposal|share acquisition|shareholding)\b/.test(text) &&
+      /\b(change|acquire|sale|bought|sold|disclosure|increase|decrease)\b/.test(text)) {
+    return 'shareholder_change';
+  }
+  
+  // Macroeconomics
+  if (/\b(gdp|inflation|interest rate|central bank|monetary policy|fiscal|budget|economic growth|unemployment|trade balance|foreign reserve)\b/.test(text)) {
+    return 'macroeconomics';
+  }
+  
+  // Microeconomics
+  if (/\b(earnings|profit margin|revenue|cost|market share|pricing|consumer demand|supply chain|operational)\b/.test(text) &&
+      !/\b(stock market|index|trading)\b/.test(text)) {
+    return 'microeconomics';
+  }
+  
+  // Country Outlook
+  if (/\b(outlook|forecast|analysis|report)\b/.test(text) &&
+      /\b(market|economic|country|sector|investment|growth)\b/.test(text)) {
+    return 'country_outlook';
+  }
+  
+  // Joint Venture
+  if (/\b(joint venture|jv|partnership|alliance|mou|collaboration)\b/.test(text) &&
+      /\b(sign|agree|form|establish|announce)\b/.test(text)) {
+    return 'joint_venture';
+  }
+  
+  // M&A
+  if (/\b(merger|acquisition|m&a|buyout|takeover|consolidation)\b/.test(text)) {
+    return 'merger_acquisition';
+  }
+  
+  // Expansion/Contracts
+  if (/\b(expansion|contract|project|tender|facility|market entry)\b/.test(text) &&
+      /\b(award|sign|win|new|plan|open)\b/.test(text)) {
+    return 'expansion_contract';
+  }
+  
+  // Stock Market (general market news)
+  if (/\b(stock market|trading|index|equity|market cap|exchange)\b/.test(text)) {
+    return 'stock_market';
+  }
+  
+  return 'general';
+}
+
+// Detect country from text
+function detectCountry(text: string): string | undefined {
+  for (const [country, pattern] of Object.entries(COUNTRY_PATTERNS)) {
+    if (pattern.test(text)) {
+      return country;
+    }
+  }
+  return undefined;
+}
+
+// Extract company names
+function extractCompanies(text: string): string[] {
+  const knownCompanies = [
+    'Aramco', 'SABIC', 'STC', 'Al Rajhi', 'ACWA Power', 'Saudi National Bank',
+    'Ma\'aden', 'NEOM', 'Red Sea', 'Riyad Bank', 'Mobily', 'Zain', 'Emaar',
+    'ADNOC', 'Etisalat', 'QNB', 'KFH', 'Gulf Bank', 'Omantel'
+  ];
+  
+  return knownCompanies.filter(company => 
+    text.toLowerCase().includes(company.toLowerCase())
+  );
+}
+
+// Extract domain from URL
+function extractDomain(url: string): string {
+  try {
+    const hostname = new URL(url).hostname;
+    return hostname.replace(/^www\./, '').split('.')[0];
+  } catch {
+    return 'Unknown';
+  }
 }
 
 export function useNewsMonitor() {
@@ -257,43 +498,33 @@ export function useNewsMonitor() {
     }));
   }, []);
 
-  // MANUS URL VALIDATION - Uses whitelist and validation system
+  // URL validation
   const isValidNewsUrl = (url: string): boolean => {
     if (!url || !url.startsWith('http')) return false;
-    
-    // Use the comprehensive URL validator
     const validation = validateUrl(url);
-    
-    // Reject if URL structure is invalid or suspicious
     if (!validation.hasValidStructure || validation.isSuspicious) {
-      console.log('[NewsMonitor] URL validation failed:', url, validation.reasons);
       return false;
     }
-    
-    // Accept whitelisted domains and allow unverified for now (with warning badge)
     return validation.isValid;
   };
   
-  // Determine source credibility for badges
+  // Source credibility
   const getSourceCredibility = (url: string, source: string): { isOfficial: boolean; isVerified: boolean; isPremium: boolean } => {
     const validation = validateUrl(url);
     const domain = validation.domain.toLowerCase();
     
     return {
       isOfficial: OFFICIAL_DOMAINS.some(d => domain.includes(d)) || 
-                  ['cma', 'tadawul', 'saudiexchange', 'sec'].some(s => source.toLowerCase().includes(s)),
-      isVerified: VERIFIED_DOMAINS.some(d => domain.includes(d)) ||
-                  ['reuters', 'bloomberg', 'bbc', 'aljazeera', 'cnbc'].some(s => source.toLowerCase().includes(s)),
-      isPremium: PREMIUM_DOMAINS.some(d => domain.includes(d)) ||
-                 ['ft', 'financial times', 'bloomberg', 'wsj', 'economist'].some(s => source.toLowerCase().includes(s)),
+                  OFFICIAL_SOURCES.some(s => source.toLowerCase().includes(s)),
+      isVerified: VERIFIED_DOMAINS.some(d => domain.includes(d)),
+      isPremium: PREMIUM_DOMAINS.some(d => domain.includes(d)),
     };
   };
 
-  // Filter news by date range - default to last 7 days
+  // Date range filter
   const isWithinDateRange = (timestamp: Date, dateFrom?: Date, dateTo?: Date): boolean => {
     const now = new Date();
     
-    // If no date range specified, default to last 7 days
     if (!dateFrom && !dateTo) {
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
@@ -301,7 +532,6 @@ export function useNewsMonitor() {
       return timestamp >= sevenDaysAgo && timestamp <= now;
     }
     
-    // Check custom date range
     if (dateFrom) {
       const from = new Date(dateFrom);
       from.setHours(0, 0, 0, 0);
@@ -317,7 +547,7 @@ export function useNewsMonitor() {
     return true;
   };
 
-  // Update filters for next fetch
+  // Update filters
   const updateFilters = useCallback((filters: NewsFilters) => {
     setActiveFilters(filters);
   }, []);
@@ -325,7 +555,6 @@ export function useNewsMonitor() {
   const fetchLatestNews = useCallback(async (filters?: NewsFilters) => {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
     
-    // Use passed filters or stored activeFilters
     const currentFilters = filters || activeFilters;
     
     try {
@@ -334,7 +563,6 @@ export function useNewsMonitor() {
       
       const allResults: any[] = [];
       
-      // Fetch in parallel batches using filtered queries
       const batchSize = 3;
       for (let i = 0; i < queries.length; i += batchSize) {
         const batch = queries.slice(i, i + batchSize);
@@ -354,16 +582,11 @@ export function useNewsMonitor() {
 
       console.log('[NewsMonitor] Got total results:', allResults.length);
       
-      // Transform, validate and deduplicate
       const urlSet = new Set<string>();
       const newNewsItems: NewsItem[] = allResults
         .filter((result: any) => {
           if (!result.title || !result.url) return false;
-          // Validate URL is real
-          if (!isValidNewsUrl(result.url)) {
-            console.log('[NewsMonitor] Rejecting invalid URL:', result.url);
-            return false;
-          }
+          if (!isValidNewsUrl(result.url)) return false;
           if (urlSet.has(result.url)) return false;
           urlSet.add(result.url);
           return true;
@@ -384,12 +607,10 @@ export function useNewsMonitor() {
           const text = `${result.title} ${snippet}`;
           const country = detectCountry(text);
 
-          // Parse published timestamp
           const tsCandidate = result.fetchedAt || result.publishDate || result.publishedAt;
           const parsedTs = tsCandidate ? new Date(tsCandidate) : new Date();
           const timestamp = Number.isNaN(parsedTs.getTime()) ? new Date() : parsedTs;
           
-          // Get credibility information using MANUS validation
           const credibility = getSourceCredibility(result.url, source);
 
           return {
@@ -398,7 +619,7 @@ export function useNewsMonitor() {
             source,
             url: result.url,
             timestamp,
-            category: categorizeNews(result.title, snippet),
+            category: categorizeNews(result.title, snippet, country),
             isNew,
             snippet: snippet.slice(0, 200) || '',
             country,
@@ -408,13 +629,11 @@ export function useNewsMonitor() {
             isValidated: credibility.isVerified || credibility.isOfficial,
           };
         })
-        // Filter by date range (last 7 days default, or custom range)
         .filter((item: NewsItem) => isWithinDateRange(item.timestamp, currentFilters?.dateFrom, currentFilters?.dateTo));
 
       setState(prev => {
         const existingIds = new Set(prev.news.map(n => n.id));
         const uniqueNew = newNewsItems.filter(n => !existingIds.has(n.id));
-        // Keep news within date range when merging
         const validNews = prev.news.filter(n => isWithinDateRange(n.timestamp, currentFilters?.dateFrom, currentFilters?.dateTo));
         const merged = [...uniqueNew, ...validNews].slice(0, 100);
         
@@ -431,7 +650,7 @@ export function useNewsMonitor() {
 
       const newCount = newNewsItems.filter(n => n.isNew).length;
       if (newCount > 0) {
-        console.log(`[NewsMonitor] Found ${newCount} new news items within date range`);
+        console.log(`[NewsMonitor] Found ${newCount} new news items`);
       }
 
       return newNewsItems;
@@ -458,13 +677,10 @@ export function useNewsMonitor() {
     
     fetchLatestNews();
     
-    // Set up refresh interval
     intervalRef.current = setInterval(() => {
-      console.log('[NewsMonitor] Auto-refresh triggered');
       fetchLatestNews();
     }, state.refreshInterval * 60 * 1000);
-
-    // Set up countdown timer (update every second)
+    
     countdownRef.current = setInterval(() => {
       setState(prev => ({
         ...prev,
@@ -482,160 +698,44 @@ export function useNewsMonitor() {
       clearInterval(countdownRef.current);
       countdownRef.current = null;
     }
-    setState(prev => ({ ...prev, isMonitoring: false, secondsUntilRefresh: 0 }));
+    setState(prev => ({ ...prev, isMonitoring: false }));
     console.log('[NewsMonitor] Monitoring stopped');
   }, []);
 
-  // Restart monitoring when refresh interval changes
-  useEffect(() => {
-    if (state.isMonitoring) {
-      stopMonitoring();
-      // Small delay before restarting
-      const timeout = setTimeout(() => {
-        startMonitoring();
-      }, 100);
-      return () => clearTimeout(timeout);
-    }
-  }, [state.refreshInterval]);
-
-  const markAsRead = useCallback((newsId: string) => {
+  const markAsRead = useCallback((id: string) => {
     setState(prev => ({
       ...prev,
-      news: prev.news.map(n => 
-        n.id === newsId ? { ...n, isNew: false } : n
-      ),
+      news: prev.news.map(n => n.id === id ? { ...n, isNew: false } : n),
     }));
   }, []);
+
+  const refreshNews = useCallback(async () => {
+    return fetchLatestNews(activeFilters);
+  }, [fetchLatestNews, activeFilters]);
 
   const clearAllNews = useCallback(() => {
     setState(prev => ({ ...prev, news: [] }));
     seenNewsIds.current.clear();
     localStorage.removeItem(NEWS_STORAGE_KEY);
+    localStorage.removeItem(LAST_CHECK_KEY);
   }, []);
 
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-      if (countdownRef.current) {
-        clearInterval(countdownRef.current);
-      }
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (countdownRef.current) clearInterval(countdownRef.current);
     };
   }, []);
-
-  // Wrapper for click handlers that don't pass filters
-  const refreshNews = useCallback(() => {
-    fetchLatestNews();
-  }, [fetchLatestNews]);
 
   return {
     ...state,
     startMonitoring,
     stopMonitoring,
-    fetchLatestNews,
     refreshNews,
     markAsRead,
     clearAllNews,
     setRefreshInterval,
     updateFilters,
   };
-}
-
-// Helper functions
-function extractDomain(url: string): string {
-  try {
-    const domain = new URL(url).hostname.replace('www.', '');
-    return domain.split('.')[0].charAt(0).toUpperCase() + domain.split('.')[0].slice(1);
-  } catch {
-    return 'Unknown';
-  }
-}
-
-function detectCountry(text: string): string | undefined {
-  for (const [country, pattern] of Object.entries(COUNTRY_PATTERNS)) {
-    if (pattern.test(text)) {
-      return country;
-    }
-  }
-  return undefined;
-}
-
-function extractCompanies(text: string): string[] {
-  const companies: string[] = [];
-  const knownCompanies = [
-    'Aramco', 'SABIC', 'STC', 'Al Rajhi', 'ACWA Power', 'SNB', 'Ma\'aden',
-    'Almarai', 'Jarir', 'SACO', 'Mobily', 'Zain', 'Emaar', 'ADNOC'
-  ];
-  
-  for (const company of knownCompanies) {
-    if (text.toLowerCase().includes(company.toLowerCase())) {
-      companies.push(company);
-    }
-  }
-  
-  return companies.slice(0, 3);
-}
-
-function categorizeNews(title: string, snippet: string): NewsCategory {
-  const text = `${title} ${snippet}`.toLowerCase();
-  
-  // CMA Violation (specific case - check first)
-  if (/\b(cma|capital market authority)\b/i.test(text) && 
-      /\b(violation|fine|penalty|sanction|breach|warning|suspend)\b/i.test(text)) {
-    return 'cma_violation';
-  }
-  
-  // CMA General (any CMA news from official domains or with CMA keywords)
-  if (/\b(cma|capital market authority|هيئة السوق المالية)\b/i.test(text) ||
-      /cma\.org\.sa|cma\.gov\.sa/i.test(text)) {
-    return 'cma';
-  }
-  
-  if (/\b(vision 2030|giga.?project|neom|the line|qiddiya|red sea|diriyah|amaala)\b/i.test(text)) {
-    return 'vision_2030';
-  }
-  
-  if (/\b(startup|fintech|tech|venture|seed|series [a-d]|funding round|raises?|raised)\b/i.test(text) && 
-      /\b(million|billion|funding|investment|investor)\b/i.test(text)) {
-    return 'tech_funding';
-  }
-  
-  if (/\b(real estate|property|housing|residential|commercial property|roshn|reit|land)\b/i.test(text)) {
-    return 'real_estate';
-  }
-  
-  if (/\b(bank|banking|snb|al rajhi|samba|riyad bank|alinma|bsf|sab|ncb)\b/i.test(text) && 
-      /\b(profit|earnings|loan|deposit|asset|branch|digital|merger)\b/i.test(text)) {
-    return 'banking';
-  }
-  
-  if (/\b(acqui|merger|m&a|buyout|takeover)\b/i.test(text)) {
-    return 'acquisition';
-  }
-  if (/\b(joint venture|partnership|jv|strategic alliance|mou|memorandum)\b/i.test(text)) {
-    return 'joint_venture';
-  }
-  if (/\b(contract|award|won|signed|deal|agreement|billion|million)\b/i.test(text) && 
-      /\b(sar|usd|aed|project|construction|supply)\b/i.test(text)) {
-    return 'contract';
-  }
-  if (/\b(appoint|ceo|chairman|cfo|director|executive|join|hire|named)\b/i.test(text)) {
-    return 'appointment';
-  }
-  if (/\b(expand|expansion|launch|open|new branch|new office|entering|growth)\b/i.test(text)) {
-    return 'expansion';
-  }
-  
-  if (/\b(ipo|listing|debut|goes public|prospectus|float)\b/i.test(text)) {
-    return 'ipo';
-  }
-  if (/\b(regulation|sec|cma|filing|compliance|law|rule)\b/i.test(text)) {
-    return 'regulatory';
-  }
-  if (/\b(market|stock|index|trading|shares|equity)\b/i.test(text)) {
-    return 'market';
-  }
-  
-  return 'general';
 }
