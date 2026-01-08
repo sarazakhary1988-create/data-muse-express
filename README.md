@@ -62,12 +62,42 @@ This project is built with:
 
 ## How can I deploy this project?
 
+### Deploy via Lovable
+
 Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
 
-## Can I connect a custom domain to my Lovable project?
+### Deploy via Netlify
 
-Yes, you can!
+This project includes Netlify configuration for easy deployment. You have three options:
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+**1. Deploy via Netlify Dashboard (Recommended)**
+- Go to [app.netlify.com](https://app.netlify.com) and click "Add new site"
+- Connect your Git repository (GitHub, GitLab, or Bitbucket)
+- Netlify will automatically detect the build settings from `netlify.toml`
+- Click "Deploy"
+
+**2. Deploy via Netlify CLI**
+```sh
+npm install -g netlify-cli
+netlify login
+netlify deploy --prod
+```
+
+**3. Automatic CI/CD**
+Once connected via the Netlify Dashboard, every push to your main branch will automatically deploy.
+
+For detailed instructions, see [NETLIFY_DEPLOYMENT.md](./NETLIFY_DEPLOYMENT.md)
+
+## Can I connect a custom domain?
+
+### Lovable Project
+
+Yes, you can! Navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+
+### Netlify
+
+Yes! Go to Site Settings → Domain management → Add custom domain and follow the DNS configuration instructions.
+
+For more details, see [NETLIFY_DEPLOYMENT.md](./NETLIFY_DEPLOYMENT.md#custom-domain)
