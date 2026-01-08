@@ -18,7 +18,7 @@ export const VERIFIED_DOMAINS = [
   'bbc.com',
   'bbc.co.uk',
   
-  // Verified Regional News
+  // Saudi/Regional News
   'aljazeera.com',
   'arabnews.com',
   'argaam.com',
@@ -26,8 +26,12 @@ export const VERIFIED_DOMAINS = [
   'gulfnews.com',
   'khaleejtimes.com',
   'thenationalnews.com',
+  'mubasher.info',
+  'aleqt.com',
+  'asharqbusiness.com',
+  'saudigazette.com.sa',
   
-  // Verified Business/Finance
+  // Financial Data Providers
   'theconversation.com',
   'arabiangazette.com',
   'marketscreener.com',
@@ -36,15 +40,26 @@ export const VERIFIED_DOMAINS = [
   'marketwatch.com',
   'finance.yahoo.com',
   'yahoo.com',
-  
-  // Additional verified sources
   'tradingview.com',
   'investing.com',
   'seekingalpha.com',
+  'simplywall.st',
+  'morningstar.com',
+  'zacks.com',
+  'koyfin.com',
+  'stockanalysis.com',
+  'tradingeconomics.com',
+  
+  // News/Media
   'forbes.com',
   'fortune.com',
   'economist.com',
   'businessinsider.com',
+  
+  // Aggregators
+  'newsapi.org',
+  'mediastack.com',
+  'gnews.io',
 ];
 
 // Official/Government sources
