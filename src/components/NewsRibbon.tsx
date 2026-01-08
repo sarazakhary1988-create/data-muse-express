@@ -1,79 +1,24 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { motion, AnimatePresence, useDragControls } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { 
-  Newspaper, 
-  Bell, 
-  BellOff, 
-  ExternalLink, 
-  Clock, 
-  TrendingUp,
-  AlertCircle,
-  Building2,
-  Globe,
-  ChevronDown,
-  ChevronUp,
-  RefreshCw,
-  Sparkles,
-  Handshake,
-  FileText,
-  Rocket,
-  UserPlus,
-  Landmark,
-  Gavel,
-  Target,
-  Banknote,
-  Home,
-  Cpu,
-  Languages,
-  Settings,
-  Search,
-  X,
-  Loader2,
-  Filter,
-  MapPin,
-  GripVertical,
-  Timer,
-  Maximize2,
-  Plus,
-  Link
+  Newspaper, Bell, BellOff, ExternalLink, Clock, TrendingUp, AlertCircle, Building2, Globe,
+  ChevronDown, ChevronUp, RefreshCw, Sparkles, Handshake, FileText, Rocket, UserPlus,
+  Landmark, Gavel, Target, Banknote, PieChart, BarChart3, LineChart, Eye, Users,
+  Languages, Settings, Search, X, Loader2, Filter, MapPin, GripVertical, Timer,
+  Maximize2, Plus, Link, BookOpen, Briefcase, Scale
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { 
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from '@/components/ui/sheet';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { useNewsMonitor, NewsItem, NewsCategory as NewsCategoryType, NewsRegion, RefreshInterval } from '@/hooks/useNewsMonitor';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useNewsMonitor, NewsItem, NewsCategory as NewsCategoryType, NewsRegion, RefreshInterval, COUNTRY_REGULATORS, COUNTRY_EXCHANGES } from '@/hooks/useNewsMonitor';
 import { useNewsSourceSettings } from '@/hooks/useNewsSourceSettings';
 import { useNewsNotifications } from '@/hooks/useNewsNotifications';
 import { useCustomCrawlSources } from '@/components/CustomCrawlSourceSettings';
@@ -87,62 +32,71 @@ const FILTER_STORAGE_KEY = 'orkestra_news_filters';
 const RIBBON_POSITION_KEY = 'orkestra_ribbon_position';
 
 const categoryIcons: Record<NewsCategoryType, React.ReactNode> = {
-  ipo: <Building2 className="w-3 h-3" />,
-  market: <TrendingUp className="w-3 h-3" />,
-  regulatory: <AlertCircle className="w-3 h-3" />,
-  expansion: <Rocket className="w-3 h-3" />,
-  contract: <FileText className="w-3 h-3" />,
+  tasi: <TrendingUp className="w-3 h-3" />,
+  nomu: <BarChart3 className="w-3 h-3" />,
+  listing_approved: <Building2 className="w-3 h-3" />,
+  stock_market: <LineChart className="w-3 h-3" />,
+  management_change: <UserPlus className="w-3 h-3" />,
+  regulator_announcement: <AlertCircle className="w-3 h-3" />,
+  regulator_regulation: <BookOpen className="w-3 h-3" />,
+  regulator_violation: <Gavel className="w-3 h-3" />,
+  shareholder_change: <Users className="w-3 h-3" />,
+  macroeconomics: <PieChart className="w-3 h-3" />,
+  microeconomics: <BarChart3 className="w-3 h-3" />,
+  country_outlook: <Eye className="w-3 h-3" />,
   joint_venture: <Handshake className="w-3 h-3" />,
-  acquisition: <Landmark className="w-3 h-3" />,
-  appointment: <UserPlus className="w-3 h-3" />,
-  cma: <AlertCircle className="w-3 h-3" />,
-  cma_violation: <Gavel className="w-3 h-3" />,
-  vision_2030: <Target className="w-3 h-3" />,
-  banking: <Banknote className="w-3 h-3" />,
-  real_estate: <Home className="w-3 h-3" />,
-  tech_funding: <Cpu className="w-3 h-3" />,
+  merger_acquisition: <Landmark className="w-3 h-3" />,
+  expansion_contract: <Briefcase className="w-3 h-3" />,
   general: <Globe className="w-3 h-3" />,
 };
 
 const categoryColors: Record<NewsCategoryType, string> = {
-  ipo: 'bg-green-500/20 text-green-400 border-green-500/30',
-  market: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  regulatory: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
-  expansion: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
-  contract: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
-  joint_venture: 'bg-pink-500/20 text-pink-400 border-pink-500/30',
-  acquisition: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
-  appointment: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
-  cma: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-  cma_violation: 'bg-red-500/20 text-red-400 border-red-500/30',
-  vision_2030: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
-  banking: 'bg-sky-500/20 text-sky-400 border-sky-500/30',
-  real_estate: 'bg-teal-500/20 text-teal-400 border-teal-500/30',
-  tech_funding: 'bg-violet-500/20 text-violet-400 border-violet-500/30',
+  tasi: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  nomu: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
+  listing_approved: 'bg-green-500/20 text-green-400 border-green-500/30',
+  stock_market: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
+  management_change: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
+  regulator_announcement: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+  regulator_regulation: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+  regulator_violation: 'bg-red-500/20 text-red-400 border-red-500/30',
+  shareholder_change: 'bg-pink-500/20 text-pink-400 border-pink-500/30',
+  macroeconomics: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+  microeconomics: 'bg-teal-500/20 text-teal-400 border-teal-500/30',
+  country_outlook: 'bg-sky-500/20 text-sky-400 border-sky-500/30',
+  joint_venture: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+  merger_acquisition: 'bg-rose-500/20 text-rose-400 border-rose-500/30',
+  expansion_contract: 'bg-violet-500/20 text-violet-400 border-violet-500/30',
   general: 'bg-muted text-muted-foreground border-border',
 };
 
-const categoryLabels: Record<NewsCategoryType, string> = {
-  ipo: 'IPO',
-  market: 'Market',
-  regulatory: 'Regulatory',
-  expansion: 'Expansion',
-  contract: 'Contract',
-  joint_venture: 'JV',
-  acquisition: 'M&A',
-  appointment: 'Exec',
-  cma: 'CMA',
-  cma_violation: 'CMA Violation',
-  vision_2030: 'Vision 2030',
-  banking: 'Banking',
-  real_estate: 'Real Estate',
-  tech_funding: 'Tech',
-  general: 'News',
+// Dynamic labels based on selected country
+const getCategoryLabels = (country?: string): Record<NewsCategoryType, string> => {
+  const regulator = country ? COUNTRY_REGULATORS[country] : COUNTRY_REGULATORS['Saudi Arabia'];
+  const exchange = country ? COUNTRY_EXCHANGES[country] : COUNTRY_EXCHANGES['Saudi Arabia'];
+  const regulatorName = regulator?.shortName || 'CMA';
+  
+  return {
+    tasi: country === 'Saudi Arabia' || !country ? 'TASI' : `${exchange?.shortName || 'Main'}`,
+    nomu: country === 'Saudi Arabia' || !country ? 'NOMU' : 'Parallel',
+    listing_approved: 'Listing',
+    stock_market: 'Market',
+    management_change: 'Mgmt',
+    regulator_announcement: regulatorName,
+    regulator_regulation: 'Regulation',
+    regulator_violation: 'Violation',
+    shareholder_change: 'Shareholder',
+    macroeconomics: 'Macro',
+    microeconomics: 'Micro',
+    country_outlook: 'Outlook',
+    joint_venture: 'JV',
+    merger_acquisition: 'M&A',
+    expansion_contract: 'Expansion',
+    general: 'News',
+  };
 };
 
 export type NewsCategory = NewsCategoryType | 'all';
 
-// Countries for filtering
 const COUNTRIES = [
   { code: 'all', label: 'All Countries', flag: '🌍' },
   { code: 'Saudi Arabia', label: 'Saudi Arabia', flag: '🇸🇦' },
@@ -156,7 +110,6 @@ const COUNTRIES = [
   { code: 'UK', label: 'UK', flag: '🇬🇧' },
 ];
 
-// Sources for filtering
 const SOURCES = [
   { id: 'all', label: 'All Sources' },
   { id: 'argaam', label: 'Argaam' },
@@ -182,13 +135,8 @@ interface NewsSummary {
   keyFacts: string[];
   significance: string;
   suggestions: { topic: string; query: string }[];
-  predictions?: string[];
-  modelsUsed?: string[];
-  confidence?: number;
-  publishDate?: string;
 }
 
-// Load filters from localStorage
 const loadFiltersFromStorage = (): NewsFilterState => {
   try {
     const stored = localStorage.getItem(FILTER_STORAGE_KEY);
@@ -203,16 +151,9 @@ const loadFiltersFromStorage = (): NewsFilterState => {
       };
     }
   } catch {}
-  return { 
-    categories: ['all'], 
-    countries: ['all'], 
-    sources: ['all'], 
-    dateFrom: undefined, 
-    dateTo: undefined 
-  };
+  return { categories: ['all'], countries: ['all'], sources: ['all'], dateFrom: undefined, dateTo: undefined };
 };
 
-// Save filters to localStorage
 const saveFiltersToStorage = (filters: NewsFilterState) => {
   try {
     localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify({
@@ -228,7 +169,6 @@ const saveFiltersToStorage = (filters: NewsFilterState) => {
 export const useNewsFilterState = () => {
   const [filters, setFilters] = useState<NewsFilterState>(loadFiltersFromStorage);
 
-  // Persist to localStorage on change
   useEffect(() => {
     saveFiltersToStorage(filters);
   }, [filters]);
@@ -238,10 +178,8 @@ export const useNewsFilterState = () => {
       if (category === 'all') {
         return { ...prev, categories: ['all'] };
       }
-      
       const withoutAll = prev.categories.filter(c => c !== 'all');
       const hasCategory = withoutAll.includes(category);
-      
       if (hasCategory) {
         const newCats = withoutAll.filter(c => c !== category);
         return { ...prev, categories: newCats.length === 0 ? ['all'] : newCats };
@@ -256,10 +194,8 @@ export const useNewsFilterState = () => {
       if (country === 'all') {
         return { ...prev, countries: ['all'] };
       }
-      
       const withoutAll = prev.countries.filter(c => c !== 'all');
       const has = withoutAll.includes(country);
-      
       if (has) {
         const newList = withoutAll.filter(c => c !== country);
         return { ...prev, countries: newList.length === 0 ? ['all'] : newList };
@@ -274,10 +210,8 @@ export const useNewsFilterState = () => {
       if (source === 'all') {
         return { ...prev, sources: ['all'] };
       }
-      
       const withoutAll = prev.sources.filter(s => s !== 'all');
       const has = withoutAll.includes(source);
-      
       if (has) {
         const newList = withoutAll.filter(s => s !== source);
         return { ...prev, sources: newList.length === 0 ? ['all'] : newList };
@@ -292,13 +226,7 @@ export const useNewsFilterState = () => {
   };
 
   const clearFilters = () => {
-    setFilters({ 
-      categories: ['all'], 
-      countries: ['all'],
-      sources: ['all'],
-      dateFrom: undefined, 
-      dateTo: undefined 
-    });
+    setFilters({ categories: ['all'], countries: ['all'], sources: ['all'], dateFrom: undefined, dateTo: undefined });
   };
 
   const hasActiveFilters = 
@@ -311,26 +239,26 @@ export const useNewsFilterState = () => {
   return { filters, toggleCategory, toggleCountry, toggleSource, setDateRange, clearFilters, hasActiveFilters };
 };
 
-// News category filter chips for TopNavigation
 interface NewsFilterProps {
   filterState: ReturnType<typeof useNewsFilterState>;
 }
 
 export function NewsFilter({ filterState }: NewsFilterProps) {
   const { filters, toggleCategory } = filterState;
+  const categoryLabels = getCategoryLabels();
   
-  const categories: { key: NewsCategory; label: string }[] = [
+  const quickCategories: { key: NewsCategory; label: string }[] = [
     { key: 'all', label: 'All' },
-    { key: 'ipo', label: 'IPO' },
-    { key: 'acquisition', label: 'M&A' },
-    { key: 'contract', label: 'Contracts' },
-    { key: 'vision_2030', label: 'Vision 2030' },
-    { key: 'cma_violation', label: 'CMA' },
+    { key: 'tasi', label: 'TASI' },
+    { key: 'nomu', label: 'NOMU' },
+    { key: 'regulator_violation', label: 'Violations' },
+    { key: 'management_change', label: 'Mgmt' },
+    { key: 'merger_acquisition', label: 'M&A' },
   ];
 
   return (
     <div className="flex items-center gap-1">
-      {categories.map((cat) => (
+      {quickCategories.map((cat) => (
         <button
           key={cat.key}
           onClick={() => toggleCategory(cat.key)}
@@ -357,28 +285,14 @@ interface NewsRibbonProps {
 export function NewsRibbon({ filterState, onResearchNews, onPositionChange }: NewsRibbonProps) {
   const navigate = useNavigate();
   const {
-    news,
-    isMonitoring,
-    isLoading,
-    lastCheck,
-    refreshInterval,
-    secondsUntilRefresh,
-    startMonitoring,
-    stopMonitoring,
-    refreshNews,
-    markAsRead,
-    setRefreshInterval,
-    updateFilters,
+    news, isMonitoring, isLoading, lastCheck, refreshInterval, secondsUntilRefresh,
+    startMonitoring, stopMonitoring, refreshNews, markAsRead, setRefreshInterval, updateFilters,
   } = useNewsMonitor();
 
   const { isSourceAllowed } = useNewsSourceSettings();
   const { 
-    notifyNewItems, 
-    settings: notificationSettings, 
-    toggleNotifications, 
-    toggleCategory: toggleNotificationCategory,
-    toggleSound,
-    permission 
+    notifyNewItems, settings: notificationSettings, toggleNotifications, 
+    toggleCategory: toggleNotificationCategory, toggleSound, permission 
   } = useNewsNotifications();
   const { sources: customCrawlSources, addSource: addCrawlSource, removeSource: removeCrawlSource } = useCustomCrawlSources();
   const [newCrawlUrl, setNewCrawlUrl] = useState('');
@@ -389,7 +303,6 @@ export function NewsRibbon({ filterState, onResearchNews, onPositionChange }: Ne
     { code: 'ar', label: 'العربية', flag: '🇸🇦' },
   ];
 
-  // Draggable position state
   const [position, setPosition] = useState<'top' | 'bottom'>(() => {
     try {
       const saved = localStorage.getItem(RIBBON_POSITION_KEY);
@@ -412,7 +325,10 @@ export function NewsRibbon({ filterState, onResearchNews, onPositionChange }: Ne
   const activeFilterState = filterState || localFilterState;
   const { filters, toggleCategory, toggleCountry, toggleSource, clearFilters, hasActiveFilters } = activeFilterState;
 
-  // Save position to localStorage and notify parent
+  // Get country for dynamic labels
+  const selectedCountry = filters.countries.find(c => c !== 'all') || 'Saudi Arabia';
+  const categoryLabels = getCategoryLabels(selectedCountry);
+
   const togglePosition = () => {
     const newPosition = position === 'top' ? 'bottom' : 'top';
     setPosition(newPosition);
@@ -422,18 +338,15 @@ export function NewsRibbon({ filterState, onResearchNews, onPositionChange }: Ne
     } catch {}
   };
 
-  // Notify parent of initial position on mount
   useEffect(() => {
     onPositionChange?.(position);
   }, []);
 
-  // Auto-start monitoring on mount
   useEffect(() => {
     startMonitoring();
     return () => stopMonitoring();
   }, []);
 
-  // Update filters in the hook when local filters change (including date range)
   useEffect(() => {
     updateFilters({
       categories: filters.categories.filter(c => c !== 'all'),
@@ -444,39 +357,28 @@ export function NewsRibbon({ filterState, onResearchNews, onPositionChange }: Ne
     });
   }, [filters.categories, filters.countries, filters.sources, filters.dateFrom, filters.dateTo, updateFilters]);
 
-  // Check for new high-priority news and send notifications
   useEffect(() => {
     if (news.length === 0) return;
-    
     const newItems = news.filter(item => {
       const isNew = !previousNewsRef.current.has(item.id);
       return isNew && item.isNew;
     });
-
     if (newItems.length > 0) {
       notifyNewItems(newItems);
       news.forEach(item => previousNewsRef.current.add(item.id));
     }
   }, [news, notifyNewItems]);
 
-  // Filter news with country and source filters
   const filteredNews = news.filter(item => {
     if (!isSourceAllowed(item.source)) return false;
     if (!filters.categories.includes('all') && !filters.categories.includes(item.category)) return false;
-    
-    // Country filter
     if (!filters.countries.includes('all')) {
       if (!item.country || !filters.countries.includes(item.country)) return false;
     }
-    
-    // Source filter
     if (!filters.sources.includes('all')) {
-      const sourceMatch = filters.sources.some(s => 
-        item.source.toLowerCase().includes(s.toLowerCase())
-      );
+      const sourceMatch = filters.sources.some(s => item.source.toLowerCase().includes(s.toLowerCase()));
       if (!sourceMatch) return false;
     }
-    
     if (filters.dateFrom && isBefore(item.timestamp, startOfDay(filters.dateFrom))) return false;
     if (filters.dateTo && isAfter(item.timestamp, endOfDay(filters.dateTo))) return false;
     return true;
@@ -492,35 +394,6 @@ export function NewsRibbon({ filterState, onResearchNews, onPositionChange }: Ne
     return `${Math.floor(seconds / 86400)}d`;
   };
 
-  // Format article date prominently for summary dialog
-  const formatArticleDate = (date: Date) => {
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    
-    if (diffHours < 1) {
-      const diffMins = Math.floor(diffMs / (1000 * 60));
-      return diffMins <= 1 ? 'Just now' : `${diffMins} minutes ago`;
-    }
-    if (diffHours < 24) {
-      return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-    }
-    
-    // Format as "Jan 8, 2026"
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  };
-
-  const formatCountdown = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  // Fetch AI summary for a news item
   const fetchSummary = async (item: NewsItem) => {
     setSummaryItem(item);
     setSummaryDialogOpen(true);
@@ -530,16 +403,9 @@ export function NewsRibbon({ filterState, onResearchNews, onPositionChange }: Ne
 
     try {
       const { data, error } = await supabase.functions.invoke('summarize-news', {
-        body: {
-          title: item.title,
-          url: item.url,
-          snippet: item.snippet,
-          source: item.source,
-        },
+        body: { title: item.title, url: item.url, snippet: item.snippet, source: item.source },
       });
-
       if (error) throw error;
-
       setSummaryData({
         summary: data.summary || 'Summary unavailable.',
         keyFacts: data.keyFacts || [],
@@ -549,7 +415,7 @@ export function NewsRibbon({ filterState, onResearchNews, onPositionChange }: Ne
     } catch (error) {
       console.error('Failed to fetch summary:', error);
       setSummaryData({
-        summary: item.snippet || 'Unable to generate summary. Please visit the article directly.',
+        summary: item.snippet || 'Unable to generate summary.',
         keyFacts: [],
         significance: '',
         suggestions: [],
@@ -559,781 +425,318 @@ export function NewsRibbon({ filterState, onResearchNews, onPositionChange }: Ne
     }
   };
 
-  const handleNewsClick = (item: NewsItem) => {
-    fetchSummary(item);
-  };
-
-  const handleResearchClick = (item: NewsItem) => {
-    setSummaryDialogOpen(false);
+  const handleResearch = (query: string) => {
     if (onResearchNews) {
-      onResearchNews(item.title);
+      onResearchNews(query);
+    } else {
+      navigate('/?search=' + encodeURIComponent(query));
     }
+    setSummaryDialogOpen(false);
   };
-
-  const handleItemExpand = (item: NewsItem) => {
-    markAsRead(item.id);
-    setSelectedItem(selectedItem?.id === item.id ? null : item);
-  };
-
-  // Empty state
-  if (filteredNews.length === 0 && !isLoading) {
-    return (
-      <>
-        <div className={cn(
-          "sticky z-30 h-10 bg-background/95 backdrop-blur-sm border-b border-border/50",
-          "left-0 right-0",
-          position === 'top' ? "top-0" : "bottom-0 border-t border-b-0"
-        )}>
-          <div className="flex items-center justify-center gap-3 h-full px-4">
-            <Newspaper className="w-4 h-4 text-muted-foreground" />
-            <span className="text-xs text-muted-foreground">
-              {news.length > 0 
-                ? 'No news matching filters' 
-                : isMonitoring 
-                  ? 'Loading news feed...' 
-                  : 'Start monitoring for news'}
-            </span>
-            {isLoading && <RefreshCw className="w-3 h-3 animate-spin text-primary" />}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={isMonitoring ? stopMonitoring : startMonitoring}
-              className="h-6 px-2"
-            >
-              {isMonitoring ? <BellOff className="w-3 h-3" /> : <Bell className="w-3 h-3" />}
-            </Button>
-          </div>
-        </div>
-        <div className="h-10" />
-      </>
-    );
-  }
 
   return (
     <>
-      {/* Draggable News Ribbon */}
-      <div 
+      <motion.div
+        initial={{ opacity: 0, y: position === 'top' ? -20 : 20 }}
+        animate={{ opacity: 1, y: 0 }}
         className={cn(
-          "sticky z-30",
-          "bg-background/95 backdrop-blur-sm border-border/50",
-          "transition-all duration-300",
-          "left-0 right-0",
-          position === 'top' ? "top-0 border-b" : "bottom-0 border-t"
+          "fixed left-0 right-0 z-40 ml-16",
+          position === 'top' ? 'top-0' : 'bottom-0'
         )}
       >
-        {/* Main ticker bar - 40px height */}
-        <div className="flex items-center h-10 px-2 gap-2">
-          {/* Drag handle */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={togglePosition}
-                className="shrink-0 p-1 cursor-grab active:cursor-grabbing hover:bg-muted/50 rounded"
-              >
-                <GripVertical className="w-3.5 h-3.5 text-muted-foreground" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side={position === 'top' ? 'bottom' : 'top'}>
-              Move to {position === 'top' ? 'bottom' : 'top'}
-            </TooltipContent>
-          </Tooltip>
+        {/* Collapsed ribbon */}
+        <div className="bg-card/95 backdrop-blur-md border-b shadow-lg">
+          <div className="flex items-center justify-between px-4 py-2">
+            <div className="flex items-center gap-3">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button onClick={togglePosition} className="cursor-grab active:cursor-grabbing">
+                    <GripVertical className="w-4 h-4 text-muted-foreground" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>Drag to reposition</TooltipContent>
+              </Tooltip>
 
-          {/* Live indicator with countdown */}
-          <div className="flex items-center gap-1.5 px-2 border-r border-border/50 shrink-0">
-            <div className="relative">
-              <Sparkles className="w-3.5 h-3.5 text-primary" />
-              {isMonitoring && (
-                <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-              )}
-            </div>
-            <span className="text-[10px] font-semibold text-primary uppercase tracking-wider hidden sm:inline">
-              LIVE
-            </span>
-            {newItemsCount > 0 && (
-              <Badge 
-                variant="secondary" 
-                className="text-[9px] h-4 px-1 bg-primary/20 text-primary font-medium"
-              >
-                {newItemsCount}
-              </Badge>
-            )}
-            {/* Active filter indicators */}
-            {hasActiveFilters && (
-              <div className="hidden lg:flex items-center gap-1">
-                {!filters.countries.includes('all') && filters.countries.map(c => (
-                  <Badge 
-                    key={c}
-                    variant="outline" 
-                    className="text-[8px] h-4 px-1.5 border-blue-500/50 text-blue-400 bg-blue-500/10"
-                  >
-                    {COUNTRIES.find(cc => cc.code === c)?.flag} {c}
+              <div className="flex items-center gap-2">
+                <Newspaper className="w-4 h-4 text-primary" />
+                <span className="font-medium text-sm">News</span>
+                {newItemsCount > 0 && (
+                  <Badge className="bg-primary text-primary-foreground text-[10px] px-1.5">
+                    {newItemsCount}
                   </Badge>
-                ))}
-                {!filters.categories.includes('all') && filters.categories.slice(0, 2).map(cat => (
-                  <Badge 
+                )}
+              </div>
+
+              {/* Quick filters */}
+              <div className="hidden md:flex items-center gap-1 ml-4">
+                {(['all', 'tasi', 'nomu', 'regulator_violation', 'management_change', 'merger_acquisition'] as NewsCategory[]).map(cat => (
+                  <button
                     key={cat}
-                    variant="outline" 
-                    className="text-[8px] h-4 px-1.5 border-primary/50 text-primary bg-primary/10"
+                    onClick={() => toggleCategory(cat)}
+                    className={cn(
+                      "px-2 py-0.5 text-[10px] rounded-full transition-all flex items-center gap-1",
+                      filters.categories.includes(cat)
+                        ? cat === 'all' ? "bg-primary text-primary-foreground" : categoryColors[cat as NewsCategoryType]
+                        : "bg-muted/50 text-muted-foreground hover:bg-muted"
+                    )}
                   >
-                    {categoryLabels[cat as NewsCategoryType] || cat}
-                  </Badge>
+                    {cat !== 'all' && categoryIcons[cat as NewsCategoryType]}
+                    {cat === 'all' ? 'All' : categoryLabels[cat as NewsCategoryType]}
+                  </button>
                 ))}
               </div>
-            )}
-            {/* Countdown timer */}
-            {isMonitoring && secondsUntilRefresh > 0 && (
-              <span className="text-[9px] text-muted-foreground font-mono hidden md:inline">
-                {formatCountdown(secondsUntilRefresh)}
-              </span>
-            )}
-          </div>
 
-          {/* CSS-based scrolling ticker */}
-          <div className="flex-1 overflow-hidden relative">
-            <div 
-              className={cn(
-                "news-ticker flex items-center gap-4 whitespace-nowrap",
-                filteredNews.length < 5 && "news-ticker-slow"
-              )}
-            >
-              {/* Duplicate items for seamless loop */}
-              {[...filteredNews, ...filteredNews].map((item, index) => (
-                <button
-                  key={`${item.id}-${index}`}
-                  onClick={() => handleNewsClick(item)}
-                  className={cn(
-                    "inline-flex items-center gap-2 py-1 px-2.5 rounded-md transition-all",
-                    "hover:bg-muted/60 cursor-pointer group shrink-0",
-                    item.isNew && "bg-primary/5"
-                  )}
-                >
-                  {/* Category badge */}
-                  <span className={cn(
-                    "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border",
-                    categoryColors[item.category]
-                  )}>
-                    {categoryIcons[item.category]}
-                    <span className="hidden sm:inline">{categoryLabels[item.category]}</span>
-                  </span>
-                  
-                  {/* Credibility badge - Official/Verified/Premium */}
-                  {item.isOfficial && (
-                    <span className="inline-flex items-center px-1 py-0.5 rounded text-[8px] font-medium bg-green-500/20 text-green-400 border border-green-500/30">
-                      🏛️
-                    </span>
-                  )}
-                  
-                  {/* Title */}
-                  <span className={cn(
-                    "text-xs max-w-[200px] sm:max-w-[300px] truncate",
-                    item.isNew ? "text-foreground font-medium" : "text-muted-foreground"
-                  )}>
-                    {item.title}
-                  </span>
-                  
-                  {/* Source & time */}
-                  <span className="text-[10px] text-muted-foreground/60 hidden md:inline">
-                    {item.source}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground/40">
-                    {formatTimeAgo(item.timestamp)}
-                  </span>
-                  
-                  {/* External link indicator */}
-                  <ExternalLink className="w-2.5 h-2.5 text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity" />
-                </button>
-              ))}
+              {/* Country filter */}
+              <Select 
+                value={filters.countries[0] || 'all'} 
+                onValueChange={(val) => toggleCountry(val)}
+              >
+                <SelectTrigger className="w-32 h-7 text-xs">
+                  <MapPin className="w-3 h-3 mr-1" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {COUNTRIES.map(c => (
+                    <SelectItem key={c.code} value={c.code}>
+                      <span className="flex items-center gap-1">
+                        <span>{c.flag}</span>
+                        <span>{c.label}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {/* Timer */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <Timer className="w-3 h-3" />
+                    <span>{Math.floor(secondsUntilRefresh / 60)}:{(secondsUntilRefresh % 60).toString().padStart(2, '0')}</span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>Next refresh in {Math.floor(secondsUntilRefresh / 60)}m {secondsUntilRefresh % 60}s</TooltipContent>
+              </Tooltip>
+
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={refreshNews} disabled={isLoading}>
+                <RefreshCw className={cn("w-4 h-4", isLoading && "animate-spin")} />
+              </Button>
+
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigate('/news')}>
+                <Maximize2 className="w-4 h-4" />
+              </Button>
+
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setIsExpanded(!isExpanded)}>
+                {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </Button>
             </div>
           </div>
 
-          {/* Controls */}
-          <div className="flex items-center gap-0.5 pl-2 border-l border-border/50 shrink-0">
-            {/* Refresh interval selector */}
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-7 w-7">
-                  <Timer className="w-3 h-3" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-36 p-2">
-                <p className="text-[10px] text-muted-foreground mb-2">Refresh interval</p>
-                <div className="space-y-1">
-                  {([1, 5, 15, 30] as RefreshInterval[]).map((interval) => (
+          {/* Scrolling news ticker */}
+          <AnimatePresence>
+            {!isExpanded && filteredNews.length > 0 && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden border-t"
+              >
+                <div className="flex overflow-x-auto gap-4 px-4 py-2 scrollbar-hide">
+                  {filteredNews.slice(0, 10).map(item => (
                     <button
-                      key={interval}
-                      onClick={() => setRefreshInterval(interval)}
+                      key={item.id}
+                      onClick={() => fetchSummary(item)}
                       className={cn(
-                        "w-full text-left px-2 py-1 text-xs rounded hover:bg-muted",
-                        refreshInterval === interval && "bg-primary/20 text-primary"
+                        "flex-shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all hover:border-primary/50",
+                        item.isNew ? "bg-primary/5 border-primary/30" : "bg-muted/30 border-border"
                       )}
                     >
-                      {interval} min
+                      <Badge variant="outline" className={cn("text-[9px] px-1", categoryColors[item.category])}>
+                        {categoryIcons[item.category]}
+                      </Badge>
+                      <span className="text-xs font-medium max-w-[200px] truncate">{item.title}</span>
+                      <span className="text-[10px] text-muted-foreground">{formatTimeAgo(item.timestamp)}</span>
                     </button>
                   ))}
                 </div>
-              </PopoverContent>
-            </Popover>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={refreshNews}
-                  disabled={isLoading}
-                >
-                  <RefreshCw className={cn("w-3 h-3", isLoading && "animate-spin")} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side={position === 'top' ? 'bottom' : 'top'}>Refresh</TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={() => setIsExpanded(!isExpanded)}
-                >
-                  {isExpanded ? (
-                    <ChevronUp className="w-3 h-3" />
-                  ) : (
-                    <ChevronDown className="w-3 h-3" />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side={position === 'top' ? 'bottom' : 'top'}>{isExpanded ? 'Collapse' : 'Expand'}</TooltipContent>
-            </Tooltip>
-
-            {/* Open full news page */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={() => navigate('/news')}
-                >
-                  <Maximize2 className="w-3 h-3" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side={position === 'top' ? 'bottom' : 'top'}>Open News Page</TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={isMonitoring ? stopMonitoring : startMonitoring}
-                >
-                  {isMonitoring ? (
-                    <BellOff className="w-3 h-3" />
-                  ) : (
-                    <Bell className="w-3 h-3" />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side={position === 'top' ? 'bottom' : 'top'}>
-                {isMonitoring ? 'Stop' : 'Start'}
-              </TooltipContent>
-            </Tooltip>
-
-            {/* Settings */}
-            <Popover open={showSettings} onOpenChange={setShowSettings}>
-              <PopoverTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-7 w-7">
-                  <Settings className={cn("w-3 h-3", hasActiveFilters && "text-primary")} />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-72 p-3 max-h-[400px] overflow-y-auto">
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-medium">News Settings</h4>
-                    {hasActiveFilters && (
-                      <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={clearFilters}>
-                        Clear filters
-                      </Button>
-                    )}
-                  </div>
-                  
-                  {/* Category Filters */}
-                  <div className="space-y-2">
-                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                      <Filter className="w-3 h-3" /> Categories
-                    </Label>
-                    <div className="flex flex-wrap gap-1">
-                      {Object.entries(categoryLabels).map(([key, label]) => (
-                        <button
-                          key={key}
-                          onClick={() => toggleCategory(key as NewsCategory)}
-                          className={cn(
-                            "px-2 py-0.5 text-[10px] rounded-full border transition-all",
-                            filters.categories.includes(key as NewsCategory) || filters.categories.includes('all')
-                              ? categoryColors[key as NewsCategoryType]
-                              : "border-border text-muted-foreground hover:border-primary/50"
-                          )}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Country Filters */}
-                  <div className="space-y-2 pt-2 border-t border-border/50">
-                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                      <MapPin className="w-3 h-3" /> Countries
-                    </Label>
-                    <div className="flex flex-wrap gap-1">
-                      {COUNTRIES.map((country) => (
-                        <button
-                          key={country.code}
-                          onClick={() => toggleCountry(country.code)}
-                          className={cn(
-                            "px-2 py-0.5 text-[10px] rounded-full border transition-all flex items-center gap-1",
-                            filters.countries.includes(country.code) || filters.countries.includes('all')
-                              ? "bg-primary/20 text-primary border-primary/30"
-                              : "border-border text-muted-foreground hover:border-primary/50"
-                          )}
-                        >
-                          <span>{country.flag}</span>
-                          <span>{country.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Source Filters */}
-                  <div className="space-y-2 pt-2 border-t border-border/50">
-                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                      <Globe className="w-3 h-3" /> Sources
-                    </Label>
-                    <div className="flex flex-wrap gap-1">
-                      {SOURCES.map((source) => (
-                        <button
-                          key={source.id}
-                          onClick={() => toggleSource(source.id)}
-                          className={cn(
-                            "px-2 py-0.5 text-[10px] rounded-full border transition-all",
-                            filters.sources.includes(source.id) || filters.sources.includes('all')
-                              ? "bg-secondary text-secondary-foreground border-secondary"
-                              : "border-border text-muted-foreground hover:border-primary/50"
-                          )}
-                        >
-                          {source.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Notification Settings */}
-                  <div className="space-y-2 pt-2 border-t border-border/50">
-                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Notifications</Label>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs">Push notifications</span>
-                      <Switch 
-                        checked={notificationSettings.enabled} 
-                        onCheckedChange={toggleNotifications}
-                        disabled={permission === 'denied'}
-                      />
-                    </div>
-                    {permission === 'denied' && (
-                      <p className="text-[10px] text-destructive">Notifications blocked by browser</p>
-                    )}
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs">Sound alerts</span>
-                      <Switch 
-                        checked={notificationSettings.soundEnabled} 
-                        onCheckedChange={toggleSound}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Custom Crawl Sources */}
-                  <div className="space-y-2 pt-2 border-t border-border/50">
-                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                      <Link className="w-3 h-3" /> Custom News Sources
-                    </Label>
-                    <div className="flex gap-1.5">
-                      <Input
-                        value={newCrawlUrl}
-                        onChange={(e) => setNewCrawlUrl(e.target.value)}
-                        placeholder="e.g. reuters.com"
-                        className="h-7 text-xs flex-1"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && newCrawlUrl.trim()) {
-                            const success = addCrawlSource(newCrawlUrl);
-                            if (success) {
-                              toast({ title: "Source Added", description: `${newCrawlUrl} added` });
-                              setNewCrawlUrl('');
-                            } else {
-                              toast({ title: "Invalid or Duplicate", variant: "destructive" });
-                            }
-                          }
-                        }}
-                      />
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 w-7 p-0"
-                        onClick={() => {
-                          if (newCrawlUrl.trim()) {
-                            const success = addCrawlSource(newCrawlUrl);
-                            if (success) {
-                              toast({ title: "Source Added", description: `${newCrawlUrl} added` });
-                              setNewCrawlUrl('');
-                            } else {
-                              toast({ title: "Invalid or Duplicate", variant: "destructive" });
-                            }
-                          }
-                        }}
-                      >
-                        <Plus className="w-3 h-3" />
-                      </Button>
-                    </div>
-                    {customCrawlSources.length > 0 && (
-                      <div className="space-y-1 max-h-24 overflow-y-auto">
-                        {customCrawlSources.map((source) => (
-                          <div 
-                            key={source.url}
-                            className="flex items-center justify-between gap-1 px-2 py-1 bg-muted/50 rounded text-[10px]"
-                          >
-                            <span className="truncate flex-1">{source.name}</span>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-5 w-5 shrink-0"
-                              onClick={() => removeCrawlSource(source.url)}
-                            >
-                              <X className="w-2.5 h-2.5" />
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <p className="text-[9px] text-muted-foreground">
-                      Add URLs like reuters.com or bloomberg.com to crawl for news
-                    </p>
-                  </div>
-                </div>
-              </PopoverContent>
-            </Popover>
-
-            {/* Language Toggle */}
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-7 w-7">
-                  <Languages className="w-3 h-3" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-28 p-1">
-                {languages.map((lang) => (
-                  <Button
-                    key={lang.code}
-                    variant={language === lang.code ? 'secondary' : 'ghost'}
-                    size="sm"
-                    className="w-full justify-start gap-2 h-7 text-xs"
-                    onClick={() => setLanguage(lang.code)}
-                  >
-                    <span>{lang.flag}</span>
-                    <span>{lang.label}</span>
-                  </Button>
-                ))}
-              </PopoverContent>
-            </Popover>
-          </div>
-        </div>
-
-        {/* Expanded Panel */}
-        <AnimatePresence>
-          {isExpanded && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="border-t border-border/30 overflow-hidden bg-background/98"
-            >
-              <div className="p-3 max-h-80 overflow-y-auto">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-xs font-medium text-foreground">Business Intelligence Feed</h3>
-                  {lastCheck && (
-                    <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                      <Clock className="w-2.5 h-2.5" />
-                      Last check: {formatTimeAgo(lastCheck)}
-                    </span>
-                  )}
-                </div>
-
-                <div className="grid gap-1.5">
-                  {filteredNews.slice(0, 20).map((item) => (
-                    <div key={item.id} className="space-y-1">
-                      <button
-                        onClick={() => handleItemExpand(item)}
-                        className={cn(
-                          "w-full flex items-start gap-2 p-2 rounded-md text-left transition-all",
-                          "hover:bg-muted/50 border border-transparent hover:border-border/50",
-                          item.isNew && "bg-primary/5 border-primary/20",
-                          selectedItem?.id === item.id && "bg-muted/60 border-border"
-                        )}
-                      >
-                        <span className={cn(
-                          "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border shrink-0 mt-0.5",
-                          categoryColors[item.category]
-                        )}>
-                          {categoryIcons[item.category]}
-                          {categoryLabels[item.category]}
-                        </span>
-                        
-                        <div className="flex-1 min-w-0">
-                          <p className={cn(
-                            "text-xs leading-tight",
-                            item.isNew ? "text-foreground font-medium" : "text-muted-foreground"
-                          )}>
-                            {item.title}
-                          </p>
-                          {item.snippet && selectedItem?.id !== item.id && (
-                            <p className="text-[10px] text-muted-foreground/60 mt-0.5 line-clamp-1">
-                              {item.snippet}
-                            </p>
-                          )}
-                          <div className="flex items-center gap-2 mt-1 text-[10px] text-muted-foreground/50">
-                            <span>{item.source}</span>
-                            {item.country && (
-                              <>
-                                <span>•</span>
-                                <span>{item.country}</span>
-                              </>
-                            )}
-                            <span>•</span>
-                            <span>{formatTimeAgo(item.timestamp)}</span>
-                            {item.isOfficial && (
-                              <Badge variant="outline" className="h-3.5 px-1 text-[8px] border-green-500/30 text-green-500">
-                                Official
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                        
-                        {selectedItem?.id === item.id ? (
-                          <ChevronUp className="w-3 h-3 text-muted-foreground shrink-0 mt-0.5" />
-                        ) : (
-                          <ChevronDown className="w-3 h-3 text-muted-foreground/40 shrink-0 mt-0.5" />
-                        )}
-                      </button>
-                      
-                      {/* Expanded details */}
-                      <AnimatePresence>
-                        {selectedItem?.id === item.id && (
-                          <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            transition={{ duration: 0.15 }}
-                            className="overflow-hidden"
-                          >
-                            <div className="ml-8 p-3 rounded-md bg-muted/30 border border-border/50 space-y-2">
-                              {item.snippet && (
-                                <p className="text-xs text-muted-foreground leading-relaxed">
-                                  {item.snippet}
-                                </p>
-                              )}
-                              
-                              {item.companies && item.companies.length > 0 && (
-                                <div className="flex items-center gap-1 flex-wrap">
-                                  <span className="text-[10px] text-muted-foreground/60">Companies:</span>
-                                  {item.companies.map((c, i) => (
-                                    <Badge key={i} variant="secondary" className="text-[10px] h-4 px-1.5">
-                                      {c}
-                                    </Badge>
-                                  ))}
-                                </div>
-                              )}
-                              
-                              <div className="flex items-center gap-2 pt-1">
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-6 text-[10px] gap-1"
-                                  onClick={() => window.open(item.url, '_blank', 'noopener,noreferrer')}
-                                >
-                                  <ExternalLink className="w-3 h-3" />
-                                  Read Article
-                                </Button>
-                                {onResearchNews && (
-                                  <Button
-                                    size="sm"
-                                    variant="default"
-                                    className="h-6 text-[10px] gap-1"
-                                    onClick={() => handleResearchClick(item)}
-                                  >
-                                    <Search className="w-3 h-3" />
-                                    Deep Research
-                                  </Button>
-                                )}
-                              </div>
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
+          {/* Expanded view */}
+          <AnimatePresence>
+            {isExpanded && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="border-t max-h-[50vh] overflow-y-auto"
+              >
+                {/* All category chips */}
+                <div className="flex flex-wrap gap-1 px-4 py-2 border-b bg-muted/20">
+                  <span className="text-xs text-muted-foreground mr-2">Categories:</span>
+                  {Object.entries(categoryLabels).map(([key, label]) => (
+                    <button
+                      key={key}
+                      onClick={() => toggleCategory(key as NewsCategory)}
+                      className={cn(
+                        "px-2 py-0.5 text-[10px] rounded-full border transition-all flex items-center gap-1",
+                        filters.categories.includes(key as NewsCategory)
+                          ? categoryColors[key as NewsCategoryType]
+                          : "border-border text-muted-foreground hover:border-primary/50"
+                      )}
+                    >
+                      {categoryIcons[key as NewsCategoryType]}
+                      {label}
+                    </button>
                   ))}
                 </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
 
-      {/* Spacer to prevent content from going under the ribbon */}
-      <div className={cn("h-10", position === 'bottom' && "order-last")} />
+                {/* News list */}
+                <div className="divide-y">
+                  {filteredNews.length === 0 ? (
+                    <div className="p-8 text-center text-muted-foreground">
+                      <Newspaper className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                      <p className="text-sm">No news matching filters</p>
+                    </div>
+                  ) : (
+                    filteredNews.slice(0, 20).map(item => (
+                      <div
+                        key={item.id}
+                        className={cn(
+                          "p-3 hover:bg-muted/30 cursor-pointer transition-all",
+                          item.isNew && "bg-primary/5"
+                        )}
+                        onClick={() => fetchSummary(item)}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Badge variant="outline" className={cn("text-[9px]", categoryColors[item.category])}>
+                                {categoryIcons[item.category]}
+                                <span className="ml-1">{categoryLabels[item.category]}</span>
+                              </Badge>
+                              {item.country && (
+                                <Badge variant="outline" className="text-[9px]">
+                                  <MapPin className="w-2 h-2 mr-0.5" />
+                                  {item.country}
+                                </Badge>
+                              )}
+                              {item.isNew && (
+                                <Badge className="bg-primary text-[9px]">NEW</Badge>
+                              )}
+                            </div>
+                            <h4 className="text-sm font-medium line-clamp-1">{item.title}</h4>
+                            {item.snippet && (
+                              <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{item.snippet}</p>
+                            )}
+                            <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground">
+                              <span className="flex items-center gap-1">
+                                <Globe className="w-2.5 h-2.5" />
+                                {item.source}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Clock className="w-2.5 h-2.5" />
+                                {formatTimeAgo(item.timestamp)}
+                              </span>
+                            </div>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 shrink-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              window.open(item.url, '_blank');
+                            }}
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
 
-      {/* AI Summary Dialog with Publication Date Display */}
+                {filteredNews.length > 20 && (
+                  <div className="p-2 text-center border-t">
+                    <Button variant="link" size="sm" onClick={() => navigate('/news')}>
+                      View all {filteredNews.length} news items
+                    </Button>
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </motion.div>
+
+      {/* Summary Dialog */}
       <Dialog open={summaryDialogOpen} onOpenChange={setSummaryDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-sm leading-tight pr-6">
+            <DialogTitle className="text-lg font-semibold pr-8">
               {summaryItem?.title}
             </DialogTitle>
           </DialogHeader>
           
-          <div className="space-y-4">
-            {/* PUBLICATION DATE & SOURCE INFO - Displayed prominently at TOP */}
-            {summaryItem && (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground border-b border-border/50 pb-3">
-                <Clock className="w-3.5 h-3.5" />
-                <span className="font-medium">
-                  {formatArticleDate(summaryItem.timestamp)}
-                </span>
-                <span className="text-muted-foreground/50">|</span>
-                <span>{summaryItem.source}</span>
-                {summaryItem.isOfficial && (
-                  <>
-                    <span className="text-muted-foreground/50">|</span>
-                    <Badge variant="outline" className="h-4 px-1.5 text-[9px] border-green-500/30 text-green-500 bg-green-500/10">
-                      🏛️ Official Source
-                    </Badge>
-                  </>
-                )}
-                {!summaryItem.isOfficial && summaryItem.isValidated && (
-                  <>
-                    <span className="text-muted-foreground/50">|</span>
-                    <Badge variant="outline" className="h-4 px-1.5 text-[9px] border-blue-500/30 text-blue-500 bg-blue-500/10">
-                      ✓ Verified
-                    </Badge>
-                  </>
-                )}
+          {summaryLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+              <span className="ml-3">Analyzing article...</span>
+            </div>
+          ) : summaryData ? (
+            <div className="space-y-4">
+              <div>
+                <h4 className="font-medium mb-2">Summary</h4>
+                <p className="text-sm text-muted-foreground">{summaryData.summary}</p>
               </div>
-            )}
-
-            {summaryLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                <span className="ml-2 text-sm text-muted-foreground">Generating AI summary...</span>
+              
+              {summaryData.keyFacts.length > 0 && (
+                <div>
+                  <h4 className="font-medium mb-2">Key Facts</h4>
+                  <ul className="list-disc list-inside space-y-1">
+                    {summaryData.keyFacts.map((fact, i) => (
+                      <li key={i} className="text-sm text-muted-foreground">{fact}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              
+              {summaryData.significance && (
+                <div>
+                  <h4 className="font-medium mb-2">Significance</h4>
+                  <p className="text-sm text-muted-foreground">{summaryData.significance}</p>
+                </div>
+              )}
+              
+              {summaryData.suggestions.length > 0 && (
+                <div>
+                  <h4 className="font-medium mb-2">Research Further</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {summaryData.suggestions.map((sug, i) => (
+                      <Button key={i} variant="outline" size="sm" onClick={() => handleResearch(sug.query)}>
+                        {sug.topic}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              <div className="pt-4 border-t flex justify-between items-center">
+                <Button variant="outline" size="sm" onClick={() => window.open(summaryItem?.url, '_blank')}>
+                  <ExternalLink className="w-4 h-4 mr-2" />
+                  Read Full Article
+                </Button>
               </div>
-            ) : summaryData ? (
-              <>
-                <div className="space-y-2">
-                  <h4 className="text-xs font-medium text-muted-foreground uppercase">Summary</h4>
-                  <p className="text-sm leading-relaxed">{summaryData.summary}</p>
-                </div>
-
-                {summaryData.keyFacts.length > 0 && (
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-medium text-muted-foreground uppercase">Key Facts</h4>
-                    <ul className="space-y-1">
-                      {summaryData.keyFacts.map((fact, i) => (
-                        <li key={i} className="text-sm flex items-start gap-2">
-                          <span className="text-primary">•</span>
-                          {fact}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {summaryData.significance && (
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-medium text-muted-foreground uppercase">Business Significance</h4>
-                    <p className="text-sm text-muted-foreground">{summaryData.significance}</p>
-                  </div>
-                )}
-
-                {summaryData.predictions && summaryData.predictions.length > 0 && (
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-medium text-muted-foreground uppercase flex items-center gap-1">
-                      <Sparkles className="w-3 h-3 text-primary" />
-                      AI Predictions
-                    </h4>
-                    <ul className="space-y-1">
-                      {summaryData.predictions.map((prediction: string, i: number) => (
-                        <li key={i} className="text-sm flex items-start gap-2 text-muted-foreground">
-                          <span className="text-accent">→</span>
-                          {prediction}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {summaryData.modelsUsed && summaryData.modelsUsed.length > 0 && (
-                  <div className="text-[10px] text-muted-foreground/60 flex items-center gap-1">
-                    <span>Powered by:</span>
-                    {summaryData.modelsUsed.join(' + ')}
-                  </div>
-                )}
-
-                {summaryData.suggestions.length > 0 && onResearchNews && (
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-medium text-muted-foreground uppercase">Research Suggestions</h4>
-                    <div className="flex flex-wrap gap-1">
-                      {summaryData.suggestions.map((s, i) => (
-                        <Button
-                          key={i}
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs"
-                          onClick={() => {
-                            setSummaryDialogOpen(false);
-                            onResearchNews(s.query);
-                          }}
-                        >
-                          <Search className="w-3 h-3 mr-1" />
-                          {s.topic}
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div className="pt-4 border-t flex gap-2">
-                  <Button
-                    variant="default"
-                    className="flex-1"
-                    onClick={() => window.open(summaryItem?.url, '_blank', 'noopener,noreferrer')}
-                  >
-                    <ExternalLink className="w-4 h-4 mr-2" />
-                    Visit Article
-                  </Button>
-                  {onResearchNews && summaryItem && (
-                    <Button
-                      variant="secondary"
-                      onClick={() => handleResearchClick(summaryItem)}
-                    >
-                      <Search className="w-4 h-4 mr-2" />
-                      Deep Research
-                    </Button>
-                  )}
-                </div>
-              </>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
         </DialogContent>
       </Dialog>
     </>
   );
 }
+
+export default NewsRibbon;
