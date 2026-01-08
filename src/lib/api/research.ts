@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { withLLMConfig, getEndpointOverrides } from "@/lib/llmConfig";
 
 export interface ScrapeResult {
   success: boolean;
@@ -215,13 +216,13 @@ export const researchApi = {
       console.log('[researchApi] Calling embedded web-search:', query);
       
       const { data, error } = await supabase.functions.invoke('web-search', {
-        body: { 
+        body: withLLMConfig({ 
           query, 
           maxResults: options?.maxResults || 10,
           searchEngine: options?.searchEngine || 'all',
           scrapeContent: options?.scrapeContent !== false,
           country: options?.country,
-        },
+        }),
       });
 
       if (error) {
@@ -250,7 +251,7 @@ export const researchApi = {
       console.log('[researchApi] Internal sitemap search:', query);
       
       const { data, error } = await supabase.functions.invoke('research-search', {
-        body: { 
+        body: withLLMConfig({ 
           query, 
           limit, 
           scrapeContent: true, 
@@ -258,7 +259,7 @@ export const researchApi = {
           strictMode: options?.strictMode ?? false,
           minSources: options?.minSources ?? 2,
           country: options?.country,
-        },
+        }),
       });
 
       if (error) {
@@ -312,7 +313,7 @@ export const researchApi = {
       console.log('[researchApi] Scraping with research-scrape:', url);
       
       const { data, error } = await supabase.functions.invoke('research-scrape', {
-        body: { url, formats, onlyMainContent, waitFor },
+        body: withLLMConfig({ url, formats, onlyMainContent, waitFor }),
       });
 
       if (error || !data?.success) {
@@ -351,7 +352,7 @@ export const researchApi = {
   ): Promise<AnalyzeResult> {
     try {
       const { data, error } = await supabase.functions.invoke('research-analyze', {
-        body: { query, content, type, reportFormat },
+        body: withLLMConfig({ query, content, type, reportFormat }),
       });
 
       if (error) {
@@ -374,7 +375,7 @@ export const researchApi = {
   ): Promise<ExtractResult> {
     try {
       const { data, error } = await supabase.functions.invoke('research-extract', {
-        body: { query, content, extractType },
+        body: withLLMConfig({ query, content, extractType }),
       });
 
       if (error) {
@@ -395,7 +396,7 @@ export const researchApi = {
       console.log('[researchApi] Mapping with research-map:', url);
       
       const { data, error } = await supabase.functions.invoke('research-map', {
-        body: { url, limit, search },
+        body: withLLMConfig({ url, limit, search }),
       });
 
       if (error || !data?.success) {
@@ -552,7 +553,7 @@ export const researchApi = {
       console.log('[researchApi] Wide Research:', query);
       
       const { data, error } = await supabase.functions.invoke('wide-research', {
-        body: { 
+        body: withLLMConfig({ 
           query,
           items: options?.items,
           config: {
@@ -561,7 +562,7 @@ export const researchApi = {
             minSourcesPerItem: options?.minSourcesPerItem || 2,
             country: options?.country,
           },
-        },
+        }),
       });
 
       if (error) {
@@ -649,7 +650,7 @@ export const researchApi = {
       console.log('[researchApi] Web Crawl:', url);
       
       const { data, error } = await supabase.functions.invoke('web-crawl', {
-        body: { 
+        body: withLLMConfig({ 
           url,
           query: options?.query,
           maxDepth: options?.maxDepth ?? 3,
@@ -659,7 +660,7 @@ export const researchApi = {
           excludePatterns: options?.excludePatterns,
           scrapeContent: options?.scrapeContent ?? true,
           timeout: options?.timeout,
-        },
+        }),
       });
 
       if (error) {

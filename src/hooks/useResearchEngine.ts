@@ -3,6 +3,7 @@ import { ResearchTask, Report, useResearchStore, ReportFormat, RunHistoryEntry }
 import { researchAgent, dataConsolidator } from '@/lib/agent';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { withLLMConfig } from '@/lib/llmConfig';
 
 export const useResearchEngine = () => {
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -229,11 +230,11 @@ export const useResearchEngine = () => {
       
       try {
         const { data: titleData, error: titleError } = await supabase.functions.invoke('research-analyze', {
-          body: {
+          body: withLLMConfig({
             query: query,
             content: report.substring(0, 2000),
             type: 'title'
-          }
+          })
         });
         
         if (!titleError && titleData?.success && titleData?.result) {

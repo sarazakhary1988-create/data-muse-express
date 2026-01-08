@@ -20,6 +20,15 @@ interface PersonEnrichmentRequest {
   linkedinUrl?: string;
   email?: string;
   reportType: 'full' | 'executive' | 'sales' | 'hr';
+  // LLM config from UI
+  preferLocal?: boolean;
+  endpointOverrides?: {
+    ollamaUrl?: string;
+    vllmUrl?: string;
+    hfTgiUrl?: string;
+  };
+  // Pre-enriched data from Explorium
+  exploriumData?: any;
 }
 
 interface CompanyEnrichmentRequest {
@@ -29,6 +38,15 @@ interface CompanyEnrichmentRequest {
   country?: string;
   website?: string;
   reportType: 'full' | 'executive' | 'sales' | 'hr';
+  // LLM config from UI
+  preferLocal?: boolean;
+  endpointOverrides?: {
+    ollamaUrl?: string;
+    vllmUrl?: string;
+    hfTgiUrl?: string;
+  };
+  // Pre-enriched data from Explorium
+  exploriumData?: any;
 }
 
 interface ChatEditRequest {
@@ -1164,12 +1182,39 @@ async function generateCompanyReport(
   request: CompanyEnrichmentRequest,
   evidenceSources: Array<{ url: string; title?: string; content: string }>,
   websiteUrl: string | undefined,
-  socialProfiles: { linkedin?: string; twitter?: string; website?: string; others: string[] }
+  socialProfiles: { linkedin?: string; twitter?: string; website?: string; others: string[] },
+  exploriumData?: any
 ): Promise<any> {
   const apiKey = Deno.env.get('OPENAI_API_KEY');
   if (!apiKey) {
     console.error('[lead-enrichment] OPENAI_API_KEY not configured');
     return { success: false, error: 'OpenAI API not configured' };
+  }
+
+  // Merge Explorium data if available
+  let exploriumEnhancements = '';
+  if (exploriumData) {
+    console.log('[lead-enrichment] Enhancing with Explorium data:', Object.keys(exploriumData));
+    exploriumEnhancements = `
+
+EXPLORIUM VERIFIED DATA (HIGH CONFIDENCE):
+- Company Name: ${exploriumData.name || 'N/A'}
+- Website: ${exploriumData.website || 'N/A'}
+- Industry: ${exploriumData.industry || 'N/A'}
+- Country: ${exploriumData.country || 'N/A'}
+- Employees: ${exploriumData.employees || 'N/A'}
+- Revenue: ${exploriumData.revenue || 'N/A'}
+- Founded: ${exploriumData.founded || 'N/A'}
+- Summary: ${exploriumData.summary || 'N/A'}
+- LinkedIn: ${exploriumData.linkedin_url || 'N/A'}
+- Management: ${JSON.stringify(exploriumData.management || [])}
+- Founders: ${JSON.stringify(exploriumData.owner_founder || [])}
+- Funding: ${exploriumData.funding || 'N/A'}
+- Stock Ticker: ${exploriumData.stock_ticker || 'N/A'}
+- Market Cap: ${exploriumData.market_cap || 'N/A'}
+
+USE THIS EXPLORIUM DATA AS PRIMARY SOURCE - it is verified and high confidence.
+`;
   }
 
   const sourcesWithContent = evidenceSources
@@ -2258,6 +2303,9 @@ serve(async (req) => {
             country: companyReq.country,
             minSourcesPerItem: 2,
           },
+          // Pass through LLM config for local model preference
+          preferLocal: companyReq.preferLocal,
+          endpointOverrides: companyReq.endpointOverrides,
         },
       });
 
@@ -2399,7 +2447,7 @@ serve(async (req) => {
       socialProfiles.others = [...new Set([...(socialProfiles.others || []), ...(socialFromWebsite.others || [])])];
 
       // 5) Generate company report
-      const result = await generateCompanyReport(companyReq, evidenceSources, websiteUrl, socialProfiles);
+      const result = await generateCompanyReport(companyReq, evidenceSources, websiteUrl, socialProfiles, companyReq.exploriumData);
 
       console.log('[lead-enrichment] Company enrichment complete, success:', result.success);
 
