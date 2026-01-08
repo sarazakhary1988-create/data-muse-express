@@ -107,6 +107,10 @@ interface NewsSummary {
   keyFacts: string[];
   significance: string;
   suggestions: { topic: string; query: string }[];
+  predictions?: string[];
+  modelsUsed?: string[];
+  confidence?: number;
+  publishDate?: string;
 }
 
 const News = () => {
