@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Helmet } from 'react-helmet-async';
-import { Sparkles, XCircle } from 'lucide-react';
+import { Sparkles, XCircle, Network } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AnimatedBackground } from '@/components/AnimatedBackground';
 import { Sidebar, ViewType } from '@/components/Sidebar';
 import { TopNavigation } from '@/components/TopNavigation';
@@ -24,6 +25,7 @@ import { LeadEnrichment } from '@/components/leads/LeadEnrichment';
 import { IntegrationsPage } from '@/components/integrations/IntegrationsPage';
 import { ManusRealtimePanel } from '@/components/ManusRealtimePanel';
 import { StreamedResultsList } from '@/components/StreamedResultsList';
+import { AgentOrchestrationDashboard } from '@/components/AgentOrchestrationDashboard';
 import { useManusRealtime } from '@/hooks/useManusRealtime';
 
 
@@ -262,32 +264,71 @@ const Index = () => {
                     </motion.div>
                   )}
                   
-                  <AgentStatusPanel />
-                  <SearchEngineIndicator />
-                  
-                  {/* Manus 1.6 MAX Real-time Agent Panel */}
-                  <ManusRealtimePanel 
-                    className="mb-4"
-                    onResearchComplete={() => {
-                      console.log('[Manus] Research cycle complete');
-                    }}
-                  />
-                  
-                  {/* Streamed Results List */}
-                  {manusRealtime.streamedResults.length > 0 && (
-                    <StreamedResultsList 
-                      results={manusRealtime.streamedResults}
-                      isLoading={manusRealtime.state.state !== 'idle' && manusRealtime.state.state !== 'completed'}
-                      className="mb-4"
-                    />
-                  )}
-                  
-                  <ResearchProgress 
-                    steps={researchSteps} 
-                    currentProgress={currentTask.progress}
-                    deepVerifyMode={deepVerifyMode}
-                    deepVerifySources={deepVerifySources}
-                  />
+                  <Tabs defaultValue="orchestration" className="w-full">
+                    <TabsList className="grid w-full grid-cols-3 mb-4">
+                      <TabsTrigger value="orchestration" className="flex items-center gap-2">
+                        <Network className="w-4 h-4" />
+                        Agent Orchestration
+                      </TabsTrigger>
+                      <TabsTrigger value="progress">Progress</TabsTrigger>
+                      <TabsTrigger value="realtime">Manus Realtime</TabsTrigger>
+                    </TabsList>
+                    
+                    <TabsContent value="orchestration" className="mt-0">
+                      {/* Agent Orchestration Dashboard - Real-time agent visualization */}
+                      <AgentOrchestrationDashboard 
+                        className="mb-4"
+                        state={{
+                          mainState: agentState.state || 'analyzing',
+                          phase: 'execution',
+                          quality: agentState.quality || {
+                            overall: 0.75,
+                            accuracy: 0.8,
+                            completeness: 0.7,
+                            freshness: 0.85,
+                            sourceQuality: 0.78,
+                            claimVerification: 0.65,
+                          },
+                          metrics: {
+                            totalSources: manusRealtime.state.metrics.sourcesProcessed || 0,
+                            verifiedClaims: manusRealtime.state.metrics.factsExtracted || 0,
+                            contradictions: agentState.consolidation?.discrepancies?.length || 0,
+                            executionTime: manusRealtime.state.metrics.executionTimeMs || 0,
+                          },
+                        }}
+                      />
+                    </TabsContent>
+                    
+                    <TabsContent value="progress" className="mt-0 space-y-4">
+                      <AgentStatusPanel />
+                      <SearchEngineIndicator />
+                      <ResearchProgress 
+                        steps={researchSteps} 
+                        currentProgress={currentTask.progress}
+                        deepVerifyMode={deepVerifyMode}
+                        deepVerifySources={deepVerifySources}
+                      />
+                    </TabsContent>
+                    
+                    <TabsContent value="realtime" className="mt-0 space-y-4">
+                      {/* Manus 1.6 MAX Real-time Agent Panel */}
+                      <ManusRealtimePanel 
+                        className="mb-4"
+                        onResearchComplete={() => {
+                          console.log('[Manus] Research cycle complete');
+                        }}
+                      />
+                      
+                      {/* Streamed Results List */}
+                      {manusRealtime.streamedResults.length > 0 && (
+                        <StreamedResultsList 
+                          results={manusRealtime.streamedResults}
+                          isLoading={manusRealtime.state.state !== 'idle' && manusRealtime.state.state !== 'completed'}
+                          className="mb-4"
+                        />
+                      )}
+                    </TabsContent>
+                  </Tabs>
                 </motion.div>
               )}
             </AnimatePresence>
