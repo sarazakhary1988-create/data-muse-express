@@ -221,6 +221,16 @@ interface LLMRequest {
   preferLocal?: boolean;
   agents?: CrewAgent[];
   mastraConfig?: MastraConfig;
+  // Endpoint overrides from UI settings
+  endpointOverrides?: {
+    ollamaUrl?: string;
+    vllmUrl?: string;
+    hfTgiUrl?: string;
+  };
+  // Endpoint testing
+  testEndpoint?: boolean;
+  endpointType?: 'ollama' | 'vllm' | 'hfTgi';
+  endpointUrl?: string;
 }
 
 interface LLMResponse {
@@ -240,6 +250,50 @@ interface LLMResponse {
   executionTimeMs: number;
 }
 
+// ============ ENDPOINT TESTING ============
+
+async function testEndpointConnectivity(type: string, url: string): Promise<{ available: boolean; error?: string }> {
+  try {
+    let testUrl = url;
+    let timeout = 5000;
+    
+    if (type === 'ollama') {
+      // Ollama has a simple health endpoint
+      testUrl = `${url}/api/tags`;
+    } else if (type === 'vllm') {
+      // vLLM health check
+      testUrl = `${url}/health`;
+    } else if (type === 'hfTgi') {
+      // HuggingFace TGI health
+      testUrl = `${url}/health`;
+    }
+    
+    console.log(`[LLM Router] Testing endpoint: ${testUrl}`);
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    
+    const response = await fetch(testUrl, {
+      method: 'GET',
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (response.ok) {
+      console.log(`[LLM Router] Endpoint ${type} at ${url} is ONLINE`);
+      return { available: true };
+    } else {
+      console.log(`[LLM Router] Endpoint ${type} returned status ${response.status}`);
+      return { available: false, error: `HTTP ${response.status}` };
+    }
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : 'Connection failed';
+    console.log(`[LLM Router] Endpoint ${type} at ${url} is OFFLINE: ${errorMsg}`);
+    return { available: false, error: errorMsg };
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -249,13 +303,29 @@ serve(async (req) => {
 
   try {
     const request: LLMRequest = await req.json();
+    
+    // Handle endpoint testing
+    if (request.testEndpoint && request.endpointType && request.endpointUrl) {
+      console.log(`[LLM Router] Testing ${request.endpointType} endpoint: ${request.endpointUrl}`);
+      const result = await testEndpointConnectivity(request.endpointType, request.endpointUrl);
+      return new Response(
+        JSON.stringify(result),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    // Apply endpoint overrides if provided
+    const ollamaUrl = request.endpointOverrides?.ollamaUrl || OLLAMA_URL;
+    const vllmUrl = request.endpointOverrides?.vllmUrl || VLLM_URL;
+    const hfTgiUrl = request.endpointOverrides?.hfTgiUrl || HF_TGI_URL;
+    
     console.log('[LLM Router] Request:', {
       model: request.model || 'auto',
       task: request.task,
       orchestration: request.orchestration || 'simple',
       preferLocal: request.preferLocal ?? true,
     });
-    console.log('[LLM Router] Local endpoints:', { OLLAMA_URL, VLLM_URL, HF_TGI_URL });
+    console.log('[LLM Router] Active endpoints:', { ollamaUrl, vllmUrl, hfTgiUrl });
 
     // Select model based on task if not specified - prioritize local
     let modelId: ModelId = (request.model === 'auto' || !request.model)

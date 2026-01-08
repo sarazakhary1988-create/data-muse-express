@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Settings, Moon, Sun, Trash2, Database, RefreshCw, Newspaper, Bell, Globe } from 'lucide-react';
+import { Settings, Moon, Sun, Trash2, Database, RefreshCw, Newspaper, Bell, Globe, Cpu } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -20,6 +20,7 @@ import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { NewsSourceSettings } from '@/components/NewsSourceSettings';
 import { NewsNotificationSettings } from '@/components/NewsNotificationSettings';
 import { CustomCrawlSourceSettings } from '@/components/CustomCrawlSourceSettings';
+import { LLMEndpointSettings } from '@/components/LLMEndpointSettings';
 
 interface SettingsDialogProps {
   collapsed?: boolean;
@@ -112,6 +113,17 @@ export const SettingsDialog = ({ collapsed = false }: SettingsDialogProps) => {
                 onCheckedChange={(checked) => setStrictMode({ ...strictMode, enabled: checked })}
               />
             </div>
+          </div>
+
+          <Separator />
+
+          {/* Local LLM Endpoints */}
+          <div className="space-y-4">
+            <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
+              <Cpu className="w-4 h-4" />
+              Local LLM Inference Endpoints
+            </h4>
+            <LLMEndpointSettings />
           </div>
 
           <Separator />
