@@ -22,7 +22,6 @@ import { ResearchTemplates } from '@/components/templates/ResearchTemplates';
 import { HypothesisLab } from '@/components/hypothesis/HypothesisLab';
 import { LeadEnrichment } from '@/components/leads/LeadEnrichment';
 import { IntegrationsPage } from '@/components/integrations/IntegrationsPage';
-import { NewsRibbon } from '@/components/NewsRibbon';
 import { ManusRealtimePanel } from '@/components/ManusRealtimePanel';
 import { StreamedResultsList } from '@/components/StreamedResultsList';
 import { useManusRealtime } from '@/hooks/useManusRealtime';
@@ -36,7 +35,6 @@ const Index = () => {
   const [activeView, setActiveView] = useState<ViewType>('search');
   const [researchSteps, setResearchSteps] = useState(defaultResearchSteps);
   const [lastQuery, setLastQuery] = useState('');
-  const [ribbonPosition, setRibbonPosition] = useState<'top' | 'bottom'>('top');
   
   // Manus Realtime connection for live agent progress
   const manusRealtime = useManusRealtime({
@@ -414,16 +412,8 @@ const Index = () => {
         
         {/* Main Content */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Top Navigation */}
+          {/* Top Navigation with integrated News Ticker */}
           <TopNavigation />
-          
-          {/* News Monitoring Ribbon */}
-          <NewsRibbon 
-            onResearchNews={(query) => {
-              handleSearch(query);
-            }}
-            onPositionChange={setRibbonPosition}
-          />
           
           {/* Main Content Area */}
           <main className="flex-1 overflow-auto">
