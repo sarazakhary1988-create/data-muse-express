@@ -81,51 +81,42 @@ class ToolAdapter {
   }
 
   async search(query: string, options: { domain?: string; limit?: number } = {}): Promise<any[]> {
-    const tavilyKey = Deno.env.get('TAVILY_API_KEY');
-    if (!tavilyKey) {
-      console.warn('TAVILY_API_KEY not set, using fallback search');
-      return this.fallbackSearch(query);
-    }
-
+    // Use our internal web-search function (no external API required)
     try {
-      const response = await fetch('https://api.tavily.com/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          api_key: tavilyKey,
-          query,
-          search_depth: 'advanced',
-          max_results: options.limit || 10,
-          include_domains: options.domain ? [options.domain] : undefined,
-        }),
-      });
-
-      if (!response.ok) throw new Error(`Tavily search failed: ${response.status}`);
+      console.log(`[Orchestrator] Searching: "${query.slice(0, 50)}..."`);
       
-      const data = await response.json();
-      return data.results || [];
-    } catch (error) {
-      console.error('Search error:', error);
-      return this.fallbackSearch(query);
-    }
-  }
-
-  private async fallbackSearch(query: string): Promise<any[]> {
-    // Use research-search edge function as fallback
-    try {
-      const response = await fetch(`${this.supabaseUrl}/functions/v1/research-search`, {
+      const response = await fetch(`${this.supabaseUrl}/functions/v1/web-search`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.supabaseKey}`,
         },
-        body: JSON.stringify({ query, maxResults: 10 }),
+        body: JSON.stringify({
+          query,
+          maxResults: options.limit || 10,
+          searchEngine: 'all',
+          scrapeContent: true,
+        }),
       });
+
+      if (!response.ok) {
+        console.error(`[Orchestrator] web-search failed: ${response.status}`);
+        return [];
+      }
       
-      if (!response.ok) return [];
       const data = await response.json();
-      return data.results || [];
-    } catch {
+      // Handle both response formats
+      const results = data.data || data.results || [];
+      console.log(`[Orchestrator] web-search returned ${results.length} results`);
+      
+      return results.map((r: any) => ({
+        url: r.url,
+        title: r.title || 'Untitled',
+        content: r.markdown || r.description || '',
+        score: 0.8,
+      }));
+    } catch (error) {
+      console.error('[Orchestrator] Search error:', error);
       return [];
     }
   }

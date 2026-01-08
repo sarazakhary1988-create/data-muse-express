@@ -93,7 +93,7 @@ async function searchWithWebAgent(query: string, maxResults: number = 10): Promi
         query,
         maxResults,
         searchEngine: 'all', // Use all search engines
-        scrapeContent: false, // Don't scrape yet, we'll use playwright
+        scrapeContent: true, // Scrape content directly
       }),
     });
     
@@ -103,23 +103,31 @@ async function searchWithWebAgent(query: string, maxResults: number = 10): Promi
     }
     
     const data = await response.json();
-    const results = data.results || [];
+    // web-search returns data in 'data' array, not 'results'
+    const results = data.data || data.results || [];
     
     console.log(`[wide-research] web-search returned ${results.length} results`);
     
-    return results.map((r: any) => ({
-      url: r.url,
-      title: r.title || 'Untitled',
-      domain: r.domain || (r.url ? new URL(r.url).hostname.replace('www.', '') : 'unknown'),
-      content: r.description || r.markdown || '',
-      markdown: r.markdown || r.description || '',
-      snippet: (r.description || r.markdown || '').slice(0, 280),
-      fetchedAt: r.fetchedAt || new Date().toISOString(),
-      reliability: 0.8,
-      source: r.source || 'web-search',
-      relevanceScore: 0.75,
-      status: 'pending' as const,
-    }));
+    return results.map((r: any) => {
+      let domain = 'unknown';
+      try {
+        domain = r.domain || (r.url ? new URL(r.url).hostname.replace('www.', '') : 'unknown');
+      } catch {}
+      
+      return {
+        url: r.url,
+        title: r.title || 'Untitled',
+        domain,
+        content: r.markdown || r.description || '',
+        markdown: r.markdown || r.description || '',
+        snippet: (r.description || r.markdown || '').slice(0, 280),
+        fetchedAt: r.fetchedAt || new Date().toISOString(),
+        reliability: 0.8,
+        source: r.source || 'web-search',
+        relevanceScore: 0.75,
+        status: r.markdown && r.markdown.length > 100 ? 'scraped' as const : 'pending' as const,
+      };
+    });
   } catch (error) {
     console.error('[wide-research] web-search error:', error);
     return [];
@@ -287,7 +295,8 @@ async function performMultiAgentResearch(
   console.log('[wide-research] Starting multi-agent research...');
   
   // STEP 1: Search using web-search agent (parallel for all subqueries)
-  const searchPromises = subQueries.slice(0, 4).map(sq => searchWithWebAgent(sq, 5));
+  const uniqueQueries = [...new Set([query, ...subQueries.slice(0, 3)])];
+  const searchPromises = uniqueQueries.map(sq => searchWithWebAgent(sq, Math.ceil(maxResults / uniqueQueries.length)));
   const searchResultArrays = await Promise.all(searchPromises);
   
   // Combine and deduplicate results
@@ -296,7 +305,7 @@ async function performMultiAgentResearch(
   
   for (const results of searchResultArrays) {
     for (const result of results) {
-      if (!seenUrls.has(result.url)) {
+      if (result.url && !seenUrls.has(result.url)) {
         seenUrls.add(result.url);
         allSearchResults.push(result);
       }
@@ -310,28 +319,38 @@ async function performMultiAgentResearch(
     return { answer: '', sources: [] };
   }
   
-  // STEP 2: Scrape top results using playwright-browser agent (parallel)
-  const topResults = allSearchResults.slice(0, 6);
-  const scrapePromises = topResults.map(async (source) => {
-    const scraped = await scrapeWithPlaywright(source.url);
-    if (scraped.content && scraped.content.length > 100) {
-      return {
-        ...source,
-        content: scraped.content.slice(0, 8000),
-        markdown: scraped.markdown.slice(0, 8000),
-        title: scraped.title || source.title,
-        status: 'scraped' as const,
-        relevanceScore: 0.85,
-      };
-    }
-    return source;
-  });
+  // STEP 2: Scrape top results that don't have content yet
+  const needsScraping = allSearchResults.filter(s => s.status !== 'scraped' || !s.content || s.content.length < 100);
+  const alreadyScraped = allSearchResults.filter(s => s.status === 'scraped' && s.content && s.content.length >= 100);
   
-  const scrapedSources = await Promise.all(scrapePromises);
+  const topToScrape = needsScraping.slice(0, 4);
+  
+  if (topToScrape.length > 0) {
+    console.log(`[wide-research] Scraping ${topToScrape.length} sources with playwright...`);
+    const scrapePromises = topToScrape.map(async (source) => {
+      const scraped = await scrapeWithPlaywright(source.url);
+      if (scraped.content && scraped.content.length > 100) {
+        return {
+          ...source,
+          content: scraped.content.slice(0, 8000),
+          markdown: scraped.markdown.slice(0, 8000),
+          title: scraped.title || source.title,
+          status: 'scraped' as const,
+          relevanceScore: 0.85,
+        };
+      }
+      return source;
+    });
+    
+    const newlyScraped = await Promise.all(scrapePromises);
+    alreadyScraped.push(...newlyScraped.filter(s => s.status === 'scraped'));
+  }
+  
+  const scrapedSources = alreadyScraped.slice(0, maxResults);
   
   // Count how many were successfully scraped
-  const successfulScrapes = scrapedSources.filter(s => s.status === 'scraped').length;
-  console.log(`[wide-research] Successfully scraped ${successfulScrapes}/${topResults.length} sources`);
+  const successfulScrapes = scrapedSources.filter(s => s.content && s.content.length > 100).length;
+  console.log(`[wide-research] Successfully have ${successfulScrapes} sources with content`);
   
   // STEP 3: Synthesize answer from scraped content
   const { answer, confidence } = await synthesizeAnswer(query, scrapedSources);
@@ -355,8 +374,8 @@ async function performMultiAgentResearch(
     });
   }
   
-  // Add scraped sources
-  finalSources.push(...scrapedSources.slice(0, maxResults - 1));
+  // Add scraped sources (filter out synthesis)
+  finalSources.push(...scrapedSources.filter(s => s.url !== 'manus://research-synthesis').slice(0, maxResults - 1));
   
   console.log(`[wide-research] Research complete with ${finalSources.length} sources`);
   
@@ -379,7 +398,10 @@ async function performDeepResearch(
   console.log('[wide-research] Starting GPT-Researcher deep research...');
   
   try {
-    // Call the GPT-Researcher edge function
+    // Call the GPT-Researcher edge function with timeout
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 90000); // 90 second timeout
+    
     const response = await fetch(`${url}/functions/v1/gpt-researcher`, {
       method: 'POST',
       headers: {
@@ -389,12 +411,15 @@ async function performDeepResearch(
       body: JSON.stringify({
         query,
         reportType: config?.reportType || 'research_report',
-        maxSources: 15,
+        maxSources: 12,
         parallelAgents: config?.maxSubAgents || 4,
         includeFactVerification: config?.includeFactVerification !== false,
         outputFormat: 'markdown',
       }),
+      signal: controller.signal,
     });
+    
+    clearTimeout(timeout);
     
     if (!response.ok) {
       console.error('[wide-research] GPT-Researcher call failed:', response.status);
@@ -408,7 +433,20 @@ async function performDeepResearch(
     
     const data = await response.json();
     
+    // Check for error response
+    if (data.error) {
+      console.error('[wide-research] GPT-Researcher returned error:', data.error);
+      return { 
+        report: '', 
+        sources: [], 
+        verifiedFacts: [],
+        metadata: { totalAgents: 0, queriesExecuted: 0, llmProvider: 'error' }
+      };
+    }
+    
     console.log(`[wide-research] GPT-Researcher completed:`, {
+      hasReport: !!data.report,
+      reportLength: data.report?.length || 0,
       sources: data.sources?.length || 0,
       facts: data.factsVerified?.length || 0,
       agents: data.metadata?.totalAgents || 0,
@@ -416,9 +454,9 @@ async function performDeepResearch(
     
     // Transform GPT-Researcher sources to WebSource format
     const sources: WebSource[] = (data.sources || []).map((s: any) => ({
-      url: s.url,
-      title: s.title,
-      domain: s.domain,
+      url: s.url || '',
+      title: s.title || 'Untitled',
+      domain: s.domain || (s.url ? new URL(s.url).hostname.replace('www.', '') : 'unknown'),
       content: s.extractedContent || '',
       markdown: s.extractedContent || '',
       snippet: (s.extractedContent || '').slice(0, 280),
@@ -430,7 +468,7 @@ async function performDeepResearch(
     }));
     
     // Add the report as the primary source
-    if (data.report) {
+    if (data.report && data.report.length > 50) {
       sources.unshift({
         url: 'manus://gpt-researcher-report',
         title: `Deep Research Report: ${query.slice(0, 50)}...`,
@@ -453,7 +491,8 @@ async function performDeepResearch(
       metadata: data.metadata || { totalAgents: 6, queriesExecuted: 5, llmProvider: 'LLM Router' },
     };
   } catch (error) {
-    console.error('[wide-research] GPT-Researcher error:', error);
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[wide-research] GPT-Researcher error:', errorMsg);
     return { 
       report: '', 
       sources: [], 
