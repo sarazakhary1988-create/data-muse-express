@@ -131,6 +131,7 @@ export function useNewsNotifications() {
     try {
       const categoryLabels: Record<NewsCategory, string> = {
         ipo: '🚀 New IPO',
+        cma: '📋 CMA News',
         cma_violation: '⚠️ CMA Violation',
         acquisition: '🤝 Acquisition',
         contract: '📄 Contract Award',

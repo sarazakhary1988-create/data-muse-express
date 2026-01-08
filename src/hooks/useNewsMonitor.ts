@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { validateUrl, OFFICIAL_DOMAINS, VERIFIED_DOMAINS, PREMIUM_DOMAINS } from '@/lib/urlValidator';
 
-// Extended categories for lead generation
+// Extended categories for lead generation - CMA now has dedicated category
 export type NewsCategory = 
   | 'ipo' 
   | 'market' 
@@ -12,6 +12,7 @@ export type NewsCategory =
   | 'joint_venture' 
   | 'acquisition' 
   | 'appointment' 
+  | 'cma'  // NEW: Dedicated CMA category for ALL CMA news
   | 'cma_violation'
   | 'vision_2030'
   | 'banking'
@@ -53,11 +54,11 @@ const NEWS_STORAGE_KEY = 'orkestra_monitored_news';
 const LAST_CHECK_KEY = 'orkestra_last_news_check';
 const REFRESH_INTERVAL_KEY = 'orkestra_news_refresh_interval';
 
-// Official sources for higher trust
+// Official sources for higher trust - CMA domains added
 const OFFICIAL_SOURCES = [
-  'tadawul', 'saudiexchange', 'cma.org.sa', 'argaam', 'zawya',
+  'tadawul', 'saudiexchange', 'cma.org.sa', 'cma.gov.sa', 'argaam', 'zawya',
   'sec.gov', 'nasdaq', 'nyse', 'lseg', 'londonstockexchange',
-  'reuters', 'bloomberg', 'ft.com', 'wsj.com', 'yahoo'
+  'reuters', 'bloomberg', 'ft.com', 'wsj.com', 'yahoo', 'sama.gov.sa', 'mof.gov.sa'
 ];
 
 // Country detection patterns
@@ -101,10 +102,13 @@ export interface NewsFilters {
   dateTo?: Date;
 }
 
-// MANUS 1.6 MAX - Category-specific keyword mapping
+// MANUS 1.7 MAX - Category-specific keyword mapping
 // Each category uses specific keyword-tuned queries (NOT generic)
+// CMA now has dedicated category separate from cma_violation
 const MANUS_CATEGORY_KEYWORDS: Record<string, string[]> = {
-  cma_violation: ['CMA announcement', 'CMA regulation', 'CMA violation', 'CMA fine', 'Capital Market Authority penalty', 'CMA suspension', 'CMA warning'],
+  // Dedicated CMA category - ALL CMA news (not just violations)
+  cma: ['CMA', 'Capital Market Authority', 'هيئة السوق المالية', 'cma.org.sa', 'cma.gov.sa', 'CMA announcement', 'CMA regulation', 'CMA approval', 'CMA license'],
+  cma_violation: ['CMA violation', 'CMA fine', 'Capital Market Authority penalty', 'CMA suspension', 'CMA warning', 'CMA enforcement'],
   ipo: ['IPO', 'initial public offering', 'listing', 'prospectus', 'public float', 'stock debut', 'goes public', 'IPO filing'],
   acquisition: ['merger', 'acquisition', 'M&A', 'buyout', 'takeover', 'deal closed', 'acquiring company'],
   banking: ['banking sector', 'bank profit', 'bank earnings', 'SNB', 'Al Rajhi Bank', 'banking services', 'loan growth', 'bank assets'],
@@ -576,9 +580,16 @@ function extractCompanies(text: string): string[] {
 function categorizeNews(title: string, snippet: string): NewsCategory {
   const text = `${title} ${snippet}`.toLowerCase();
   
+  // CMA Violation (specific case - check first)
   if (/\b(cma|capital market authority)\b/i.test(text) && 
       /\b(violation|fine|penalty|sanction|breach|warning|suspend)\b/i.test(text)) {
     return 'cma_violation';
+  }
+  
+  // CMA General (any CMA news from official domains or with CMA keywords)
+  if (/\b(cma|capital market authority|هيئة السوق المالية)\b/i.test(text) ||
+      /cma\.org\.sa|cma\.gov\.sa/i.test(text)) {
+    return 'cma';
   }
   
   if (/\b(vision 2030|giga.?project|neom|the line|qiddiya|red sea|diriyah|amaala)\b/i.test(text)) {
