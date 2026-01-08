@@ -559,57 +559,55 @@ export function useNewsMonitor() {
     const currentFilters = filters || activeFilters;
     
     try {
-      const queries = buildFilteredQueries(currentFilters);
-      console.log('[NewsMonitor] Fetching with queries:', queries);
+      // Use the new news-search edge function for server-side category filtering
+      const activeCategories = currentFilters?.categories?.filter(c => c !== 'all') || [];
+      const activeCountries = currentFilters?.countries?.filter(c => c !== 'all') || [];
+      const activeSources = currentFilters?.sources?.filter(s => s !== 'all') || [];
       
-      const allResults: any[] = [];
+      console.log('[NewsMonitor] Fetching with categories:', activeCategories, 'countries:', activeCountries);
       
-      const batchSize = 3;
-      for (let i = 0; i < queries.length; i += batchSize) {
-        const batch = queries.slice(i, i + batchSize);
-        const results = await Promise.all(
-          batch.map(query => 
-            supabase.functions.invoke('wide-research', {
-              body: withLLMConfig({ query, maxResults: 15, newsMode: true }),
-            })
-          )
-        );
-        
-        results.forEach(({ data }) => {
-          const searchResults = data?.searchResults || data?.results || [];
-          allResults.push(...searchResults);
-        });
+      // Call the news-search edge function which handles server-side categorization
+      const { data, error: fetchError } = await supabase.functions.invoke('news-search', {
+        body: {
+          categories: activeCategories.length > 0 ? activeCategories : undefined,
+          countries: activeCountries.length > 0 ? activeCountries : undefined,
+          sources: activeSources.length > 0 ? activeSources : undefined,
+          maxResults: 50,
+          dateFrom: currentFilters?.dateFrom?.toISOString(),
+          dateTo: currentFilters?.dateTo?.toISOString(),
+        },
+      });
+      
+      if (fetchError) {
+        console.error('[NewsMonitor] news-search error, falling back to wide-research:', fetchError);
+        // Fallback to old method if news-search fails
+        return await fallbackFetchNews(currentFilters);
       }
-
-      console.log('[NewsMonitor] Got total results:', allResults.length);
       
-      const urlSet = new Set<string>();
-      const newNewsItems: NewsItem[] = allResults
+      const newsResults = data?.news || [];
+      console.log('[NewsMonitor] Got pre-categorized results:', newsResults.length);
+      
+      // Process results - they're already categorized by the server
+      const newNewsItems: NewsItem[] = newsResults
         .filter((result: any) => {
           if (!result.title || !result.url) return false;
           if (!isValidNewsUrl(result.url)) return false;
-          if (urlSet.has(result.url)) return false;
-          urlSet.add(result.url);
           return true;
         })
         .map((result: any) => {
-          const id = `news_${btoa(result.url).slice(0, 20)}`;
+          const id = result.id || `news_${btoa(result.url).slice(0, 20)}`;
           const isNew = !seenNewsIds.current.has(id);
           
           if (isNew) {
             seenNewsIds.current.add(id);
           }
           
-          const source = (typeof result.source === 'string' && result.source.trim().length > 0)
-            ? result.source
-            : extractDomain(result.url);
-
-          const snippet = (result.snippet || result.content || '').toString();
+          const source = result.source || extractDomain(result.url);
+          const snippet = (result.snippet || '').toString();
           const text = `${result.title} ${snippet}`;
-          const country = detectCountry(text);
+          const country = result.country || detectCountry(text);
 
-          const tsCandidate = result.fetchedAt || result.publishDate || result.publishedAt;
-          const parsedTs = tsCandidate ? new Date(tsCandidate) : new Date();
+          const parsedTs = result.timestamp ? new Date(result.timestamp) : new Date();
           const timestamp = Number.isNaN(parsedTs.getTime()) ? new Date() : parsedTs;
           
           const credibility = getSourceCredibility(result.url, source);
@@ -620,13 +618,14 @@ export function useNewsMonitor() {
             source,
             url: result.url,
             timestamp,
-            category: categorizeNews(result.title, snippet, country),
+            // Use server-provided category - already filtered by server
+            category: result.category as NewsCategory,
             isNew,
             snippet: snippet.slice(0, 200) || '',
             country,
             region: country ? REGION_MAP[country] : 'global',
             companies: extractCompanies(text),
-            isOfficial: credibility.isOfficial,
+            isOfficial: result.isOfficial || credibility.isOfficial,
             isValidated: credibility.isVerified || credibility.isOfficial,
           };
         })
@@ -665,6 +664,63 @@ export function useNewsMonitor() {
       return [];
     }
   }, [persistNews, activeFilters]);
+  
+  // Fallback method using wide-research (old behavior)
+  const fallbackFetchNews = async (currentFilters?: NewsFilters) => {
+    const queries = buildFilteredQueries(currentFilters);
+    const allResults: any[] = [];
+    
+    const batchSize = 3;
+    for (let i = 0; i < queries.length; i += batchSize) {
+      const batch = queries.slice(i, i + batchSize);
+      const results = await Promise.all(
+        batch.map(query => 
+          supabase.functions.invoke('wide-research', {
+            body: withLLMConfig({ query, maxResults: 15, newsMode: true }),
+          })
+        )
+      );
+      
+      results.forEach(({ data }) => {
+        const searchResults = data?.searchResults || data?.results || [];
+        allResults.push(...searchResults);
+      });
+    }
+    
+    const urlSet = new Set<string>();
+    return allResults
+      .filter((result: any) => {
+        if (!result.title || !result.url) return false;
+        if (!isValidNewsUrl(result.url)) return false;
+        if (urlSet.has(result.url)) return false;
+        urlSet.add(result.url);
+        return true;
+      })
+      .map((result: any) => {
+        const id = `news_${btoa(result.url).slice(0, 20)}`;
+        const source = result.source || extractDomain(result.url);
+        const snippet = (result.snippet || result.content || '').toString();
+        const text = `${result.title} ${snippet}`;
+        const country = detectCountry(text);
+        const parsedTs = result.fetchedAt || result.publishDate ? new Date(result.fetchedAt || result.publishDate) : new Date();
+        
+        return {
+          id,
+          title: result.title,
+          source,
+          url: result.url,
+          timestamp: Number.isNaN(parsedTs.getTime()) ? new Date() : parsedTs,
+          category: categorizeNews(result.title, snippet, country),
+          isNew: !seenNewsIds.current.has(id),
+          snippet: snippet.slice(0, 200),
+          country,
+          region: country ? REGION_MAP[country] : 'global',
+          companies: extractCompanies(text),
+          isOfficial: false,
+          isValidated: false,
+        };
+      });
+  };
 
   const startMonitoring = useCallback(() => {
     if (intervalRef.current) return;
