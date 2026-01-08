@@ -28,7 +28,43 @@ interface WideResearchRequest {
     vllmUrl?: string;
     hfTgiUrl?: string;
   };
+  // Priority sources - user-selected sources to prioritize
+  prioritySources?: string[];
+  // Data source ID from connector
+  dataSourceId?: string;
 }
+
+// Priority source URLs from DATA_SOURCE_CONNECTORS
+const PRIORITY_SOURCE_URLS: Record<string, { url: string; name: string }> = {
+  // Official/Government Sources
+  'cma': { url: 'https://cma.org.sa', name: 'CMA Saudi' },
+  'tadawul': { url: 'https://www.saudiexchange.sa', name: 'Saudi Exchange' },
+  'sec': { url: 'https://www.sec.gov', name: 'SEC EDGAR' },
+  // Saudi/Regional News
+  'argaam': { url: 'https://www.argaam.com', name: 'Argaam' },
+  'mubasher': { url: 'https://www.mubasher.info', name: 'Mubasher' },
+  'aleqt': { url: 'https://www.aleqt.com', name: 'Al Eqtisadiah' },
+  'asharq': { url: 'https://asharqbusiness.com', name: 'Asharq Business' },
+  'arabnews': { url: 'https://www.arabnews.com', name: 'Arab News' },
+  'saudigazette': { url: 'https://saudigazette.com.sa', name: 'Saudi Gazette' },
+  // Premium Global News
+  'reuters': { url: 'https://www.reuters.com', name: 'Reuters' },
+  'bloomberg': { url: 'https://www.bloomberg.com', name: 'Bloomberg' },
+  'ft': { url: 'https://www.ft.com', name: 'Financial Times' },
+  // Financial Data Providers
+  'yahoo': { url: 'https://finance.yahoo.com', name: 'Yahoo Finance' },
+  'tradingview': { url: 'https://www.tradingview.com', name: 'TradingView' },
+  'marketscreener': { url: 'https://www.marketscreener.com', name: 'MarketScreener' },
+  'marketwatch': { url: 'https://www.marketwatch.com', name: 'MarketWatch' },
+  'simplywall': { url: 'https://simplywall.st', name: 'Simply Wall St' },
+  'investing': { url: 'https://www.investing.com', name: 'Investing.com' },
+  'seekingalpha': { url: 'https://seekingalpha.com', name: 'Seeking Alpha' },
+  'morningstar': { url: 'https://www.morningstar.com', name: 'Morningstar' },
+  'zacks': { url: 'https://www.zacks.com', name: 'Zacks' },
+  'koyfin': { url: 'https://www.koyfin.com', name: 'Koyfin' },
+  'stockanalysis': { url: 'https://stockanalysis.com', name: 'StockAnalysis' },
+  'tradingeconomics': { url: 'https://tradingeconomics.com', name: 'Trading Economics' },
+};
 
 interface VerifiedFact {
   claim: string;
@@ -72,7 +108,12 @@ function getSupabaseConfig() {
 }
 
 // Step 1: Use web-search agent to find real sources
-async function searchWithWebAgent(query: string, maxResults: number = 10): Promise<WebSource[]> {
+async function searchWithWebAgent(
+  query: string, 
+  maxResults: number = 10,
+  prioritySources?: string[],
+  dataSourceId?: string
+): Promise<WebSource[]> {
   const { url, key } = getSupabaseConfig();
   
   if (!url || !key) {
@@ -80,7 +121,10 @@ async function searchWithWebAgent(query: string, maxResults: number = 10): Promi
     return [];
   }
   
-  console.log(`[wide-research] Calling web-search agent for: "${query.slice(0, 60)}..."`);
+  console.log(`[wide-research] Calling web-search agent for: "${query.slice(0, 60)}..."`, {
+    prioritySources: prioritySources?.length || 0,
+    dataSourceId,
+  });
   
   try {
     const response = await fetch(`${url}/functions/v1/web-search`, {
@@ -94,6 +138,8 @@ async function searchWithWebAgent(query: string, maxResults: number = 10): Promi
         maxResults,
         searchEngine: 'all', // Use all search engines
         scrapeContent: true, // Scrape content directly
+        prioritySources, // Pass priority sources to prioritize
+        dataSourceId, // Pass selected data source
       }),
     });
     
@@ -290,13 +336,20 @@ Analyze these sources and provide a direct answer to the query. Only use informa
 async function performMultiAgentResearch(
   query: string, 
   subQueries: string[],
-  maxResults: number
+  maxResults: number,
+  prioritySources?: string[],
+  dataSourceId?: string
 ): Promise<{ answer: string; sources: WebSource[] }> {
-  console.log('[wide-research] Starting multi-agent research...');
+  console.log('[wide-research] Starting multi-agent research...', {
+    prioritySources: prioritySources?.length || 0,
+    dataSourceId,
+  });
   
   // STEP 1: Search using web-search agent (parallel for all subqueries)
   const uniqueQueries = [...new Set([query, ...subQueries.slice(0, 3)])];
-  const searchPromises = uniqueQueries.map(sq => searchWithWebAgent(sq, Math.ceil(maxResults / uniqueQueries.length)));
+  const searchPromises = uniqueQueries.map(sq => 
+    searchWithWebAgent(sq, Math.ceil(maxResults / uniqueQueries.length), prioritySources, dataSourceId)
+  );
   const searchResultArrays = await Promise.all(searchPromises);
   
   // Combine and deduplicate results
@@ -917,12 +970,16 @@ serve(async (req) => {
     const isNewsMode = body.newsMode === true;
     const isDeepResearch = body.deepResearch === true;
     const maxResults = body.maxResults || 15;
+    const prioritySources = body.prioritySources || [];
+    const dataSourceId = body.dataSourceId;
 
     console.log('[wide-research] Starting:', { 
       query: query.slice(0, 80), 
       isNewsMode, 
       isDeepResearch,
-      maxResults 
+      maxResults,
+      prioritySources: prioritySources.length,
+      dataSourceId,
     });
 
     const subQueries = body.items && body.items.length > 0 
@@ -1057,7 +1114,13 @@ serve(async (req) => {
     }
 
     // RESEARCH MODE: Use multi-agent research (web-search + playwright + synthesis)
-    const { answer, sources: researchSources } = await performMultiAgentResearch(query, subQueries, maxResults);
+    const { answer, sources: researchSources } = await performMultiAgentResearch(
+      query, 
+      subQueries, 
+      maxResults, 
+      prioritySources, 
+      dataSourceId
+    );
     
     if (researchSources.length > 0) {
       sources = researchSources;
