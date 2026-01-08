@@ -204,20 +204,31 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
     timeFrameFilter,
     setTimeFrameFilter,
     countryFilter,
-    setCountryFilter
+    setCountryFilter,
+    researchOptions,
+    setResearchOptions,
   } = useResearchStore();
   const [isFocused, setIsFocused] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [hoveredSuggestion, setHoveredSuggestion] = useState<number | null>(null);
   const [showFilters, setShowFilters] = useState(false);
-  const [customDomains, setCustomDomains] = useState('');
-  const [selectedConnector, setSelectedConnector] = useState('auto');
-  const [selectedMcp, setSelectedMcp] = useState('manus');
-  const [selectedDataSource, setSelectedDataSource] = useState('auto');
-  const [enrichWithExplorium, setEnrichWithExplorium] = useState(true);
   const [exploriumEnrichment, setExploriumEnrichment] = useState<ExploriumEnrichment | null>(null);
   const [isEnriching, setIsEnriching] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Use store values for research options
+  const customDomains = researchOptions.customDomains.join(', ');
+  const setCustomDomains = (value: string) => {
+    setResearchOptions({ customDomains: value.split(',').map(d => d.trim()).filter(Boolean) });
+  };
+  const selectedConnector = researchOptions.aiConnector;
+  const setSelectedConnector = (value: string) => setResearchOptions({ aiConnector: value });
+  const selectedMcp = researchOptions.mcpConnector;
+  const setSelectedMcp = (value: string) => setResearchOptions({ mcpConnector: value });
+  const selectedDataSource = researchOptions.dataSource;
+  const setSelectedDataSource = (value: string) => setResearchOptions({ dataSource: value });
+  const enrichWithExplorium = researchOptions.enrichWithExplorium;
+  const setEnrichWithExplorium = (value: boolean) => setResearchOptions({ enrichWithExplorium: value });
 
   const detectedUrl = isUrl(searchQuery);
   const charCount = searchQuery.length;
@@ -266,21 +277,34 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
     return () => clearTimeout(timer);
   }, [searchQuery, enrichWithExplorium]);
 
+  // Build research context for PromptEnhancer and submission
+  const buildResearchContext = () => {
+    return {
+      timeframe: formatTimeFrameForQuery(timeFrameFilter),
+      country: formatCountryForQuery(countryFilter),
+      domains: researchOptions.customDomains,
+      dataSource: researchOptions.dataSource,
+      aiConnector: researchOptions.aiConnector,
+      mcpConnector: researchOptions.mcpConnector,
+      reportFormat,
+      deepVerifyMode,
+      enrichWithExplorium: researchOptions.enrichWithExplorium,
+    };
+  };
+
   const handleSubmit = () => {
     if (searchQuery.trim() && !isSearching) {
       const timeContext = formatTimeFrameForQuery(timeFrameFilter);
       const countryContext = formatCountryForQuery(countryFilter);
+      const researchContext = buildResearchContext();
       
       // Get selected data source connector
       const connector = DATA_SOURCE_CONNECTORS.find(c => c.id === selectedDataSource);
       
       // Add domain constraints if specified
       let domainContext = '';
-      if (customDomains.trim()) {
-        const domains = customDomains.split(',').map(d => d.trim()).filter(Boolean);
-        if (domains.length > 0) {
-          domainContext = `site:${domains.join(' OR site:')}`;
-        }
+      if (researchOptions.customDomains.length > 0) {
+        domainContext = `site:${researchOptions.customDomains.join(' OR site:')}`;
       }
       
       // Build query with connector transformation
@@ -292,7 +316,12 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
       const contextParts = [baseQuery, timeContext, countryContext, domainContext].filter(Boolean);
       const fullQuery = contextParts.join(' ');
       
-      console.log('[SearchInput] Full query with data source:', fullQuery, 'Connector:', selectedDataSource);
+      // Log full research context for debugging
+      console.log('[SearchInput] ===== RESEARCH EXECUTION =====');
+      console.log('[SearchInput] Query:', fullQuery);
+      console.log('[SearchInput] Context:', JSON.stringify(researchContext, null, 2));
+      console.log('[SearchInput] Detected Intent:', detectedIntent?.intent || 'general');
+      
       onSearch(fullQuery);
       setShowSuggestions(false);
     }
@@ -956,7 +985,7 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
                   query={searchQuery} 
                   onEnhanced={handleEnhancedQuery}
                   disabled={isSearching}
-                  timeContext={formatTimeFrameForQuery(timeFrameFilter)}
+                  researchContext={buildResearchContext()}
                 />
               </motion.div>
               
