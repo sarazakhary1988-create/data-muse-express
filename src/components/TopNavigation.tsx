@@ -7,8 +7,7 @@ import {
   Globe, 
   ChevronDown,
   BarChart3,
-  Keyboard,
-  Newspaper
+  Keyboard
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -29,23 +28,17 @@ import {
 import { useTheme } from '@/hooks/useTheme';
 import { useLanguage, Language } from '@/lib/i18n/LanguageContext';
 import { useResearchStore } from '@/store/researchStore';
-import { NewsFilter, useNewsFilterState } from '@/components/NewsRibbon';
 import { cn } from '@/lib/utils';
 
 interface TopNavigationProps {
   className?: string;
-  newsFilterState?: ReturnType<typeof useNewsFilterState>;
 }
 
-export const TopNavigation = ({ className, newsFilterState }: TopNavigationProps) => {
+export const TopNavigation = ({ className }: TopNavigationProps) => {
   const { theme, setTheme } = useTheme();
   const { language, setLanguage, t, isRTL } = useLanguage();
   const { tasks, reports } = useResearchStore();
   const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
-
-  // Use provided filter state or create local one
-  const localFilterState = useNewsFilterState();
-  const filterState = newsFilterState || localFilterState;
 
   const themeOptions = [
     { value: 'light', label: t.common.light, icon: Sun },
@@ -105,15 +98,6 @@ export const TopNavigation = ({ className, newsFilterState }: TopNavigationProps
           </span>
           <span className="text-muted-foreground/40">/</span>
           <span className="text-sm font-semibold">{t.common.researchEngine}</span>
-        </div>
-
-        {/* Center: News Filter */}
-        <div className="hidden lg:flex items-center gap-2">
-          <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-muted/30 border border-border/50">
-            <Newspaper className="w-3.5 h-3.5 text-muted-foreground" />
-            <span className="text-xs text-muted-foreground mr-1">News:</span>
-            <NewsFilter filterState={filterState} />
-          </div>
         </div>
 
         {/* Right: Stats + Controls */}
