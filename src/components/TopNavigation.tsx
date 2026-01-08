@@ -14,7 +14,6 @@ import {
   Settings,
   Bell,
   BellOff,
-  ExternalLink,
   Maximize2,
   TrendingUp,
   AlertCircle,
@@ -28,11 +27,16 @@ import {
   Eye,
   Users,
   BookOpen,
-  Briefcase
+  Briefcase,
+  MapPin,
+  Timer,
+  Filter
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -53,7 +57,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useTheme } from '@/hooks/useTheme';
 import { useLanguage, Language } from '@/lib/i18n/LanguageContext';
 import { useResearchStore } from '@/store/researchStore';
-import { useNewsMonitor, NewsCategory as NewsCategoryType } from '@/hooks/useNewsMonitor';
+import { useNewsMonitor, NewsCategory as NewsCategoryType, RefreshInterval } from '@/hooks/useNewsMonitor';
 import { useNewsSourceSettings } from '@/hooks/useNewsSourceSettings';
 import { useNewsNotifications } from '@/hooks/useNewsNotifications';
 import { useNewsDeduplication } from '@/hooks/useNewsDeduplication';
@@ -118,7 +122,30 @@ const categoryLabels: Record<NewsCategoryType, string> = {
   general: 'News',
 };
 
-type QuickCategory = 'all' | 'listing_approved' | 'merger_acquisition' | 'expansion_contract' | 'country_outlook' | 'regulator_announcement';
+const COUNTRIES = [
+  { code: 'all', label: 'All Countries', flag: '🌍' },
+  { code: 'Saudi Arabia', label: 'Saudi Arabia', flag: '🇸🇦' },
+  { code: 'UAE', label: 'UAE', flag: '🇦🇪' },
+  { code: 'Kuwait', label: 'Kuwait', flag: '🇰🇼' },
+  { code: 'Qatar', label: 'Qatar', flag: '🇶🇦' },
+  { code: 'Bahrain', label: 'Bahrain', flag: '🇧🇭' },
+  { code: 'Oman', label: 'Oman', flag: '🇴🇲' },
+  { code: 'Egypt', label: 'Egypt', flag: '🇪🇬' },
+  { code: 'USA', label: 'USA', flag: '🇺🇸' },
+  { code: 'UK', label: 'UK', flag: '🇬🇧' },
+];
+
+const SOURCES = [
+  { id: 'all', label: 'All Sources' },
+  { id: 'argaam', label: 'Argaam' },
+  { id: 'zawya', label: 'Zawya' },
+  { id: 'reuters', label: 'Reuters' },
+  { id: 'bloomberg', label: 'Bloomberg' },
+  { id: 'arabnews', label: 'Arab News' },
+  { id: 'ft', label: 'Financial Times' },
+  { id: 'yahoo', label: 'Yahoo Finance' },
+  { id: 'tadawul', label: 'Tadawul' },
+];
 
 interface TopNavigationProps {
   className?: string;
@@ -131,12 +158,16 @@ export const TopNavigation = ({ className }: TopNavigationProps) => {
   const { tasks, reports } = useResearchStore();
   const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [activeCategory, setActiveCategory] = useState<QuickCategory>('all');
   const tickerRef = useRef<HTMLDivElement>(null);
   const [isPaused, setIsPaused] = useState(false);
 
+  // Filter states (stored in settings)
+  const [selectedCategories, setSelectedCategories] = useState<NewsCategoryType[]>([]);
+  const [selectedCountry, setSelectedCountry] = useState('all');
+  const [selectedSource, setSelectedSource] = useState('all');
+
   // News hooks
-  const { news, isLoading, secondsUntilRefresh, refreshNews, startMonitoring, stopMonitoring } = useNewsMonitor();
+  const { news, isLoading, secondsUntilRefresh, refreshInterval, refreshNews, setRefreshInterval, startMonitoring, stopMonitoring } = useNewsMonitor();
   const { isSourceAllowed } = useNewsSourceSettings();
   const { notifyNewItems, settings: notificationSettings, toggleNotifications } = useNewsNotifications();
   const { deduplicateNews } = useNewsDeduplication();
@@ -150,13 +181,29 @@ export const TopNavigation = ({ className }: TopNavigationProps) => {
   const filteredNews = useMemo(() => {
     let filtered = news.filter(item => {
       if (!isSourceAllowed(item.source)) return false;
-      if (activeCategory !== 'all' && item.category !== activeCategory) return false;
+      // Category filter
+      if (selectedCategories.length > 0 && !selectedCategories.includes(item.category)) return false;
+      // Country filter
+      if (selectedCountry !== 'all' && item.country !== selectedCountry) return false;
+      // Source filter
+      if (selectedSource !== 'all') {
+        const sourceMatch = item.source.toLowerCase().includes(selectedSource.toLowerCase());
+        if (!sourceMatch) return false;
+      }
       return true;
     });
     return deduplicateNews(filtered);
-  }, [news, activeCategory, isSourceAllowed, deduplicateNews]);
+  }, [news, selectedCategories, selectedCountry, selectedSource, isSourceAllowed, deduplicateNews]);
 
   const newItemsCount = filteredNews.filter(n => n.isNew).length;
+
+  const toggleCategory = (category: NewsCategoryType) => {
+    setSelectedCategories(prev => 
+      prev.includes(category) 
+        ? prev.filter(c => c !== category)
+        : [...prev, category]
+    );
+  };
 
   const themeOptions = [
     { value: 'light', label: t.common.light, icon: Sun },
@@ -180,15 +227,6 @@ export const TopNavigation = ({ className }: TopNavigationProps) => {
     { keys: ['Ctrl+Enter'], description: t.search.startResearch },
     { keys: ['H'], description: t.help.goToHistory },
     { keys: ['N'], description: t.help.newResearch },
-  ];
-
-  const quickCategories: { key: QuickCategory; label: string }[] = [
-    { key: 'all', label: 'All' },
-    { key: 'listing_approved', label: 'IPO' },
-    { key: 'merger_acquisition', label: 'M&A' },
-    { key: 'expansion_contract', label: 'Contracts' },
-    { key: 'country_outlook', label: 'Vision 2030' },
-    { key: 'regulator_announcement', label: 'CMA' },
   ];
 
   useEffect(() => {
@@ -217,6 +255,8 @@ export const TopNavigation = ({ className }: TopNavigationProps) => {
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
+  const hasActiveFilters = selectedCategories.length > 0 || selectedCountry !== 'all' || selectedSource !== 'all';
+
   return (
     <>
       <header 
@@ -235,30 +275,6 @@ export const TopNavigation = ({ className }: TopNavigationProps) => {
             </span>
             <span className="text-muted-foreground/40">/</span>
             <span className="text-sm font-semibold">{t.common.researchEngine}</span>
-          </div>
-
-          {/* Center: News Category Filters */}
-          <div className={cn("hidden lg:flex items-center gap-2", isRTL && "flex-row-reverse")}>
-            <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-muted/50 border border-border/50">
-              <Newspaper className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="text-xs font-medium text-muted-foreground">News:</span>
-            </div>
-            <div className="flex items-center gap-1">
-              {quickCategories.map((cat) => (
-                <button
-                  key={cat.key}
-                  onClick={() => setActiveCategory(cat.key)}
-                  className={cn(
-                    "px-2.5 py-1 text-xs rounded-full transition-all",
-                    activeCategory === cat.key
-                      ? "bg-primary text-primary-foreground font-medium"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                  )}
-                >
-                  {cat.label}
-                </button>
-              ))}
-            </div>
           </div>
 
           {/* Right: Stats + Controls */}
@@ -455,7 +471,7 @@ export const TopNavigation = ({ className }: TopNavigationProps) => {
               ))}
               
               {filteredNews.length === 0 && (
-                <span className="text-xs text-muted-foreground px-4">No news available for selected category</span>
+                <span className="text-xs text-muted-foreground px-4">No news available</span>
               )}
             </motion.div>
           </div>
@@ -501,7 +517,7 @@ export const TopNavigation = ({ className }: TopNavigationProps) => {
             {/* Settings Sheet */}
             <Sheet open={showSettings} onOpenChange={setShowSettings}>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-7 w-7">
+                <Button variant="ghost" size="icon" className={cn("h-7 w-7", hasActiveFilters && "text-primary")}>
                   <Settings className="w-3.5 h-3.5" />
                 </Button>
               </SheetTrigger>
@@ -514,8 +530,136 @@ export const TopNavigation = ({ className }: TopNavigationProps) => {
                 </SheetHeader>
                 
                 <div className="space-y-6 mt-6">
+                  {/* Category Filters */}
+                  <div className="space-y-3">
+                    <Label className="text-sm font-medium flex items-center gap-2">
+                      <Filter className="w-4 h-4" />
+                      Categories
+                    </Label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {Object.entries(categoryLabels).map(([key, label]) => (
+                        <button
+                          key={key}
+                          onClick={() => toggleCategory(key as NewsCategoryType)}
+                          className={cn(
+                            "px-2.5 py-1 text-xs rounded-full border transition-all flex items-center gap-1",
+                            selectedCategories.includes(key as NewsCategoryType)
+                              ? categoryColors[key as NewsCategoryType]
+                              : "border-border text-muted-foreground hover:border-primary/50"
+                          )}
+                        >
+                          {categoryIcons[key as NewsCategoryType]}
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    {selectedCategories.length > 0 && (
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => setSelectedCategories([])}
+                        className="text-xs text-muted-foreground"
+                      >
+                        Clear categories
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Country Filter */}
+                  <div className="space-y-3">
+                    <Label className="text-sm font-medium flex items-center gap-2">
+                      <MapPin className="w-4 h-4" />
+                      Country
+                    </Label>
+                    <Select value={selectedCountry} onValueChange={setSelectedCountry}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {COUNTRIES.map(c => (
+                          <SelectItem key={c.code} value={c.code}>
+                            <span className="flex items-center gap-2">
+                              <span>{c.flag}</span>
+                              <span>{c.label}</span>
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Source Filter */}
+                  <div className="space-y-3">
+                    <Label className="text-sm font-medium flex items-center gap-2">
+                      <Globe className="w-4 h-4" />
+                      Source
+                    </Label>
+                    <Select value={selectedSource} onValueChange={setSelectedSource}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {SOURCES.map(s => (
+                          <SelectItem key={s.id} value={s.id}>
+                            {s.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Refresh Interval */}
+                  <div className="space-y-3">
+                    <Label className="text-sm font-medium flex items-center gap-2">
+                      <Timer className="w-4 h-4" />
+                      Refresh Interval
+                    </Label>
+                    <Select 
+                      value={String(refreshInterval)} 
+                      onValueChange={(val) => setRefreshInterval(Number(val) as RefreshInterval)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1">Every 1 minute</SelectItem>
+                        <SelectItem value="5">Every 5 minutes</SelectItem>
+                        <SelectItem value="15">Every 15 minutes</SelectItem>
+                        <SelectItem value="30">Every 30 minutes</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Language */}
+                  <div className="space-y-3">
+                    <Label className="text-sm font-medium">Language</Label>
+                    <div className="flex gap-2">
+                      <Button
+                        variant={language === 'en' ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setLanguage('en')}
+                        className="gap-2"
+                      >
+                        <span>🇺🇸</span>
+                        <span>English</span>
+                      </Button>
+                      <Button
+                        variant={language === 'ar' ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setLanguage('ar')}
+                        className="gap-2"
+                      >
+                        <span>🇸🇦</span>
+                        <span>العربية</span>
+                      </Button>
+                    </div>
+                  </div>
+
                   {/* Source Settings & AI Deduplication */}
-                  <NewsSourceSettings />
+                  <div className="space-y-3">
+                    <Label className="text-sm font-medium">Source Settings & AI Deduplication</Label>
+                    <NewsSourceSettings />
+                  </div>
                 </div>
               </SheetContent>
             </Sheet>
