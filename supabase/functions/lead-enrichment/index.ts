@@ -49,7 +49,33 @@ interface TestRequest {
   };
 }
 
-type EnrichmentRequest = PersonEnrichmentRequest | CompanyEnrichmentRequest | ChatEditRequest | TestRequest;
+interface DisambiguateRequest {
+  type: 'disambiguate';
+  searchType: 'person' | 'company';
+  firstName?: string;
+  lastName?: string;
+  company?: string;
+  companyName?: string;
+  country?: string;
+  industry?: string;
+}
+
+interface DisambiguationCandidate {
+  id: string;
+  name: string;
+  title?: string;
+  company?: string;
+  location?: string;
+  linkedinUrl?: string;
+  website?: string;
+  industry?: string;
+  employees?: string;
+  snippet?: string;
+  confidence: number;
+  sources: string[];
+}
+
+type EnrichmentRequest = PersonEnrichmentRequest | CompanyEnrichmentRequest | ChatEditRequest | TestRequest | DisambiguateRequest;
 
 // TailoredReportData - Complete report structure with all 11 sections
 interface TailoredReportData {
@@ -1801,6 +1827,328 @@ function extractSocialProfiles(searchResults: any[], links: string[]): { linkedi
 }
 
 // ============================================================================
+// DISAMBIGUATION: Find Multiple Candidates
+// ============================================================================
+
+async function findDisambiguationCandidates(
+  request: DisambiguateRequest
+): Promise<DisambiguationCandidate[]> {
+  const candidates: DisambiguationCandidate[] = [];
+  const seenIdentifiers = new Set<string>();
+  
+  if (request.searchType === 'person') {
+    const fullName = `${request.firstName || ''} ${request.lastName || ''}`.trim();
+    if (!fullName) return [];
+    
+    // Build multiple search queries to find different people with same name
+    const queries = [
+      `"${fullName}" LinkedIn profile`,
+      `"${fullName}" ${request.company || ''} executive`,
+      `"${fullName}" professional profile biography`,
+      `"${fullName}" CEO founder CTO director`,
+    ].filter(q => q.trim());
+    
+    const searchPromises = queries.slice(0, 3).map(q => searchWeb(q, 15, { country: request.country }));
+    const searchResultArrays = await Promise.all(searchPromises);
+    
+    for (const results of searchResultArrays) {
+      for (const result of results) {
+        // Extract person info from search result
+        const title = result.title || '';
+        const snippet = result.snippet || result.description || '';
+        const url = result.url || '';
+        
+        // Try to identify unique individuals
+        const identifier = extractPersonIdentifier(title, snippet, url);
+        if (seenIdentifiers.has(identifier)) continue;
+        seenIdentifiers.add(identifier);
+        
+        // Parse person details from result
+        const personInfo = parsePersonFromSearchResult(result, fullName);
+        if (!personInfo) continue;
+        
+        candidates.push({
+          id: generateUUID(),
+          name: personInfo.name || fullName,
+          title: personInfo.title,
+          company: personInfo.company,
+          location: personInfo.location,
+          linkedinUrl: personInfo.linkedinUrl,
+          snippet: snippet.slice(0, 200),
+          confidence: personInfo.confidence,
+          sources: [url],
+        });
+      }
+    }
+  } else {
+    // Company disambiguation
+    const companyName = request.companyName || '';
+    if (!companyName) return [];
+    
+    const queries = [
+      `"${companyName}" company official website`,
+      `"${companyName}" headquarters ${request.country || ''}`,
+      `"${companyName}" ${request.industry || ''} company profile`,
+    ].filter(q => q.trim());
+    
+    const searchPromises = queries.slice(0, 3).map(q => searchWeb(q, 15, { country: request.country }));
+    const searchResultArrays = await Promise.all(searchPromises);
+    
+    for (const results of searchResultArrays) {
+      for (const result of results) {
+        const title = result.title || '';
+        const snippet = result.snippet || result.description || '';
+        const url = result.url || '';
+        
+        const identifier = extractCompanyIdentifier(title, snippet, url);
+        if (seenIdentifiers.has(identifier)) continue;
+        seenIdentifiers.add(identifier);
+        
+        const companyInfo = parseCompanyFromSearchResult(result, companyName);
+        if (!companyInfo) continue;
+        
+        candidates.push({
+          id: generateUUID(),
+          name: companyInfo.name || companyName,
+          website: companyInfo.website,
+          industry: companyInfo.industry,
+          location: companyInfo.location,
+          employees: companyInfo.employees,
+          snippet: snippet.slice(0, 200),
+          confidence: companyInfo.confidence,
+          sources: [url],
+        });
+      }
+    }
+  }
+  
+  // Sort by confidence and deduplicate similar entries
+  const sorted = candidates
+    .sort((a, b) => b.confidence - a.confidence)
+    .slice(0, 10);
+  
+  return deduplicateCandidates(sorted);
+}
+
+function extractPersonIdentifier(title: string, snippet: string, url: string): string {
+  // Create identifier from LinkedIn URL if present
+  const linkedinMatch = url.match(/linkedin\.com\/in\/([^\/\?]+)/i);
+  if (linkedinMatch) return `linkedin:${linkedinMatch[1].toLowerCase()}`;
+  
+  // Extract company + title as identifier
+  const companyMatch = snippet.match(/(?:at|@)\s+([A-Z][A-Za-z0-9\s&]+)/);
+  const titleMatch = snippet.match(/(CEO|CTO|CFO|COO|VP|Director|Manager|Founder|President|Partner|Principal)/i);
+  
+  if (companyMatch && titleMatch) {
+    return `${titleMatch[1].toLowerCase()}:${companyMatch[1].toLowerCase().trim()}`;
+  }
+  
+  return url.toLowerCase();
+}
+
+function extractCompanyIdentifier(title: string, snippet: string, url: string): string {
+  // Use domain as identifier
+  try {
+    const domain = new URL(url).hostname.replace('www.', '');
+    return domain;
+  } catch {
+    return title.toLowerCase().slice(0, 50);
+  }
+}
+
+function parsePersonFromSearchResult(result: any, searchName: string): {
+  name: string;
+  title?: string;
+  company?: string;
+  location?: string;
+  linkedinUrl?: string;
+  confidence: number;
+} | null {
+  const title = result.title || '';
+  const snippet = result.snippet || result.description || '';
+  const url = result.url || '';
+  
+  // Skip irrelevant results
+  if (!title.toLowerCase().includes(searchName.split(' ')[0].toLowerCase())) {
+    return null;
+  }
+  
+  // Skip news articles, Wikipedia, etc. that aren't profile pages
+  const skipPatterns = ['wikipedia.org', 'news.', 'article', 'obituary', '/wiki/'];
+  if (skipPatterns.some(p => url.toLowerCase().includes(p))) {
+    return null;
+  }
+  
+  let confidence = 50;
+  let personTitle: string | undefined;
+  let company: string | undefined;
+  let location: string | undefined;
+  let linkedinUrl: string | undefined;
+  
+  // LinkedIn profile
+  if (url.includes('linkedin.com/in/')) {
+    linkedinUrl = url;
+    confidence += 30;
+    
+    // Parse "Name - Title at Company" format
+    const linkedinParts = title.split(' - ');
+    if (linkedinParts.length >= 2) {
+      const titleCompany = linkedinParts[1];
+      const atMatch = titleCompany.match(/(.+?)\s+(?:at|@)\s+(.+)/i);
+      if (atMatch) {
+        personTitle = atMatch[1].trim();
+        company = atMatch[2].replace(/\|.*$/, '').trim();
+      } else {
+        personTitle = titleCompany.replace(/\|.*$/, '').trim();
+      }
+    }
+  }
+  
+  // Extract from snippet
+  const titlePatterns = [
+    /(?:is\s+(?:the\s+)?|as\s+(?:the\s+)?)(CEO|CTO|CFO|COO|President|VP|Vice President|Director|Founder|Partner|Managing Director|Principal|Head of [A-Za-z]+)/i,
+    /(CEO|CTO|CFO|COO|President|VP|Vice President|Director|Founder|Partner|Managing Director|Principal)/i,
+  ];
+  
+  for (const pattern of titlePatterns) {
+    const match = snippet.match(pattern);
+    if (match && !personTitle) {
+      personTitle = match[1];
+      confidence += 10;
+      break;
+    }
+  }
+  
+  // Extract company from snippet
+  const companyPatterns = [
+    /(?:at|of|for|with)\s+([A-Z][A-Za-z0-9\s&,]+?)(?:\.|,|$|\s+(?:as|where|and))/,
+    /(?:founded|co-founded|leads?|runs?)\s+([A-Z][A-Za-z0-9\s&]+)/i,
+  ];
+  
+  for (const pattern of companyPatterns) {
+    const match = snippet.match(pattern);
+    if (match && !company) {
+      company = match[1].trim().slice(0, 50);
+      confidence += 5;
+      break;
+    }
+  }
+  
+  // Extract location
+  const locationMatch = snippet.match(/(?:based in|located in|from)\s+([A-Za-z\s,]+?)(?:\.|,|$)/i);
+  if (locationMatch) {
+    location = locationMatch[1].trim();
+  }
+  
+  return {
+    name: searchName,
+    title: personTitle,
+    company,
+    location,
+    linkedinUrl,
+    confidence: Math.min(confidence, 100),
+  };
+}
+
+function parseCompanyFromSearchResult(result: any, searchName: string): {
+  name: string;
+  website?: string;
+  industry?: string;
+  location?: string;
+  employees?: string;
+  confidence: number;
+} | null {
+  const title = result.title || '';
+  const snippet = result.snippet || result.description || '';
+  const url = result.url || '';
+  
+  // Skip irrelevant results
+  const skipPatterns = ['wikipedia.org', 'news.', 'article', '/wiki/'];
+  if (skipPatterns.some(p => url.toLowerCase().includes(p) && !url.includes('crunchbase') && !url.includes('linkedin'))) {
+    return null;
+  }
+  
+  let confidence = 40;
+  let website: string | undefined;
+  let industry: string | undefined;
+  let location: string | undefined;
+  let employees: string | undefined;
+  
+  // Official website detection
+  const isOfficialSite = !['linkedin.com', 'crunchbase.com', 'bloomberg.com', 'reuters.com', 'facebook.com'].some(d => url.includes(d));
+  if (isOfficialSite && (title.toLowerCase().includes(searchName.toLowerCase()) || url.toLowerCase().includes(searchName.toLowerCase().replace(/\s+/g, '')))) {
+    website = url;
+    confidence += 30;
+  }
+  
+  // LinkedIn company page
+  if (url.includes('linkedin.com/company/')) {
+    confidence += 25;
+  }
+  
+  // Crunchbase profile
+  if (url.includes('crunchbase.com')) {
+    confidence += 20;
+  }
+  
+  // Extract industry from snippet
+  const industryPatterns = [
+    /(?:in the|operates in|focused on)\s+([A-Za-z\s&]+?)\s+(?:industry|sector|space|market)/i,
+    /([A-Za-z]+(?:\s+[A-Za-z]+)?)\s+company/i,
+  ];
+  
+  for (const pattern of industryPatterns) {
+    const match = snippet.match(pattern);
+    if (match) {
+      industry = match[1].trim();
+      confidence += 5;
+      break;
+    }
+  }
+  
+  // Extract location
+  const locationMatch = snippet.match(/(?:headquartered in|based in|located in)\s+([A-Za-z\s,]+?)(?:\.|,|$)/i);
+  if (locationMatch) {
+    location = locationMatch[1].trim();
+  }
+  
+  // Extract employee count
+  const employeeMatch = snippet.match(/(\d+[\d,]*)\s*(?:\+\s*)?employees?/i);
+  if (employeeMatch) {
+    employees = employeeMatch[1].replace(/,/g, '');
+  }
+  
+  return {
+    name: searchName,
+    website,
+    industry,
+    location,
+    employees,
+    confidence: Math.min(confidence, 100),
+  };
+}
+
+function deduplicateCandidates(candidates: DisambiguationCandidate[]): DisambiguationCandidate[] {
+  const result: DisambiguationCandidate[] = [];
+  const seenKeys = new Set<string>();
+  
+  for (const candidate of candidates) {
+    // Create dedup key based on distinguishing features
+    const key = candidate.linkedinUrl 
+      ? candidate.linkedinUrl.toLowerCase()
+      : candidate.website
+        ? candidate.website.toLowerCase()
+        : `${candidate.name}:${candidate.company || candidate.industry || ''}:${candidate.title || ''}`.toLowerCase();
+    
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    result.push(candidate);
+  }
+  
+  return result.slice(0, 8); // Return max 8 candidates
+}
+
+// ============================================================================
 // MAIN REQUEST HANDLER
 // ============================================================================
 
@@ -1811,6 +2159,16 @@ serve(async (req) => {
 
   try {
     const request = await req.json() as EnrichmentRequest;
+    
+    // Handle disambiguation request
+    if (request.type === 'disambiguate') {
+      console.log('[lead-enrichment] Processing disambiguation request');
+      const candidates = await findDisambiguationCandidates(request as DisambiguateRequest);
+      return new Response(
+        JSON.stringify({ success: true, candidates, count: candidates.length }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
     
     // Handle test requests
     if (request.type === 'test_person') {

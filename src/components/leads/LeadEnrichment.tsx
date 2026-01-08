@@ -44,6 +44,22 @@ interface CompanySearchForm {
   website: string;
 }
 
+// Disambiguation candidate from backend
+interface DisambiguationCandidate {
+  id: string;
+  name: string;
+  title?: string;
+  company?: string;
+  location?: string;
+  linkedinUrl?: string;
+  website?: string;
+  industry?: string;
+  employees?: string;
+  snippet?: string;
+  confidence: number;
+  sources: string[];
+}
+
 // Research finding format from the backend
 interface ResearchFinding {
   id: string;
@@ -260,6 +276,12 @@ export const LeadEnrichment = () => {
   const [results, setResults] = useState<EnrichedResult[]>([]);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   
+  // Disambiguation state
+  const [disambiguationCandidates, setDisambiguationCandidates] = useState<DisambiguationCandidate[]>([]);
+  const [showDisambiguation, setShowDisambiguation] = useState(false);
+  const [isDisambiguating, setIsDisambiguating] = useState(false);
+  const [pendingSearchRequest, setPendingSearchRequest] = useState<any>(null);
+  
   // Chat state
   const [showChat, setShowChat] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -304,12 +326,126 @@ export const LeadEnrichment = () => {
     return interval;
   }, []);
 
-  const handlePersonSearch = async () => {
-    if (!personForm.firstName && !personForm.lastName && !personForm.linkedinUrl && !personForm.email) {
-      toast({ title: "Missing Information", description: "Please provide at least a name or direct lookup info", variant: "destructive" });
-      return;
+  // Disambiguation: Find multiple candidates first
+  const handleDisambiguate = async (type: 'person' | 'company') => {
+    setIsDisambiguating(true);
+    setDisambiguationCandidates([]);
+    
+    try {
+      const body = type === 'person' 
+        ? {
+            type: 'disambiguate',
+            searchType: 'person',
+            firstName: personForm.firstName,
+            lastName: personForm.lastName,
+            company: personForm.company,
+            country: personForm.country !== 'All Countries' ? personForm.country : undefined,
+          }
+        : {
+            type: 'disambiguate',
+            searchType: 'company',
+            companyName: companyForm.companyName,
+            industry: companyForm.industry,
+            country: companyForm.country !== 'All Countries' ? companyForm.country : undefined,
+          };
+      
+      const { data, error } = await supabase.functions.invoke('lead-enrichment', { body });
+      
+      if (error || !data?.success) {
+        toast({ 
+          title: "Search Failed", 
+          description: error?.message || data?.error || "Could not find matches", 
+          variant: "destructive" 
+        });
+        return;
+      }
+      
+      const candidates = data.candidates || [];
+      
+      if (candidates.length === 0) {
+        toast({ 
+          title: "No Matches Found", 
+          description: "No matching profiles found. Try different search terms.", 
+          variant: "destructive" 
+        });
+        return;
+      }
+      
+      if (candidates.length === 1) {
+        // Only one match - proceed directly
+        toast({ title: "Single Match Found", description: "Proceeding with enrichment..." });
+        handleSelectCandidate(candidates[0], type);
+        return;
+      }
+      
+      // Multiple matches - show disambiguation dialog
+      setDisambiguationCandidates(candidates);
+      setShowDisambiguation(true);
+      setPendingSearchRequest({ type });
+      
+    } catch (error) {
+      console.error('Disambiguation failed:', error);
+      toast({ 
+        title: "Search Failed", 
+        description: error instanceof Error ? error.message : "Could not search", 
+        variant: "destructive" 
+      });
+    } finally {
+      setIsDisambiguating(false);
     }
+  };
 
+  // Handle candidate selection from disambiguation
+  const handleSelectCandidate = async (candidate: DisambiguationCandidate, type: 'person' | 'company') => {
+    setShowDisambiguation(false);
+    setDisambiguationCandidates([]);
+    
+    if (type === 'person') {
+      // Update form with selected candidate info and search
+      setPersonForm(prev => ({
+        ...prev,
+        linkedinUrl: candidate.linkedinUrl || prev.linkedinUrl,
+        company: candidate.company || prev.company,
+      }));
+      
+      // Proceed with enrichment using candidate data
+      performPersonEnrichment({
+        ...personForm,
+        linkedinUrl: candidate.linkedinUrl || personForm.linkedinUrl,
+        company: candidate.company || personForm.company,
+      });
+    } else {
+      // Update form with selected candidate info and search
+      setCompanyForm(prev => ({
+        ...prev,
+        website: candidate.website || prev.website,
+        industry: candidate.industry || prev.industry,
+      }));
+      
+      performCompanyEnrichment({
+        ...companyForm,
+        website: candidate.website || companyForm.website,
+        industry: candidate.industry || companyForm.industry,
+      });
+    }
+  };
+
+  // Mark as "not in list" - let user continue with original search
+  const handleNotInList = () => {
+    setShowDisambiguation(false);
+    setDisambiguationCandidates([]);
+    
+    if (pendingSearchRequest?.type === 'person') {
+      performPersonEnrichment(personForm);
+    } else {
+      performCompanyEnrichment(companyForm);
+    }
+    
+    setPendingSearchRequest(null);
+  };
+
+  // Actual person enrichment (after disambiguation or direct)
+  const performPersonEnrichment = async (formData: LeadSearchForm) => {
     setIsSearching(true);
     setSearchProgress(5);
     setProgressMessage('Initializing research engine...');
@@ -323,12 +459,12 @@ export const LeadEnrichment = () => {
       const { data, error } = await supabase.functions.invoke('lead-enrichment', {
         body: {
           type: 'person',
-          firstName: personForm.firstName,
-          lastName: personForm.lastName,
-          company: personForm.company,
-          country: personForm.country !== 'All Countries' ? personForm.country : undefined,
-          linkedinUrl: personForm.linkedinUrl,
-          email: personForm.email,
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          company: formData.company,
+          country: formData.country !== 'All Countries' ? formData.country : undefined,
+          linkedinUrl: formData.linkedinUrl,
+          email: formData.email,
           reportType: selectedReport,
         },
       });
@@ -356,7 +492,7 @@ export const LeadEnrichment = () => {
       
       toast({ 
         title: "Lead Enrichment Complete", 
-        description: `Profile enriched with ${data.data.sources?.length || 0} sources using OpenAI GPT-4o` 
+        description: `Profile enriched with ${data.data.sources?.length || 0} sources` 
       });
 
     } catch (error) {
@@ -373,12 +509,24 @@ export const LeadEnrichment = () => {
     }
   };
 
-  const handleCompanySearch = async () => {
-    if (!companyForm.companyName && !companyForm.website) {
-      toast({ title: "Missing Information", description: "Please provide a company name or website", variant: "destructive" });
+  const handlePersonSearch = async () => {
+    if (!personForm.firstName && !personForm.lastName && !personForm.linkedinUrl && !personForm.email) {
+      toast({ title: "Missing Information", description: "Please provide at least a name or direct lookup info", variant: "destructive" });
       return;
     }
 
+    // If direct lookup info provided, skip disambiguation
+    if (personForm.linkedinUrl || personForm.email) {
+      performPersonEnrichment(personForm);
+      return;
+    }
+
+    // Otherwise, disambiguate first
+    handleDisambiguate('person');
+  };
+
+  // Actual company enrichment (after disambiguation or direct)
+  const performCompanyEnrichment = async (formData: CompanySearchForm) => {
     setIsSearching(true);
     setSearchProgress(5);
     setProgressMessage('Initializing research engine...');
@@ -392,10 +540,10 @@ export const LeadEnrichment = () => {
       const { data, error } = await supabase.functions.invoke('lead-enrichment', {
         body: {
           type: 'company',
-          companyName: companyForm.companyName || companyForm.website,
-          industry: companyForm.industry,
-          country: companyForm.country !== 'All Countries' ? companyForm.country : undefined,
-          website: companyForm.website,
+          companyName: formData.companyName || formData.website,
+          industry: formData.industry,
+          country: formData.country !== 'All Countries' ? formData.country : undefined,
+          website: formData.website,
           reportType: selectedReport,
         },
       });
@@ -423,7 +571,7 @@ export const LeadEnrichment = () => {
       
       toast({ 
         title: "Company Enrichment Complete", 
-        description: `Profile enriched with ${data.data.sources?.length || 0} sources using OpenAI GPT-4o` 
+        description: `Profile enriched with ${data.data.sources?.length || 0} sources` 
       });
 
     } catch (error) {
@@ -438,6 +586,22 @@ export const LeadEnrichment = () => {
     } finally {
       setIsSearching(false);
     }
+  };
+
+  const handleCompanySearch = async () => {
+    if (!companyForm.companyName && !companyForm.website) {
+      toast({ title: "Missing Information", description: "Please provide a company name or website", variant: "destructive" });
+      return;
+    }
+
+    // If website provided, skip disambiguation
+    if (companyForm.website) {
+      performCompanyEnrichment(companyForm);
+      return;
+    }
+
+    // Otherwise, disambiguate first
+    handleDisambiguate('company');
   };
 
   const handleChatSend = async () => {
@@ -1798,6 +1962,111 @@ export const LeadEnrichment = () => {
 
   return (
     <div className="w-full max-w-6xl mx-auto px-4 py-8">
+      {/* Disambiguation Dialog */}
+      <Dialog open={showDisambiguation} onOpenChange={setShowDisambiguation}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="w-5 h-5 text-primary" />
+              Multiple Matches Found
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground mb-4">
+            We found several {pendingSearchRequest?.type === 'person' ? 'people' : 'companies'} matching your search. 
+            Please select the correct one, or click "Not in List" to proceed with your original search.
+          </p>
+          <ScrollArea className="max-h-[50vh] pr-4">
+            <div className="space-y-3">
+              {disambiguationCandidates.map((candidate) => (
+                <motion.div
+                  key={candidate.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-4 rounded-lg border border-border bg-card hover:bg-accent/50 cursor-pointer transition-colors"
+                  onClick={() => handleSelectCandidate(candidate, pendingSearchRequest?.type)}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h4 className="font-semibold">{candidate.name}</h4>
+                        {candidate.confidence >= 70 && (
+                          <Badge variant="default" className="text-xs">High Match</Badge>
+                        )}
+                        {candidate.confidence >= 40 && candidate.confidence < 70 && (
+                          <Badge variant="secondary" className="text-xs">Possible Match</Badge>
+                        )}
+                      </div>
+                      
+                      {pendingSearchRequest?.type === 'person' ? (
+                        <>
+                          {candidate.title && (
+                            <p className="text-sm text-muted-foreground">
+                              {candidate.title}
+                              {candidate.company && ` at ${candidate.company}`}
+                            </p>
+                          )}
+                          {candidate.location && (
+                            <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                              <MapPin className="w-3 h-3" /> {candidate.location}
+                            </p>
+                          )}
+                          {candidate.linkedinUrl && (
+                            <p className="text-xs text-primary flex items-center gap-1 mt-1">
+                              <Linkedin className="w-3 h-3" /> LinkedIn Profile Available
+                            </p>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          {candidate.industry && (
+                            <p className="text-sm text-muted-foreground">{candidate.industry}</p>
+                          )}
+                          {candidate.location && (
+                            <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                              <MapPin className="w-3 h-3" /> {candidate.location}
+                            </p>
+                          )}
+                          {candidate.employees && (
+                            <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                              <Users className="w-3 h-3" /> {candidate.employees} employees
+                            </p>
+                          )}
+                          {candidate.website && (
+                            <p className="text-xs text-primary flex items-center gap-1 mt-1">
+                              <Globe className="w-3 h-3" /> {new URL(candidate.website).hostname}
+                            </p>
+                          )}
+                        </>
+                      )}
+                      
+                      {candidate.snippet && (
+                        <p className="text-xs text-muted-foreground mt-2 line-clamp-2 italic">
+                          "{candidate.snippet}"
+                        </p>
+                      )}
+                    </div>
+                    
+                    <Button variant="ghost" size="sm" className="shrink-0">
+                      Select
+                    </Button>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          </ScrollArea>
+          
+          <div className="flex justify-between pt-4 border-t border-border">
+            <Button variant="outline" onClick={handleNotInList} className="gap-2">
+              <XCircle className="w-4 h-4" />
+              Not in List - Use Original Search
+            </Button>
+            <Button variant="ghost" onClick={() => setShowDisambiguation(false)}>
+              Cancel
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center p-3 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 mb-4">
@@ -1805,7 +2074,7 @@ export const LeadEnrichment = () => {
           </div>
           <h1 className="text-3xl font-bold mb-2">Lead Enrichment</h1>
           <p className="text-muted-foreground max-w-xl mx-auto">
-            Get comprehensive profiles with real-time web research, AI analysis, and actionable insights powered by OpenAI GPT-4o.
+            Get comprehensive profiles with real-time web research, AI analysis, and actionable insights.
           </p>
         </div>
 
