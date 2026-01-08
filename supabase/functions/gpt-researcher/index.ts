@@ -6,6 +6,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // Integrates with GPT-Researcher for autonomous deep research
 // GitHub: https://github.com/assafelovic/gpt-researcher
 // Provides parallel research, source aggregation, fact verification
+// Uses: OpenAI/Claude as primary (NOT Lovable AI)
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -19,6 +20,7 @@ interface ResearchRequest {
   parallelAgents?: number;
   includeFactVerification?: boolean;
   outputFormat?: 'markdown' | 'json' | 'pdf';
+  llmProvider?: 'openai' | 'anthropic' | 'groq' | 'auto';
 }
 
 interface ResearchResult {
@@ -50,6 +52,7 @@ interface ResearchMetadata {
   totalAgents: number;
   executionTimeMs: number;
   queriesExecuted: number;
+  llmProvider: string;
 }
 
 // GPT-Researcher style sub-agents
@@ -60,6 +63,22 @@ const RESEARCH_AGENTS = [
   { id: 'analyzer', name: 'Content Analyzer', role: 'Analyzes and synthesizes information' },
   { id: 'verifier', name: 'Fact Verifier', role: 'Cross-references claims across sources' },
   { id: 'writer', name: 'Report Writer', role: 'Generates comprehensive research report' },
+];
+
+// LLM Provider configuration - prioritize OpenAI
+interface LLMProvider {
+  key: string;
+  name: string;
+  endpoint: string;
+  model: string;
+  isAnthropic?: boolean;
+}
+
+const LLM_PROVIDERS: LLMProvider[] = [
+  { key: 'OPENAI_API_KEY', name: 'openai', endpoint: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o' },
+  { key: 'ANTHROPIC_API_KEY', name: 'anthropic', endpoint: 'https://api.anthropic.com/v1/messages', model: 'claude-3-5-sonnet-20241022', isAnthropic: true },
+  { key: 'GROQ_API_KEY', name: 'groq', endpoint: 'https://api.groq.com/openai/v1/chat/completions', model: 'llama-3.3-70b-versatile' },
+  { key: 'LOVABLE_API_KEY', name: 'lovable', endpoint: 'https://ai.gateway.lovable.dev/v1/chat/completions', model: 'google/gemini-2.5-pro' },
 ];
 
 serve(async (req) => {
@@ -75,28 +94,29 @@ serve(async (req) => {
       maxSources = 10,
       parallelAgents = 3,
       includeFactVerification = true,
-      outputFormat = 'markdown'
+      outputFormat = 'markdown',
+      llmProvider: preferredProvider = 'auto',
     } = request;
 
     console.log(`[GPT-Researcher] Starting research: "${query}"`);
     const startTime = Date.now();
 
-    // Get API keys
-    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
-    const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
-    
-    if (!lovableApiKey && !openaiApiKey) {
+    // Get the best available LLM provider
+    const provider = getAvailableProvider(preferredProvider);
+    if (!provider) {
       return new Response(JSON.stringify({
         error: 'No AI API key configured',
-        hint: 'Configure LOVABLE_API_KEY or OPENAI_API_KEY'
+        hint: 'Configure OPENAI_API_KEY, ANTHROPIC_API_KEY, or GROQ_API_KEY'
       }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
+    console.log(`[GPT-Researcher] Using LLM provider: ${provider.name}`);
+
     // PHASE 1: Plan research with sub-questions
-    const subQuestions = await generateSubQuestions(query, lovableApiKey || openaiApiKey!);
+    const subQuestions = await generateSubQuestions(query, provider);
     console.log(`[GPT-Researcher] Generated ${subQuestions.length} sub-questions`);
 
     // PHASE 2: Search sources in parallel
@@ -109,8 +129,8 @@ serve(async (req) => {
 
     // PHASE 4: Verify facts (if enabled)
     let verifiedFacts: VerifiedFact[] = [];
-    if (includeFactVerification) {
-      verifiedFacts = await verifyFacts(extractedSources, lovableApiKey || openaiApiKey!);
+    if (includeFactVerification && extractedSources.length >= 2) {
+      verifiedFacts = await verifyFacts(extractedSources, provider);
       console.log(`[GPT-Researcher] Verified ${verifiedFacts.length} facts`);
     }
 
@@ -120,7 +140,7 @@ serve(async (req) => {
       extractedSources, 
       verifiedFacts, 
       reportType,
-      lovableApiKey || openaiApiKey!
+      provider
     );
 
     const result: ResearchResult = {
@@ -132,6 +152,7 @@ serve(async (req) => {
         totalAgents: RESEARCH_AGENTS.length,
         executionTimeMs: Date.now() - startTime,
         queriesExecuted: subQuestions.length + 1,
+        llmProvider: provider.name,
       },
     };
 
@@ -150,43 +171,110 @@ serve(async (req) => {
   }
 });
 
-// Generate sub-questions for comprehensive research
-async function generateSubQuestions(query: string, apiKey: string): Promise<string[]> {
-  const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'google/gemini-2.5-flash',
-      messages: [
-        {
-          role: 'system',
-          content: `You are a research planner. Given a research query, generate 3-5 specific sub-questions 
-          that would help comprehensively answer the main query. Return ONLY a JSON array of strings.`
-        },
-        {
-          role: 'user',
-          content: query
-        }
-      ],
-      response_format: { type: 'json_object' },
-    }),
-  });
-
-  if (!response.ok) {
-    console.error('Failed to generate sub-questions');
-    return [query]; // Fallback to original query
+// Get the best available LLM provider
+function getAvailableProvider(preferred: string): LLMProvider | null {
+  // If preferred provider specified, try it first
+  if (preferred !== 'auto') {
+    const provider = LLM_PROVIDERS.find(p => p.name === preferred);
+    if (provider && Deno.env.get(provider.key)) {
+      return { ...provider, key: Deno.env.get(provider.key)! };
+    }
   }
 
-  const data = await response.json();
+  // Otherwise try in priority order
+  for (const provider of LLM_PROVIDERS) {
+    const apiKey = Deno.env.get(provider.key);
+    if (apiKey) {
+      return { ...provider, key: apiKey };
+    }
+  }
+
+  return null;
+}
+
+// Call LLM with the provider
+async function callLLM(
+  provider: LLMProvider,
+  systemPrompt: string,
+  userPrompt: string,
+  jsonMode: boolean = false
+): Promise<string> {
+  const apiKey = Deno.env.get(provider.key);
+  if (!apiKey) throw new Error(`No API key for ${provider.name}`);
+
+  if (provider.isAnthropic) {
+    const response = await fetch(provider.endpoint, {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: provider.model,
+        max_tokens: 4096,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Anthropic API error: ${error}`);
+    }
+
+    const data = await response.json();
+    return data.content?.[0]?.text || '';
+  } else {
+    const body: any = {
+      model: provider.model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      max_tokens: 4096,
+    };
+
+    // Only add response_format for providers that support it
+    if (jsonMode && provider.name !== 'groq') {
+      body.response_format = { type: 'json_object' };
+    }
+
+    const response = await fetch(provider.endpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`${provider.name} API error: ${error}`);
+    }
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || '';
+  }
+}
+
+// Generate sub-questions for comprehensive research
+async function generateSubQuestions(query: string, provider: LLMProvider): Promise<string[]> {
   try {
-    const content = data.choices[0].message.content;
+    const content = await callLLM(
+      provider,
+      `You are a research planner. Given a research query, generate 3-5 specific sub-questions 
+that would help comprehensively answer the main query. Return ONLY a JSON object with a "questions" array of strings.`,
+      query,
+      true
+    );
+
     const parsed = JSON.parse(content);
     return parsed.questions || parsed.subQuestions || [query];
-  } catch {
-    return [query];
+  } catch (error) {
+    console.error('Failed to generate sub-questions:', error);
+    return [query]; // Fallback to original query
   }
 }
 
@@ -240,7 +328,7 @@ async function searchSources(
   return allSources.slice(0, maxSources);
 }
 
-// Extract full content from sources
+// Extract full content from sources using Playwright browser
 async function extractContent(sources: SourceInfo[]): Promise<SourceInfo[]> {
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -249,7 +337,8 @@ async function extractContent(sources: SourceInfo[]): Promise<SourceInfo[]> {
 
   for (const source of sources) {
     try {
-      const response = await fetch(`${supabaseUrl}/functions/v1/web-crawl`, {
+      // Use playwright-browser for extraction
+      const response = await fetch(`${supabaseUrl}/functions/v1/playwright-browser`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${supabaseKey}`,
@@ -257,19 +346,22 @@ async function extractContent(sources: SourceInfo[]): Promise<SourceInfo[]> {
         },
         body: JSON.stringify({ 
           url: source.url,
-          extractContent: true,
-          outputFormat: 'markdown'
+          action: 'scrape',
         }),
       });
 
       if (response.ok) {
         const result = await response.json();
-        extracted.push({
-          ...source,
-          extractedContent: result.content || result.markdown || source.extractedContent,
-          author: result.author,
-          publishDate: result.publishDate || source.publishDate,
-        });
+        if (result.success) {
+          extracted.push({
+            ...source,
+            extractedContent: result.content || result.markdown || source.extractedContent,
+            author: result.metadata?.author,
+            publishDate: result.metadata?.publishDate || source.publishDate,
+          });
+        } else {
+          extracted.push(source);
+        }
       } else {
         extracted.push(source);
       }
@@ -283,52 +375,32 @@ async function extractContent(sources: SourceInfo[]): Promise<SourceInfo[]> {
 }
 
 // Verify facts across sources
-async function verifyFacts(sources: SourceInfo[], apiKey: string): Promise<VerifiedFact[]> {
+async function verifyFacts(sources: SourceInfo[], provider: LLMProvider): Promise<VerifiedFact[]> {
   if (sources.length < 2) return [];
 
   // Combine content for analysis
   const combinedContent = sources
-    .map(s => `Source: ${s.domain}\n${s.extractedContent}`)
+    .map(s => `Source: ${s.domain}\n${s.extractedContent.substring(0, 2000)}`)
     .join('\n\n---\n\n');
 
-  const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'google/gemini-2.5-flash',
-      messages: [
-        {
-          role: 'system',
-          content: `You are a fact verification agent. Analyze the provided sources and identify key claims.
-          For each claim, determine if it's verified by multiple sources.
-          Return a JSON object with a "facts" array containing objects with:
-          - claim: the factual claim
-          - verified: boolean
-          - sources: array of domain names that support this claim
-          - confidence: 0-1 score`
-        },
-        {
-          role: 'user',
-          content: combinedContent.substring(0, 15000) // Limit content size
-        }
-      ],
-      response_format: { type: 'json_object' },
-    }),
-  });
-
-  if (!response.ok) {
-    return [];
-  }
-
   try {
-    const data = await response.json();
-    const content = data.choices[0].message.content;
+    const content = await callLLM(
+      provider,
+      `You are a fact verification agent. Analyze the provided sources and identify key claims.
+For each claim, determine if it's verified by multiple sources.
+Return a JSON object with a "facts" array containing objects with:
+- claim: the factual claim
+- verified: boolean
+- sources: array of domain names that support this claim
+- confidence: 0-1 score`,
+      combinedContent.substring(0, 15000),
+      true
+    );
+
     const parsed = JSON.parse(content);
     return parsed.facts || [];
-  } catch {
+  } catch (error) {
+    console.error('Fact verification failed:', error);
     return [];
   }
 }
@@ -339,7 +411,7 @@ async function generateReport(
   sources: SourceInfo[],
   facts: VerifiedFact[],
   reportType: string,
-  apiKey: string
+  provider: LLMProvider
 ): Promise<string> {
   const sourcesSummary = sources
     .map(s => `- ${s.title} (${s.domain}): ${s.extractedContent.substring(0, 500)}...`)
@@ -350,25 +422,13 @@ async function generateReport(
     .map(f => `- ${f.claim} (confidence: ${f.confidence.toFixed(2)})`)
     .join('\n');
 
-  const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'google/gemini-2.5-pro',
-      messages: [
-        {
-          role: 'system',
-          content: `You are a research report writer creating a ${reportType}.
-          Write a comprehensive, well-structured report based on the provided sources and verified facts.
-          Include citations, key findings, and actionable insights.
-          Format in clean Markdown with proper headings and sections.`
-        },
-        {
-          role: 'user',
-          content: `Research Query: ${query}
+  const content = await callLLM(
+    provider,
+    `You are a research report writer creating a ${reportType}.
+Write a comprehensive, well-structured report based on the provided sources and verified facts.
+Include citations, key findings, and actionable insights.
+Format in clean Markdown with proper headings and sections.`,
+    `Research Query: ${query}
           
 Sources:
 ${sourcesSummary}
@@ -377,15 +437,7 @@ Verified Facts:
 ${factsSummary}
 
 Generate a comprehensive ${reportType} that answers the research query.`
-        }
-      ],
-    }),
-  });
+  );
 
-  if (!response.ok) {
-    throw new Error('Failed to generate report');
-  }
-
-  const data = await response.json();
-  return data.choices[0].message.content;
+  return content;
 }
