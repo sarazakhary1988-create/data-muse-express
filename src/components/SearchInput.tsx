@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Sparkles, Globe, ArrowRight, Loader2, Link, FileSearch, Shield, ShieldCheck, FileText, Table, FileBarChart, Zap, Clock, MapPin, ChevronDown, Brain, Puzzle } from 'lucide-react';
+import { Search, Sparkles, Globe, ArrowRight, Loader2, Link, FileSearch, Shield, ShieldCheck, FileText, Table, FileBarChart, Zap, Clock, MapPin, ChevronDown, Brain, Puzzle, Database, Building2, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useResearchStore, REPORT_FORMAT_OPTIONS, ReportFormat } from '@/store/researchStore';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +12,8 @@ import { TimeFrameFilter, formatTimeFrameForQuery } from '@/components/TimeFrame
 import { PromptEnhancer } from '@/components/PromptEnhancer';
 import { CountryFilter, formatCountryForQuery } from '@/components/CountryFilter';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { DATA_SOURCE_CONNECTORS, DataSourceConnector, buildQueryForConnector } from '@/lib/dataSourceConnectors';
+import { supabase } from '@/integrations/supabase/client';
 
 // AI Connector/Model options for research
 const AI_CONNECTORS = [
@@ -48,6 +50,14 @@ const isUrl = (text: string): boolean => {
   return urlPattern.test(text.trim());
 };
 
+// Explorium enrichment result type
+interface ExploriumEnrichment {
+  type: 'person' | 'company';
+  data: any;
+  source: 'explorium';
+  confidence: number;
+}
+
 export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
   const { t, isRTL } = useLanguage();
   const { 
@@ -70,6 +80,10 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
   const [customDomains, setCustomDomains] = useState('');
   const [selectedConnector, setSelectedConnector] = useState('auto');
   const [selectedMcp, setSelectedMcp] = useState('manus');
+  const [selectedDataSource, setSelectedDataSource] = useState('auto');
+  const [enrichWithExplorium, setEnrichWithExplorium] = useState(true);
+  const [exploriumEnrichment, setExploriumEnrichment] = useState<ExploriumEnrichment | null>(null);
+  const [isEnriching, setIsEnriching] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const detectedUrl = isUrl(searchQuery);
@@ -82,10 +96,44 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
     }
   }, [searchQuery]);
 
+  // Explorium enrichment effect
+  useEffect(() => {
+    if (!enrichWithExplorium || !searchQuery.trim() || searchQuery.length < 3) {
+      setExploriumEnrichment(null);
+      return;
+    }
+
+    // Debounce enrichment calls
+    const timer = setTimeout(async () => {
+      setIsEnriching(true);
+      try {
+        const { data, error } = await supabase.functions.invoke('explorium-enrich', {
+          body: { query: searchQuery.trim(), type: 'auto' },
+        });
+
+        if (!error && data && data.data) {
+          setExploriumEnrichment(data);
+        } else {
+          setExploriumEnrichment(null);
+        }
+      } catch (err) {
+        console.error('[Explorium] Enrichment error:', err);
+        setExploriumEnrichment(null);
+      } finally {
+        setIsEnriching(false);
+      }
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, enrichWithExplorium]);
+
   const handleSubmit = () => {
     if (searchQuery.trim() && !isSearching) {
       const timeContext = formatTimeFrameForQuery(timeFrameFilter);
       const countryContext = formatCountryForQuery(countryFilter);
+      
+      // Get selected data source connector
+      const connector = DATA_SOURCE_CONNECTORS.find(c => c.id === selectedDataSource);
       
       // Add domain constraints if specified
       let domainContext = '';
@@ -96,10 +144,16 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
         }
       }
       
-      const contextParts = [searchQuery.trim(), timeContext, countryContext, domainContext].filter(Boolean);
+      // Build query with connector transformation
+      let baseQuery = searchQuery.trim();
+      if (connector && connector.id !== 'auto') {
+        baseQuery = buildQueryForConnector(connector, baseQuery);
+      }
+      
+      const contextParts = [baseQuery, timeContext, countryContext, domainContext].filter(Boolean);
       const fullQuery = contextParts.join(' ');
       
-      console.log('[SearchInput] Full query with domain constraints:', fullQuery);
+      console.log('[SearchInput] Full query with data source:', fullQuery, 'Connector:', selectedDataSource);
       onSearch(fullQuery);
       setShowSuggestions(false);
     }
@@ -520,7 +574,192 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
                         </Tooltip>
                       </TooltipProvider>
                     </motion.div>
+                    
+                    {/* Data Source Connector Selector */}
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.3 }}
+                    >
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="flex items-center gap-1.5">
+                              <Database className="w-3.5 h-3.5 text-muted-foreground" />
+                              <Select value={selectedDataSource} onValueChange={setSelectedDataSource}>
+                                <SelectTrigger className="h-7 w-[150px] text-xs border-muted bg-background/50 hover:bg-background transition-colors">
+                                  <SelectValue placeholder="Data Source" />
+                                </SelectTrigger>
+                                <SelectContent className="bg-popover max-h-[300px]">
+                                  {DATA_SOURCE_CONNECTORS.map((connector) => (
+                                    <SelectItem key={connector.id} value={connector.id} className="text-xs">
+                                      <div className="flex items-center gap-2">
+                                        <span>{connector.icon}</span>
+                                        {connector.name}
+                                      </div>
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-xs">
+                            <p className="font-medium">Data Source</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {DATA_SOURCE_CONNECTORS.find(c => c.id === selectedDataSource)?.description || 'Select a data source connector'}
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </motion.div>
+                    
+                    {/* Explorium Enrichment Toggle */}
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.35 }}
+                    >
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div 
+                              className={`flex items-center gap-2 px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                                enrichWithExplorium 
+                                  ? 'bg-blue-500/10 border border-blue-500/30' 
+                                  : 'bg-muted/50 border border-transparent hover:border-border'
+                              }`}
+                              onClick={() => setEnrichWithExplorium(!enrichWithExplorium)}
+                            >
+                              <Switch
+                                id="explorium-enrich"
+                                checked={enrichWithExplorium}
+                                onCheckedChange={setEnrichWithExplorium}
+                                className="data-[state=checked]:bg-blue-500 scale-75"
+                              />
+                              <label 
+                                htmlFor="explorium-enrich" 
+                                className={`text-[10px] font-medium cursor-pointer transition-colors ${
+                                  enrichWithExplorium ? 'text-blue-400' : 'text-muted-foreground'
+                                }`}
+                              >
+                                Explorium
+                              </label>
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-xs">
+                            <p className="font-medium">Enrich Results with Explorium</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Fetch real LinkedIn profiles, job titles, company data for person/company searches
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </motion.div>
                   </div>
+                  
+                  {/* Explorium Enrichment Display */}
+                  <AnimatePresence>
+                    {enrichWithExplorium && (exploriumEnrichment || isEnriching) && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="mt-2 pt-2 border-t border-border/50"
+                      >
+                        {isEnriching ? (
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            <span>Enriching with Explorium...</span>
+                          </div>
+                        ) : exploriumEnrichment ? (
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="secondary" className="text-[10px] bg-blue-500/20 text-blue-400 border-blue-500/30">
+                                {exploriumEnrichment.type === 'person' ? (
+                                  <><User className="w-2.5 h-2.5 mr-1" /> Person</>
+                                ) : (
+                                  <><Building2 className="w-2.5 h-2.5 mr-1" /> Company</>
+                                )}
+                              </Badge>
+                              <span className="text-[10px] text-blue-400">Enriched by Explorium</span>
+                              <Badge variant="outline" className="text-[9px] h-4">
+                                {Math.round(exploriumEnrichment.confidence * 100)}% confidence
+                              </Badge>
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-[10px]">
+                              {exploriumEnrichment.type === 'person' ? (
+                                <>
+                                  {exploriumEnrichment.data.title && (
+                                    <div className="truncate">
+                                      <span className="text-muted-foreground">Title:</span>{' '}
+                                      <span className="text-foreground">{exploriumEnrichment.data.title}</span>
+                                    </div>
+                                  )}
+                                  {exploriumEnrichment.data.company && (
+                                    <div className="truncate">
+                                      <span className="text-muted-foreground">Company:</span>{' '}
+                                      <span className="text-foreground">{exploriumEnrichment.data.company}</span>
+                                    </div>
+                                  )}
+                                  {exploriumEnrichment.data.location && (
+                                    <div className="truncate">
+                                      <span className="text-muted-foreground">Location:</span>{' '}
+                                      <span className="text-foreground">{exploriumEnrichment.data.location}</span>
+                                    </div>
+                                  )}
+                                  {exploriumEnrichment.data.linkedin_url && (
+                                    <div className="truncate col-span-2">
+                                      <a 
+                                        href={exploriumEnrichment.data.linkedin_url} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        className="text-blue-400 hover:underline"
+                                      >
+                                        LinkedIn Profile →
+                                      </a>
+                                    </div>
+                                  )}
+                                </>
+                              ) : (
+                                <>
+                                  {exploriumEnrichment.data.industry && (
+                                    <div className="truncate">
+                                      <span className="text-muted-foreground">Industry:</span>{' '}
+                                      <span className="text-foreground">{exploriumEnrichment.data.industry}</span>
+                                    </div>
+                                  )}
+                                  {exploriumEnrichment.data.employees && (
+                                    <div className="truncate">
+                                      <span className="text-muted-foreground">Employees:</span>{' '}
+                                      <span className="text-foreground">{exploriumEnrichment.data.employees}</span>
+                                    </div>
+                                  )}
+                                  {exploriumEnrichment.data.country && (
+                                    <div className="truncate">
+                                      <span className="text-muted-foreground">Country:</span>{' '}
+                                      <span className="text-foreground">{exploriumEnrichment.data.country}</span>
+                                    </div>
+                                  )}
+                                  {exploriumEnrichment.data.website && (
+                                    <div className="truncate col-span-2">
+                                      <a 
+                                        href={exploriumEnrichment.data.website.startsWith('http') ? exploriumEnrichment.data.website : `https://${exploriumEnrichment.data.website}`} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        className="text-blue-400 hover:underline"
+                                      >
+                                        {exploriumEnrichment.data.website} →
+                                      </a>
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        ) : null}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </motion.div>
               )}
             </AnimatePresence>
