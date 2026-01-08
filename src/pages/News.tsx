@@ -36,6 +36,7 @@ import { Sidebar } from '@/components/Sidebar';
 import { TopNavigation } from '@/components/TopNavigation';
 import { useNewsMonitor, NewsItem, NewsCategory as NewsCategoryType, COUNTRY_REGULATORS, COUNTRY_EXCHANGES } from '@/hooks/useNewsMonitor';
 import { useNewsFilterState } from '@/components/NewsRibbon';
+import { useNewsDeduplication } from '@/hooks/useNewsDeduplication';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 
@@ -136,6 +137,8 @@ const News = () => {
     refreshNews,
     markAsRead,
   } = useNewsMonitor();
+  
+  const { deduplicateNews, settings: dedupSettings } = useNewsDeduplication();
 
   // Filter states
   const [searchQuery, setSearchQuery] = useState('');
@@ -162,9 +165,9 @@ const News = () => {
     return () => stopMonitoring();
   }, []);
 
-  // Filtered news
+  // Filtered news with deduplication
   const filteredNews = useMemo(() => {
-    return news.filter(item => {
+    const filtered = news.filter(item => {
       // Search filter
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
@@ -195,7 +198,10 @@ const News = () => {
 
       return true;
     });
-  }, [news, searchQuery, selectedCategories, selectedCountry, dateFrom, dateTo]);
+
+    // Apply AI deduplication
+    return deduplicateNews(filtered);
+  }, [news, searchQuery, selectedCategories, selectedCountry, dateFrom, dateTo, deduplicateNews]);
 
   const toggleCategory = (category: NewsCategoryType) => {
     setSelectedCategories(prev => 
