@@ -29,6 +29,8 @@ interface PersonEnrichmentRequest {
   };
   // Pre-enriched data from Explorium
   exploriumData?: any;
+  // Custom source URLs to scrape for additional data
+  sourceUrls?: string[];
 }
 
 interface CompanyEnrichmentRequest {
@@ -47,6 +49,8 @@ interface CompanyEnrichmentRequest {
   };
   // Pre-enriched data from Explorium
   exploriumData?: any;
+  // Custom source URLs to scrape for additional data
+  sourceUrls?: string[];
 }
 
 interface ChatEditRequest {
@@ -386,6 +390,74 @@ async function webCrawl(url: string, query: string, opts?: { maxPages?: number; 
     console.error('[lead-enrichment] Web crawl error:', error);
     return { pages: [], combinedContent: '', totalPages: 0 };
   }
+}
+
+// ============================================================================
+// CUSTOM SOURCE URL SCRAPING - Scrape user-provided URLs for enrichment
+// ============================================================================
+
+async function scrapeCustomSourceUrls(
+  urls: string[],
+  entityName: string
+): Promise<Array<{ url: string; title: string; content: string; wordCount: number }>> {
+  if (!urls || urls.length === 0) return [];
+  
+  console.log(`[lead-enrichment] Scraping ${urls.length} custom source URL(s) for ${entityName}`);
+  
+  const results: Array<{ url: string; title: string; content: string; wordCount: number }> = [];
+  
+  for (const url of urls.slice(0, 10)) { // Max 10 custom URLs
+    try {
+      // First try direct scrape
+      const scrapeResult = await scrapeUrl(url, { onlyMainContent: true });
+      
+      if (scrapeResult.markdown && scrapeResult.markdown.length > 100) {
+        results.push({
+          url,
+          title: extractTitleFromContent(scrapeResult.markdown) || `Content from ${new URL(url).hostname}`,
+          content: scrapeResult.markdown,
+          wordCount: scrapeResult.markdown.split(/\s+/).length,
+        });
+        console.log(`[lead-enrichment] Custom URL scraped successfully: ${url} (${scrapeResult.markdown.length} chars)`);
+      } else {
+        // If direct scrape fails, try web crawl
+        console.log(`[lead-enrichment] Direct scrape insufficient, trying web crawl for: ${url}`);
+        const crawlResult = await webCrawl(url, entityName, { maxPages: 3, maxDepth: 1 });
+        
+        if (crawlResult.pages.length > 0) {
+          for (const page of crawlResult.pages) {
+            results.push({
+              url: page.url,
+              title: page.title || `Page from ${new URL(page.url).hostname}`,
+              content: page.markdown,
+              wordCount: page.wordCount,
+            });
+          }
+          console.log(`[lead-enrichment] Web crawl found ${crawlResult.pages.length} pages for: ${url}`);
+        }
+      }
+    } catch (error) {
+      console.error(`[lead-enrichment] Failed to scrape custom URL ${url}:`, error);
+    }
+  }
+  
+  console.log(`[lead-enrichment] Custom source scraping complete: ${results.length} pages extracted`);
+  return results;
+}
+
+// Helper to extract title from markdown content
+function extractTitleFromContent(markdown: string): string | null {
+  // Try to find H1
+  const h1Match = markdown.match(/^#\s+(.+)$/m);
+  if (h1Match) return h1Match[1].trim();
+  
+  // Try to find first line that looks like a title
+  const lines = markdown.split('\n').filter(l => l.trim().length > 0);
+  if (lines.length > 0 && lines[0].length < 200) {
+    return lines[0].replace(/^#+\s*/, '').trim();
+  }
+  
+  return null;
 }
 
 // ============================================================================
@@ -2446,6 +2518,18 @@ serve(async (req) => {
       socialProfiles.twitter = socialProfiles.twitter || socialFromWebsite.twitter;
       socialProfiles.others = [...new Set([...(socialProfiles.others || []), ...(socialFromWebsite.others || [])])];
 
+      // 6) Scrape custom source URLs if provided
+      if (companyReq.sourceUrls && companyReq.sourceUrls.length > 0) {
+        console.log(`[lead-enrichment] Scraping ${companyReq.sourceUrls.length} custom source URL(s)`);
+        const customSources = await scrapeCustomSourceUrls(companyReq.sourceUrls, companyReq.companyName);
+        
+        for (const source of customSources) {
+          evidenceSources.unshift({ url: source.url, title: source.title, content: source.content });
+          additionalContent += `\n\n--- Custom Source: ${source.url} ---\n${source.content}`;
+        }
+        console.log(`[lead-enrichment] Added ${customSources.length} custom sources to evidence`);
+      }
+
       // 5) Generate company report
       const result = await generateCompanyReport(companyReq, evidenceSources, websiteUrl, socialProfiles, companyReq.exploriumData);
 
@@ -2459,13 +2543,31 @@ serve(async (req) => {
       // Person enrichment
       const personReq = request as PersonEnrichmentRequest;
 
+      // Scrape custom source URLs if provided (for profile data)
+      if (personReq.sourceUrls && personReq.sourceUrls.length > 0) {
+        const fullName = `${personReq.firstName || ''} ${personReq.lastName || ''}`.trim();
+        console.log(`[lead-enrichment] Scraping ${personReq.sourceUrls.length} custom source URL(s) for person: ${fullName}`);
+        const customSources = await scrapeCustomSourceUrls(personReq.sourceUrls, fullName);
+        
+        for (const source of customSources) {
+          allResults.unshift({
+            url: source.url,
+            title: source.title,
+            markdown: source.content,
+            description: source.content.slice(0, 500),
+          });
+          additionalContent += `\n\n--- Custom Source: ${source.url} ---\n${source.content}`;
+        }
+        console.log(`[lead-enrichment] Added ${customSources.length} custom sources for person enrichment`);
+      }
+
       if (personReq.linkedinUrl) {
         socialProfiles.linkedin = personReq.linkedinUrl;
         const linkedinResult = await scrapeUrl(personReq.linkedinUrl);
-        additionalContent = linkedinResult.markdown;
+        additionalContent += linkedinResult.markdown || '';
       } else if (socialProfiles.linkedin) {
         const linkedinResult = await scrapeUrl(socialProfiles.linkedin);
-        additionalContent = linkedinResult.markdown;
+        additionalContent += linkedinResult.markdown || '';
       }
 
       const result = await generatePersonReport(

@@ -1,10 +1,10 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Brain, GitBranch, Search, Database, Shield, CheckCircle2, 
   XCircle, Loader2, Play, Pause, RotateCcw, Zap, Network,
   Clock, TrendingUp, AlertTriangle, FileText, ChevronDown,
-  ChevronRight, Activity, Cpu, Globe, Eye, ArrowRight
+  ChevronRight, Activity, Cpu, Globe, Eye, ArrowRight, Wifi, WifiOff
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -14,6 +14,9 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { AgentState, ClaimVerification, QualityScore, PlanStep } from '@/lib/agent/types';
+
+// WebSocket URL for Manus Realtime
+const MANUS_WS_URL = 'wss://hhkbtwcmztozihipiszm.functions.supabase.co/functions/v1/manus-realtime';
 
 // Types for the orchestration dashboard
 interface SubAgentState {
@@ -61,6 +64,8 @@ interface AgentOrchestrationDashboardProps {
   onReset?: () => void;
   className?: string;
   compact?: boolean;
+  /** Auto-connect to manus-realtime WebSocket for live updates */
+  autoConnect?: boolean;
 }
 
 // Agent type configurations
@@ -425,18 +430,212 @@ export function AgentOrchestrationDashboard({
   onReset,
   className,
   compact = false,
+  autoConnect = true,
 }: AgentOrchestrationDashboardProps) {
   const [demoMode, setDemoMode] = useState(!externalState);
   const [isPaused, setIsPaused] = useState(false);
   const [state, setState] = useState<OrchestrationState>(externalState as OrchestrationState || generateDemoState());
+  const [wsConnected, setWsConnected] = useState(false);
+  const wsRef = useRef<WebSocket | null>(null);
+  const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Update state when external state changes
+  // Map WebSocket message to OrchestrationState
+  const mapWsStateToOrchestration = useCallback((wsState: any): Partial<OrchestrationState> => {
+    // Map manus-realtime phases to AgentState
+    const phaseToState: Record<string, AgentState> = {
+      'idle': 'idle',
+      'analyze': 'analyzing',
+      'plan': 'planning',
+      'execute': 'searching',
+      'observe': 'scraping',
+      'verify': 'verifying',
+      'synthesize': 'compiling',
+    };
+
+    // Map sub-agents
+    const subAgents: SubAgentState[] = (wsState.activeAgents || []).map((agent: any) => ({
+      id: agent.id,
+      name: agent.type?.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || 'Agent',
+      type: mapAgentType(agent.type),
+      status: agent.status as any,
+      progress: agent.progress || 0,
+      currentTask: agent.currentTask,
+      results: agent.resultsCount ? { itemsProcessed: agent.resultsCount, successRate: 0.85 } : undefined,
+    }));
+
+    return {
+      mainState: phaseToState[wsState.currentPhase] || 'analyzing',
+      phase: wsState.currentPhase === 'verify' ? 'verification' : 
+             wsState.currentPhase === 'synthesize' ? 'synthesis' :
+             wsState.currentPhase === 'plan' ? 'planning' : 'execution',
+      subAgents,
+      metrics: {
+        totalSources: wsState.metrics?.sourcesProcessed || 0,
+        verifiedClaims: wsState.metrics?.validResultsStreamed || 0,
+        contradictions: wsState.metrics?.rejectedResults || 0,
+        executionTime: wsState.metrics?.executionTimeMs || 0,
+      },
+    };
+  }, []);
+
+  // Helper to map agent types
+  const mapAgentType = (type: string): SubAgentState['type'] => {
+    const typeMap: Record<string, SubAgentState['type']> = {
+      'news': 'searcher',
+      'research': 'analyzer',
+      'url_validation': 'verifier',
+      'lead_enrichment': 'analyzer',
+      'explorium_enrichment': 'analyzer',
+      'cma_scraper': 'scraper',
+      'tadawul_scraper': 'scraper',
+      'sama_scraper': 'scraper',
+      'custom_source_crawler': 'scraper',
+    };
+    return typeMap[type] || 'analyzer';
+  };
+
+  // Connect to manus-realtime WebSocket
   useEffect(() => {
-    if (externalState) {
-      setState(externalState as OrchestrationState);
+    if (!autoConnect || wsRef.current) return;
+
+    console.log('[AgentOrchestrationDashboard] Connecting to manus-realtime WebSocket...');
+    
+    try {
+      const ws = new WebSocket(MANUS_WS_URL);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        console.log('[AgentOrchestrationDashboard] WebSocket connected');
+        setWsConnected(true);
+        setDemoMode(false);
+        
+        // Start ping interval
+        pingIntervalRef.current = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'ping' }));
+          }
+        }, 30000);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          
+          switch (message.type) {
+            case 'state_update':
+              // Live state update from orchestrator
+              const mappedState = mapWsStateToOrchestration(message.state);
+              setState(prev => ({ ...prev, ...mappedState }));
+              break;
+
+            case 'agent_update':
+              // Individual agent update
+              setState(prev => {
+                const updatedAgents = [...prev.subAgents];
+                const agentIndex = updatedAgents.findIndex(a => a.id === message.agentId);
+                if (agentIndex >= 0) {
+                  updatedAgents[agentIndex] = {
+                    ...updatedAgents[agentIndex],
+                    status: message.status,
+                    progress: message.progress || updatedAgents[agentIndex].progress,
+                    currentTask: message.message || updatedAgents[agentIndex].currentTask,
+                    results: message.resultsCount ? {
+                      itemsProcessed: message.resultsCount,
+                      successRate: 0.85,
+                    } : updatedAgents[agentIndex].results,
+                  };
+                } else {
+                  // New agent
+                  updatedAgents.push({
+                    id: message.agentId,
+                    name: message.agentType?.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || 'Agent',
+                    type: mapAgentType(message.agentType),
+                    status: message.status,
+                    progress: message.progress || 0,
+                    currentTask: message.message,
+                  });
+                }
+                return { ...prev, subAgents: updatedAgents };
+              });
+              break;
+
+            case 'result_stream':
+              // Update metrics on new result
+              setState(prev => ({
+                ...prev,
+                metrics: {
+                  ...prev.metrics,
+                  totalSources: prev.metrics.totalSources + 1,
+                  verifiedClaims: message.validation?.urlValid && message.validation?.dateValid
+                    ? prev.metrics.verifiedClaims + 1
+                    : prev.metrics.verifiedClaims,
+                },
+              }));
+              break;
+
+            case 'research_complete':
+              // Research finished
+              setState(prev => ({
+                ...prev,
+                mainState: 'completed',
+                phase: 'complete',
+                metrics: {
+                  ...prev.metrics,
+                  totalSources: message.totalResults || prev.metrics.totalSources,
+                  verifiedClaims: message.validResults || prev.metrics.verifiedClaims,
+                  contradictions: message.rejectedResults || prev.metrics.contradictions,
+                  executionTime: message.executionTimeMs || prev.metrics.executionTime,
+                },
+              }));
+              break;
+
+            case 'connected':
+              console.log('[AgentOrchestrationDashboard] Connected with ID:', message.connectionId);
+              break;
+
+            case 'pong':
+              // Keep-alive response
+              break;
+          }
+        } catch (e) {
+          console.error('[AgentOrchestrationDashboard] Failed to parse WebSocket message:', e);
+        }
+      };
+
+      ws.onclose = () => {
+        console.log('[AgentOrchestrationDashboard] WebSocket disconnected');
+        setWsConnected(false);
+        wsRef.current = null;
+        if (pingIntervalRef.current) {
+          clearInterval(pingIntervalRef.current);
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('[AgentOrchestrationDashboard] WebSocket error:', error);
+      };
+    } catch (error) {
+      console.error('[AgentOrchestrationDashboard] Failed to connect:', error);
+    }
+
+    return () => {
+      if (pingIntervalRef.current) {
+        clearInterval(pingIntervalRef.current);
+      }
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, [autoConnect, mapWsStateToOrchestration]);
+
+  // Update state when external state changes (fallback)
+  useEffect(() => {
+    if (externalState && !wsConnected) {
+      setState(prev => ({ ...prev, ...externalState } as OrchestrationState));
       setDemoMode(false);
     }
-  }, [externalState]);
+  }, [externalState, wsConnected]);
 
   // Demo mode animation
   useEffect(() => {
@@ -531,6 +730,17 @@ export function AgentOrchestrationDashboard({
               Agent Orchestration
               {demoMode && (
                 <Badge variant="outline" className="text-[10px]">Demo</Badge>
+              )}
+              {wsConnected ? (
+                <Badge variant="outline" className="text-[10px] text-emerald-500 border-emerald-500/50">
+                  <Wifi className="w-3 h-3 mr-1" />
+                  Live
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                  <WifiOff className="w-3 h-3 mr-1" />
+                  Offline
+                </Badge>
               )}
             </h3>
             <p className="text-sm text-muted-foreground capitalize flex items-center gap-1.5">
