@@ -1,12 +1,41 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useEffect } from 'react';
 import { ResearchTask, Report, useResearchStore, ReportFormat, RunHistoryEntry } from '@/store/researchStore';
 import { researchAgent, dataConsolidator } from '@/lib/agent';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { withLLMConfig } from '@/lib/llmConfig';
 
+// Query intent detection - mirrors research-command-router logic
+const URL_PATTERN = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi;
+const LINKEDIN_PATTERN = /linkedin\.com\/(in|company)\/[\w-]+/i;
+const PROFILE_PATTERNS = [
+  /\b(who is|about|profile|biography|background|career)\b/i,
+  /\b(CEO|CFO|COO|chairman|director|founder|executive)\s+(of|at)\b/i,
+];
+const COMPANY_PATTERNS = [
+  /\b(company|corporation|inc|ltd|llc|plc|about company|company profile)\b/i,
+];
+
+type QueryIntent = 'url_scrape' | 'profile_lookup' | 'company_research' | 'general_research';
+
+function detectQueryIntent(query: string): { intent: QueryIntent; urls: string[] } {
+  const urls = query.match(URL_PATTERN) || [];
+  
+  if (urls.length > 0) {
+    return { intent: LINKEDIN_PATTERN.test(query) ? 'profile_lookup' : 'url_scrape', urls };
+  }
+  if (PROFILE_PATTERNS.some(p => p.test(query))) {
+    return { intent: 'profile_lookup', urls: [] };
+  }
+  if (COMPANY_PATTERNS.some(p => p.test(query))) {
+    return { intent: 'company_research', urls: [] };
+  }
+  return { intent: 'general_research', urls: [] };
+}
+
 export const useResearchEngine = () => {
   const abortControllerRef = useRef<AbortController | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
   
   const { 
     addTask, 
@@ -57,6 +86,10 @@ export const useResearchEngine = () => {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
     researchAgent.cancel();
     setIsSearching(false);
     setReportGenerationStatus({ isGenerating: false, message: '', progress: 0 });
@@ -66,6 +99,67 @@ export const useResearchEngine = () => {
       description: "The research process has been stopped.",
     });
   }, [setIsSearching, setReportGenerationStatus]);
+
+  // Connect to manus-realtime WebSocket for live updates
+  const connectToRealtime = useCallback((query: string, category?: string) => {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    if (!supabaseUrl) return;
+    
+    const wsUrl = supabaseUrl.replace('https://', 'wss://') + '/functions/v1/manus-realtime';
+    
+    try {
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+      
+      ws.onopen = () => {
+        addDebugLog('[WS] Connected to manus-realtime');
+        // Start research via WebSocket
+        ws.send(JSON.stringify({
+          type: 'start_research',
+          query,
+          options: { category },
+        }));
+      };
+      
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          
+          if (msg.type === 'state_update') {
+            setAgentState(msg.state?.currentPhase || msg.state?.status || 'running');
+            if (msg.state?.metrics) {
+              setAgentMetrics(msg.state.metrics);
+            }
+          }
+          
+          if (msg.type === 'agent_update') {
+            addDebugLog(`[AGENT] ${msg.agentType}: ${msg.status} (${msg.progress}%)`);
+          }
+          
+          if (msg.type === 'result_stream') {
+            addDebugLog(`[RESULT] ${msg.data?.title || 'New result'} from ${msg.source}`);
+          }
+          
+          if (msg.type === 'research_complete') {
+            addDebugLog(`[COMPLETE] ${msg.validResults} valid results in ${msg.executionTimeMs}ms`);
+          }
+        } catch (e) {
+          console.error('[WS] Parse error:', e);
+        }
+      };
+      
+      ws.onerror = (error) => {
+        addDebugLog(`[WS] Error: ${error}`);
+      };
+      
+      ws.onclose = () => {
+        addDebugLog('[WS] Disconnected');
+        wsRef.current = null;
+      };
+    } catch (error) {
+      console.error('[WS] Connection error:', error);
+    }
+  }, [addDebugLog, setAgentState, setAgentMetrics]);
 
   const startResearch = useCallback(async (query: string) => {
     // Cancel any previous run
@@ -81,6 +175,10 @@ export const useResearchEngine = () => {
     // Clear previous debug logs
     clearDebugLogs();
     addDebugLog(`[INIT] Starting research for: ${query}`);
+    
+    // Detect query intent for smart routing
+    const { intent, urls } = detectQueryIntent(query);
+    addDebugLog(`[INTENT] Detected: ${intent}${urls.length > 0 ? ` (${urls.length} URLs)` : ''}`);
     
     const newTask: ResearchTask = {
       id: taskId,
@@ -185,7 +283,24 @@ export const useResearchEngine = () => {
         description: `Analyzing: ${query.substring(0, 50)}...`,
       });
 
-      addDebugLog('[EXEC] Executing research agent pipeline');
+      // Connect to realtime WebSocket for live updates
+      connectToRealtime(query);
+      
+      addDebugLog('[EXEC] Executing research with command router');
+      
+      // For URL scraping or profile lookups, use the command router for smart routing
+      if (intent === 'url_scrape' || intent === 'profile_lookup') {
+        addDebugLog(`[ROUTER] Using command router for ${intent}`);
+        
+        // Call the command router for intelligent routing
+        const { data: routerData, error: routerError } = await supabase.functions.invoke('research-command-router', {
+          body: { query, options: { sourceUrls: urls } }
+        });
+        
+        if (!routerError && routerData?.results) {
+          addDebugLog(`[ROUTER] Got ${routerData.results.length} result sets from ${routerData.sources?.join(', ')}`);
+        }
+      }
 
       // Execute the full agent pipeline with progress updates
       setReportGenerationStatus({ isGenerating: true, message: 'Searching and gathering sources...', progress: 10 });
