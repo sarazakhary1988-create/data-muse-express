@@ -106,21 +106,42 @@ const STRICT_CATEGORY_QUERIES: Record<string, string> = {
   expansion: '(expansion OR "new branch" OR "entering market" OR launch) AND (Saudi OR UAE)',
 };
 
-// Official source URLs for REAL web crawling
+// Official source URLs for REAL web crawling - EXPANDED COVERAGE
 const OFFICIAL_SOURCE_URLS: Record<string, string[]> = {
   cma: [
     'https://cma.org.sa/en/Market/News',
     'https://cma.org.sa/en/Awareness/Pages/Violations.aspx',
     'https://cma.org.sa/en/RulesRegulations/Regulations',
+    'https://cma.org.sa/en/Market/IPO',
   ],
   tadawul: [
     'https://www.saudiexchange.sa/wps/portal/tadawul/market-participants/issuers/reports-and-announcements',
+    'https://www.saudiexchange.sa/wps/portal/tadawul/newsroom/news-and-announcements',
+    'https://www.saudiexchange.sa/wps/portal/tadawul/market-participants/issuers/ipo-sukuk',
+  ],
+  sama: [
+    'https://www.sama.gov.sa/en-us/News/Pages/default.aspx',
+    'https://www.sama.gov.sa/en-us/RulesInstructions/Pages/default.aspx',
+    'https://www.sama.gov.sa/en-us/Circulars/Pages/default.aspx',
+  ],
+  mof: [
+    'https://mof.gov.sa/en/News/Pages/default.aspx',
+    'https://mof.gov.sa/en/mediacenter/Pages/default.aspx',
   ],
   regulatory: [
     'https://www.sama.gov.sa/en-us/News/Pages/default.aspx',
     'https://mof.gov.sa/en/News/Pages/default.aspx',
+    'https://www.mc.gov.sa/en/mediacenter/News/Pages/default.aspx',
   ],
 };
+
+// All official sources combined for comprehensive crawling
+const ALL_OFFICIAL_SOURCES = [
+  ...OFFICIAL_SOURCE_URLS.cma,
+  ...OFFICIAL_SOURCE_URLS.tadawul,
+  ...OFFICIAL_SOURCE_URLS.sama,
+  ...OFFICIAL_SOURCE_URLS.mof,
+];
 
 // CMA-specific search queries for direct fetching
 const CMA_SPECIFIC_QUERIES = [
@@ -451,15 +472,45 @@ function createAgentPlan(query: string, category: string | undefined, options: a
   const agents: SubAgentState[] = [];
   const timestamp = Date.now();
   const customUrls = options.customSourceUrls || [];
+  const queryLower = query.toLowerCase();
 
-  // CMA Scraper Agent - ALWAYS add for CMA-related or regulatory queries
-  if (!category || category === 'cma' || category === 'regulatory' || query.toLowerCase().includes('cma')) {
+  // CMA Scraper Agent - Add for CMA-related queries or general research
+  if (!category || category === 'cma' || category === 'regulatory' || 
+      queryLower.includes('cma') || queryLower.includes('regulation') || queryLower.includes('violation')) {
     agents.push({
       id: `cma_scraper-${timestamp}`,
       type: 'cma_scraper',
       status: 'idle',
       progress: 0,
       currentTask: 'Real web crawling of CMA.gov.sa for approvals, regulations, fines...',
+      resultsCount: 0,
+      errors: [],
+    });
+  }
+  
+  // Tadawul Scraper Agent - Add for market/IPO/listing queries
+  if (!category || category === 'ipo' || category === 'market' || 
+      queryLower.includes('tadawul') || queryLower.includes('listing') || queryLower.includes('ipo')) {
+    agents.push({
+      id: `tadawul_scraper-${timestamp}`,
+      type: 'tadawul_scraper',
+      status: 'idle',
+      progress: 0,
+      currentTask: 'Real web crawling of Tadawul/Saudi Exchange for announcements...',
+      resultsCount: 0,
+      errors: [],
+    });
+  }
+  
+  // SAMA Scraper Agent - Add for banking/monetary queries
+  if (!category || category === 'banking' || category === 'monetary' || 
+      queryLower.includes('sama') || queryLower.includes('bank') || queryLower.includes('monetary')) {
+    agents.push({
+      id: `sama_scraper-${timestamp}`,
+      type: 'sama_scraper',
+      status: 'idle',
+      progress: 0,
+      currentTask: 'Real web crawling of SAMA for banking regulations and news...',
       resultsCount: 0,
       errors: [],
     });
@@ -638,8 +689,22 @@ async function executeAgentWithValidation(
   
   // CMA Scraper Agent - Use REAL web crawling
   if (agent.type === 'cma_scraper') {
-    const cmaResults = await fetchCMANews(socket, state, agent, options?.customUrls);
+    const cmaResults = await fetchOfficialSourceNews(socket, state, agent, 'cma', options?.customUrls);
     results.push(...cmaResults);
+    return results;
+  }
+  
+  // Tadawul Scraper Agent - Use REAL web crawling
+  if (agent.type === 'tadawul_scraper') {
+    const tadawulResults = await fetchOfficialSourceNews(socket, state, agent, 'tadawul');
+    results.push(...tadawulResults);
+    return results;
+  }
+  
+  // SAMA Scraper Agent - Use REAL web crawling
+  if (agent.type === 'sama_scraper') {
+    const samaResults = await fetchOfficialSourceNews(socket, state, agent, 'sama');
+    results.push(...samaResults);
     return results;
   }
   
@@ -829,21 +894,41 @@ function parseCrawledPagesToNewsItems(crawlResult: any, sourceType: string): any
   return items;
 }
 
-// Fetch news from CMA using REAL web crawling
-async function fetchCMANews(
+// Generalized function to fetch news from official sources using REAL web crawling
+async function fetchOfficialSourceNews(
   socket: WebSocket,
   state: ManusState,
   agent: SubAgentState,
+  sourceType: 'cma' | 'tadawul' | 'sama' | 'mof' = 'cma',
   customUrls?: string[]
 ): Promise<StreamedResult[]> {
   const results: StreamedResult[] = [];
   
-  console.log('[Manus 1.7 MAX] CMA Scraper: Starting REAL web crawl of official sources...');
+  const sourceNames: Record<string, string> = {
+    cma: 'CMA (Capital Market Authority)',
+    tadawul: 'Tadawul/Saudi Exchange',
+    sama: 'SAMA (Saudi Central Bank)',
+    mof: 'Ministry of Finance',
+  };
   
-  // Determine URLs to crawl
+  const searchQueries: Record<string, string> = {
+    cma: 'regulation approval violation fine license listing prospectus',
+    tadawul: 'announcement IPO listing sukuk trading market',
+    sama: 'banking regulation circular monetary policy license',
+    mof: 'budget fiscal policy government spending revenue',
+  };
+  
+  console.log(`[Manus 1.7 MAX] ${sourceNames[sourceType]} Scraper: Starting REAL web crawl...`);
+  
+  // Determine URLs to crawl - use custom URLs if provided, otherwise use official sources
   const urlsToCrawl = customUrls && customUrls.length > 0 
     ? customUrls 
-    : OFFICIAL_SOURCE_URLS.cma;
+    : OFFICIAL_SOURCE_URLS[sourceType] || [];
+  
+  if (urlsToCrawl.length === 0) {
+    console.log(`[Manus 1.7 MAX] No URLs configured for ${sourceType}`);
+    return results;
+  }
   
   socket.send(JSON.stringify({
     type: 'agent_update',
@@ -851,8 +936,9 @@ async function fetchCMANews(
     agentType: agent.type,
     status: 'running',
     progress: 10,
-    message: `Crawling ${urlsToCrawl.length} official source(s)...`,
+    message: `Crawling ${urlsToCrawl.length} ${sourceNames[sourceType]} source(s)...`,
     urls: urlsToCrawl,
+    sourceType,
     timestamp: new Date().toISOString(),
   }));
   
@@ -863,19 +949,25 @@ async function fetchCMANews(
     const url = urlsToCrawl[i];
     agent.progress = Math.round(((i + 1) / urlsToCrawl.length) * 50);
     
+    let hostname = 'unknown';
+    try {
+      hostname = new URL(url).hostname;
+    } catch {}
+    
     socket.send(JSON.stringify({
       type: 'crawl_progress',
       agentId: agent.id,
       url,
       progress: agent.progress,
-      step: `Crawling ${new URL(url).hostname}...`,
+      step: `Crawling ${hostname}...`,
+      sourceType,
       timestamp: new Date().toISOString(),
     }));
     
-    const crawlResult = await callWebCrawl(url, 'regulation approval violation fine license', 5);
+    const crawlResult = await callWebCrawl(url, searchQueries[sourceType], 5);
     
     if (crawlResult?.success) {
-      const newsItems = parseCrawledPagesToNewsItems(crawlResult, 'cma');
+      const newsItems = parseCrawledPagesToNewsItems(crawlResult, sourceType);
       console.log(`[Manus 1.7 MAX] Extracted ${newsItems.length} items from ${url}`);
       allNewsItems = allNewsItems.concat(newsItems);
       
@@ -883,21 +975,22 @@ async function fetchCMANews(
         type: 'crawl_result',
         agentId: agent.id,
         url,
+        sourceType,
         pagesFound: crawlResult.crawledCount,
         itemsExtracted: newsItems.length,
         timestamp: new Date().toISOString(),
       }));
     } else {
       console.log(`[Manus 1.7 MAX] Failed to crawl ${url}, using fallback data`);
-      // Fallback to mock data if crawl fails
+      // Fallback to placeholder if crawl fails
       allNewsItems.push({
-        title: `CMA Official Announcement - ${new Date().toISOString().split('T')[0]}`,
+        title: `${sourceNames[sourceType]} Official Update - ${new Date().toISOString().split('T')[0]}`,
         url: url,
-        snippet: 'Unable to fetch live content. This is a placeholder for the latest CMA announcement.',
+        snippet: `Unable to fetch live content from ${sourceNames[sourceType]}. Please check the source directly.`,
         publishDate: new Date().toISOString().split('T')[0],
-        source: new URL(url).hostname.replace('www.', ''),
+        source: hostname.replace('www.', ''),
         category: 'news',
-        author: 'CMA Official',
+        author: `${sourceNames[sourceType]} Official`,
       });
     }
   }
@@ -911,7 +1004,7 @@ async function fetchCMANews(
     const isDateValid = publishDate >= MIN_VALID_DATE;
     
     const result: StreamedResult = {
-      id: `cma-${agent.id}-${i}-${Date.now()}`,
+      id: `${sourceType}-${agent.id}-${i}-${Date.now()}`,
       type: 'article',
       data: {
         title: item.title,
