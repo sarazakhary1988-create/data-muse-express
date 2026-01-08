@@ -202,7 +202,13 @@ function stripHtml(input: string): string {
   return input
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
     .replace(/<[^>]*>/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -214,15 +220,61 @@ function toIsoDateOrNow(s?: string | null): string {
   return d.toISOString();
 }
 
+// Regex-based XML parsing (DOMParser doesn't support text/xml in Deno)
+function parseRssItems(xmlText: string): Array<{
+  title: string;
+  link: string;
+  pubDate: string;
+  description: string;
+  source: string;
+  sourceUrl: string;
+}> {
+  const items: Array<{
+    title: string;
+    link: string;
+    pubDate: string;
+    description: string;
+    source: string;
+    sourceUrl: string;
+  }> = [];
+
+  // Match all <item>...</item> blocks
+  const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
+  let itemMatch;
+
+  while ((itemMatch = itemRegex.exec(xmlText)) !== null) {
+    const itemContent = itemMatch[1];
+
+    // Extract fields using regex
+    const titleMatch = /<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i.exec(itemContent);
+    const linkMatch = /<link>([\s\S]*?)<\/link>/i.exec(itemContent);
+    const pubDateMatch = /<pubDate>([\s\S]*?)<\/pubDate>/i.exec(itemContent);
+    const descMatch = /<description>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/description>/i.exec(itemContent);
+    const sourceMatch = /<source[^>]*(?:url="([^"]*)")?[^>]*>([\s\S]*?)<\/source>/i.exec(itemContent);
+
+    const title = titleMatch ? stripHtml(titleMatch[1]).trim() : '';
+    const link = linkMatch ? linkMatch[1].trim() : '';
+    const pubDate = pubDateMatch ? pubDateMatch[1].trim() : '';
+    const description = descMatch ? stripHtml(descMatch[1]).trim() : '';
+    const sourceUrl = sourceMatch?.[1] || '';
+    const source = sourceMatch ? stripHtml(sourceMatch[2]).trim() : '';
+
+    if (title && link && link.startsWith('http')) {
+      items.push({ title, link, pubDate, description, source, sourceUrl });
+    }
+  }
+
+  return items;
+}
+
 async function searchNewsRss(query: string, limit: number = 10): Promise<WebSource[]> {
   // NOTE: RSS feeds return REAL headlines/links; we do NOT generate news with an LLM.
   const rssUrls = [
     // Google News RSS - reliable source for real headlines
     `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`,
-    // Regional business feeds
-    `https://news.google.com/rss/search?q=${encodeURIComponent(query + ' Saudi Arabia business')}&hl=en-US&gl=US&ceid=US:en`,
-    // Financial Times world news
-    `https://news.google.com/rss/search?q=${encodeURIComponent(query + ' MENA finance')}&hl=en-US&gl=US&ceid=US:en`,
+    // Regional business feeds - GCC focused
+    `https://news.google.com/rss/search?q=${encodeURIComponent(query + ' Saudi Arabia')}&hl=en-US&gl=US&ceid=US:en`,
+    `https://news.google.com/rss/search?q=${encodeURIComponent(query + ' Gulf GCC')}&hl=en-US&gl=US&ceid=US:en`,
   ];
 
   console.log('[wide-research] RSS search:', { query: query.slice(0, 80), rssUrlsCount: rssUrls.length });
@@ -241,21 +293,19 @@ async function searchNewsRss(query: string, limit: number = 10): Promise<WebSour
       continue;
     }
 
-    const doc = new DOMParser().parseFromString(resp.text, 'text/xml');
-    if (!doc) continue;
+    // Parse RSS using regex (DOMParser doesn't support text/xml in edge runtime)
+    const items = parseRssItems(resp.text);
+    console.log(`[wide-research] Parsed ${items.length} items from RSS feed`);
 
-    const items = doc.querySelectorAll('item');
     for (const item of items) {
       if (out.length >= limit) break;
 
-      const titleRaw = item.querySelector('title')?.textContent?.trim() || '';
-      const link = item.querySelector('link')?.textContent?.trim() || '';
-      const pubDateRaw = item.querySelector('pubDate')?.textContent?.trim();
-      const descriptionRaw = item.querySelector('description')?.textContent || '';
-
-      const sourceEl = item.querySelector('source');
-      const sourceName = sourceEl?.textContent?.trim() || '';
-      const sourceUrl = sourceEl?.getAttribute('url') || '';
+      const titleRaw = item.title;
+      const link = item.link;
+      const pubDateRaw = item.pubDate;
+      const descriptionRaw = item.description;
+      const sourceName = item.source;
+      const sourceUrl = item.sourceUrl;
 
       if (!titleRaw || !link || !link.startsWith('http')) continue;
 
