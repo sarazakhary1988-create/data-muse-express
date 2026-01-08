@@ -24,6 +24,7 @@ import { LeadEnrichment } from '@/components/leads/LeadEnrichment';
 import { IntegrationsPage } from '@/components/integrations/IntegrationsPage';
 import { NewsRibbon, useNewsFilterState } from '@/components/NewsRibbon';
 import { ManusRealtimePanel } from '@/components/ManusRealtimePanel';
+import { StreamedResultsList } from '@/components/StreamedResultsList';
 import { useManusRealtime } from '@/hooks/useManusRealtime';
 
 
@@ -276,6 +277,15 @@ const Index = () => {
                       console.log('[Manus] Research cycle complete');
                     }}
                   />
+                  
+                  {/* Streamed Results List */}
+                  {manusRealtime.streamedResults.length > 0 && (
+                    <StreamedResultsList 
+                      results={manusRealtime.streamedResults}
+                      isLoading={manusRealtime.state.state !== 'idle' && manusRealtime.state.state !== 'completed'}
+                      className="mb-4"
+                    />
+                  )}
                   
                   <ResearchProgress 
                     steps={researchSteps} 
