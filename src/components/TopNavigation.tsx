@@ -35,7 +35,9 @@ import {
   Plus,
   Link,
   X,
-  ExternalLink
+  ExternalLink,
+  LogOut,
+  User
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -67,6 +69,7 @@ import { useNewsMonitor, NewsCategory as NewsCategoryType, RefreshInterval } fro
 import { useNewsSourceSettings } from '@/hooks/useNewsSourceSettings';
 import { useNewsNotifications } from '@/hooks/useNewsNotifications';
 import { useNewsDeduplication } from '@/hooks/useNewsDeduplication';
+import { useAuth } from '@/hooks/useAuth';
 import { NewsSourceSettings } from '@/components/NewsSourceSettings';
 import { cn } from '@/lib/utils';
 
@@ -162,11 +165,19 @@ export const TopNavigation = ({ className }: TopNavigationProps) => {
   const { theme, setTheme } = useTheme();
   const { language, setLanguage, t, isRTL } = useLanguage();
   const { tasks, reports } = useResearchStore();
+  const { user, signOut } = useAuth();
   const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const tickerRef = useRef<HTMLDivElement>(null);
   const [isPaused, setIsPaused] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    await signOut();
+    navigate('/auth');
+  };
 
   // Filter states (stored in settings)
   const [selectedCategories, setSelectedCategories] = useState<NewsCategoryType[]>([]);
@@ -442,6 +453,38 @@ export const TopNavigation = ({ className }: TopNavigationProps) => {
                     )}
                   </DropdownMenuItem>
                 ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* User Menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="gap-2">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center">
+                    <User className="w-4 h-4 text-primary" />
+                  </div>
+                  <span className="hidden sm:inline text-xs max-w-[100px] truncate">
+                    {user?.email?.split('@')[0] || 'User'}
+                  </span>
+                  <ChevronDown className="w-3 h-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align={isRTL ? "start" : "end"} className="w-48">
+                <DropdownMenuLabel className="text-xs font-normal">
+                  <div className="flex flex-col gap-1">
+                    <span className="font-medium">Signed in as</span>
+                    <span className="text-muted-foreground truncate">{user?.email}</span>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={handleSignOut}
+                  disabled={signingOut}
+                  className="text-destructive focus:text-destructive cursor-pointer"
+                >
+                  <LogOut className="w-4 h-4 mr-2" />
+                  {signingOut ? 'Signing out...' : 'Sign Out'}
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

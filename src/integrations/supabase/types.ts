@@ -41,6 +41,7 @@ export type Database = {
           source_types: string[] | null
           title: string
           updated_at: string
+          user_id: string | null
         }
         Insert: {
           country?: string | null
@@ -68,6 +69,7 @@ export type Database = {
           source_types?: string[] | null
           title: string
           updated_at?: string
+          user_id?: string | null
         }
         Update: {
           country?: string | null
@@ -95,6 +97,7 @@ export type Database = {
           source_types?: string[] | null
           title?: string
           updated_at?: string
+          user_id?: string | null
         }
         Relationships: []
       }
@@ -110,6 +113,7 @@ export type Database = {
           started_at: string | null
           status: string
           task_id: string
+          user_id: string | null
         }
         Insert: {
           completed_at?: string | null
@@ -122,6 +126,7 @@ export type Database = {
           started_at?: string | null
           status?: string
           task_id: string
+          user_id?: string | null
         }
         Update: {
           completed_at?: string | null
@@ -134,6 +139,7 @@ export type Database = {
           started_at?: string | null
           status?: string
           task_id?: string
+          user_id?: string | null
         }
         Relationships: [
           {

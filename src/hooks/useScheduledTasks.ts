@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { ScheduledResearchTask, ScheduledTaskRun, CreateScheduledTaskForm } from '@/types/scheduledTask';
+import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
 export function useScheduledTasks() {
+  const { user } = useAuth();
   const [tasks, setTasks] = useState<ScheduledResearchTask[]>([]);
   const [runs, setRuns] = useState<ScheduledTaskRun[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -90,6 +92,11 @@ export function useScheduledTasks() {
         }
       }
 
+      if (!user) {
+        toast.error('You must be logged in to create tasks');
+        return null;
+      }
+
       const { data, error } = await supabase
         .from('scheduled_research_tasks')
         .insert({
@@ -114,6 +121,7 @@ export function useScheduledTasks() {
           delivery_email: form.delivery_email || null,
           execution_mode: form.execution_mode,
           is_active: true,
+          user_id: user.id,
         })
         .select()
         .single();
@@ -130,7 +138,7 @@ export function useScheduledTasks() {
     } finally {
       setIsCreating(false);
     }
-  }, []);
+  }, [user]);
 
   const updateTask = useCallback(async (id: string, updates: Partial<ScheduledResearchTask>) => {
     try {
@@ -174,12 +182,18 @@ export function useScheduledTasks() {
 
   const runTaskNow = useCallback(async (task: ScheduledResearchTask) => {
     try {
+      if (!user) {
+        toast.error('You must be logged in to run tasks');
+        return null;
+      }
+
       // Create a run record
       const { data: runData, error: runError } = await supabase
         .from('scheduled_task_runs')
         .insert({
           task_id: task.id,
           status: 'pending',
+          user_id: user.id,
         })
         .select()
         .single();
@@ -202,7 +216,7 @@ export function useScheduledTasks() {
       toast.error('Failed to start task execution');
       return null;
     }
-  }, []);
+  }, [user]);
 
   const toggleTaskActive = useCallback(async (id: string, isActive: boolean) => {
     return updateTask(id, { is_active: isActive });
