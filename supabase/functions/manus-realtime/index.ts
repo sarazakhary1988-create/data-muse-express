@@ -431,6 +431,18 @@ function createAgentPlan(query: string, category: string | undefined, options: a
     errors: [],
   });
 
+  // Explorium Enrichment agent (if enabled)
+  if (options.enableExplorium !== false) {
+    agents.push({
+      id: `explorium-${timestamp}`,
+      type: 'explorium_enrichment',
+      status: 'idle',
+      progress: 0,
+      resultsCount: 0,
+      errors: [],
+    });
+  }
+
   // Lead Enrichment agent (if enabled)
   if (options.enableEnrichment !== false) {
     agents.push({
@@ -539,6 +551,7 @@ async function simulateAgentExecution(
     vision_2030: { count: 3, delay: 350 },
     url_validation: { count: 0, delay: 200 },
     lead_enrichment: { count: 2, delay: 500 },
+    explorium_enrichment: { count: 3, delay: 600 },
   };
 
   const config = agentConfigs[agent.type] || { count: 2, delay: 300 };
@@ -627,14 +640,30 @@ function createMockResult(
       'Company profile: Saudi Aramco leadership changes',
       'Executive update: New CFO appointment announced',
     ],
+    explorium_enrichment: [
+      'Explorium: CEO LinkedIn profile enriched with 15+ data points',
+      'Explorium: Company revenue data verified from multiple sources',
+      'Explorium: Board member connections mapped across 12 companies',
+    ],
   };
 
   const categoryTitles = titles[agent.type] || titles.news;
   const title = categoryTitles[index % categoryTitles.length];
 
+  // Explorium-specific enrichment data
+  const exploriumData = agent.type === 'explorium_enrichment' ? {
+    enrichmentType: 'company_intel',
+    linkedInProfiles: Math.floor(Math.random() * 10) + 5,
+    revenueEstimate: `$${Math.floor(Math.random() * 500) + 100}M`,
+    employeeCount: Math.floor(Math.random() * 5000) + 500,
+    fundingRounds: Math.floor(Math.random() * 5) + 1,
+    dataConfidence: 0.85 + Math.random() * 0.1,
+    sources: ['LinkedIn', 'Crunchbase', 'SEC Filings', 'Company Website'],
+  } : undefined;
+
   return {
     id: `result-${agent.id}-${index}-${Date.now()}`,
-    type: agent.type === 'lead_enrichment' ? 'enrichment' : 'article',
+    type: agent.type === 'lead_enrichment' || agent.type === 'explorium_enrichment' ? 'enrichment' : 'article',
     data: {
       title,
       url: `https://${source}/article/${Date.now()}-${index}`,
@@ -645,6 +674,7 @@ function createMockResult(
       category: category || 'general',
       relevanceScore: 75 + Math.floor(Math.random() * 20),
       credibilityBadge: getCredibilityBadge(source),
+      ...(exploriumData && { explorium: exploriumData }),
     },
     source,
     agentId: agent.id,
