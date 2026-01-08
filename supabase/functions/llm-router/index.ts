@@ -3,9 +3,10 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // ========================================
 // MANUS 1.7 MAX - UNIFIED LLM ROUTER
 // ========================================
-// Routes to: DeepSeek-V3, Qwen 2.5, Llama 3.3 70B, Claude, GPT-5, Gemini
+// PRIMARY: OpenAI, DeepSeek, Llama 3.3 70B, Qwen 2.5
+// SECONDARY: Claude, Gemini
+// FREE INFERENCE: HuggingFace, Groq (free tier), Cloudflare Workers AI
 // Orchestration framework patterns: LangGraph, CrewAI, Mastra
-// With intelligent fallback chain
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,7 +16,41 @@ const corsHeaders = {
 // ============ MODEL CONFIGURATIONS ============
 
 const MODEL_CONFIGS = {
-  // === OPEN SOURCE MODELS ===
+  // === OPENAI (PRIMARY - User has API key) ===
+  'gpt-4o': {
+    name: 'GPT-4o',
+    provider: 'openai',
+    endpoint: 'https://api.openai.com/v1/chat/completions',
+    model: 'gpt-4o',
+    apiKeyEnv: 'OPENAI_API_KEY',
+    maxTokens: 4096,
+    capabilities: ['reasoning', 'coding', 'multimodal', 'tool_use'],
+    tier: 'primary',
+  },
+  'gpt-4o-mini': {
+    name: 'GPT-4o Mini',
+    provider: 'openai',
+    endpoint: 'https://api.openai.com/v1/chat/completions',
+    model: 'gpt-4o-mini',
+    apiKeyEnv: 'OPENAI_API_KEY',
+    maxTokens: 4096,
+    capabilities: ['reasoning', 'coding', 'general'],
+    tier: 'primary',
+  },
+  'gpt-4-turbo': {
+    name: 'GPT-4 Turbo',
+    provider: 'openai',
+    endpoint: 'https://api.openai.com/v1/chat/completions',
+    model: 'gpt-4-turbo-preview',
+    apiKeyEnv: 'OPENAI_API_KEY',
+    maxTokens: 4096,
+    capabilities: ['reasoning', 'coding', 'planning'],
+    tier: 'primary',
+  },
+
+  // === OPEN SOURCE MODELS (FREE INFERENCE) ===
+  
+  // DeepSeek via their API (has free tier)
   'deepseek-v3': {
     name: 'DeepSeek-V3',
     provider: 'deepseek',
@@ -24,8 +59,58 @@ const MODEL_CONFIGS = {
     apiKeyEnv: 'DEEPSEEK_API_KEY',
     maxTokens: 8192,
     capabilities: ['reasoning', 'coding', 'planning', 'tool_use'],
-    tier: 'primary',
+    tier: 'open-source',
   },
+  
+  // Llama 3.3 70B via Groq (FREE tier - 30 RPM)
+  'llama-3.3-70b-groq': {
+    name: 'Llama 3.3 70B (Groq Free)',
+    provider: 'groq',
+    endpoint: 'https://api.groq.com/openai/v1/chat/completions',
+    model: 'llama-3.3-70b-versatile',
+    apiKeyEnv: 'GROQ_API_KEY',
+    maxTokens: 8192,
+    capabilities: ['reasoning', 'coding', 'instruction_following'],
+    tier: 'open-source-free',
+  },
+  
+  // Llama 3.3 70B via Together.xyz
+  'llama-3.3-70b': {
+    name: 'Llama 3.3 70B Instruct',
+    provider: 'together',
+    endpoint: 'https://api.together.xyz/v1/chat/completions',
+    model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+    apiKeyEnv: 'TOGETHER_API_KEY',
+    maxTokens: 4096,
+    capabilities: ['reasoning', 'coding', 'instruction_following'],
+    tier: 'open-source',
+  },
+  
+  // Llama via HuggingFace Inference API (FREE)
+  'llama-3.1-70b-hf': {
+    name: 'Llama 3.1 70B (HuggingFace Free)',
+    provider: 'huggingface',
+    endpoint: 'https://api-inference.huggingface.co/models/meta-llama/Llama-3.1-70B-Instruct',
+    model: 'meta-llama/Llama-3.1-70B-Instruct',
+    apiKeyEnv: 'HUGGINGFACE_API_KEY',
+    maxTokens: 4096,
+    capabilities: ['reasoning', 'coding', 'instruction_following'],
+    tier: 'open-source-free',
+  },
+
+  // Qwen 2.5 via Cloudflare Workers AI (FREE)
+  'qwen-2.5-cf': {
+    name: 'Qwen 2.5 (Cloudflare Free)',
+    provider: 'cloudflare',
+    endpoint: 'https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/ai/run/@cf/qwen/qwen1.5-14b-chat-awq',
+    model: 'qwen1.5-14b-chat-awq',
+    apiKeyEnv: 'CLOUDFLARE_API_KEY',
+    maxTokens: 4096,
+    capabilities: ['tool_use', 'instruction_following', 'reasoning'],
+    tier: 'open-source-free',
+  },
+
+  // Qwen 2.5 via DashScope
   'qwen-2.5': {
     name: 'Qwen 2.5 (72B)',
     provider: 'alibaba',
@@ -34,30 +119,10 @@ const MODEL_CONFIGS = {
     apiKeyEnv: 'DASHSCOPE_API_KEY',
     maxTokens: 8192,
     capabilities: ['tool_use', 'instruction_following', 'reasoning'],
-    tier: 'primary',
+    tier: 'open-source',
   },
-  'llama-3.3-70b': {
-    name: 'Llama 3.3 70B Instruct',
-    provider: 'meta',
-    endpoint: 'https://api.together.xyz/v1/chat/completions',
-    model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
-    apiKeyEnv: 'TOGETHER_API_KEY',
-    maxTokens: 4096,
-    capabilities: ['reasoning', 'coding', 'instruction_following'],
-    tier: 'primary',
-  },
-  // Groq for Llama (faster)
-  'llama-3.3-70b-groq': {
-    name: 'Llama 3.3 70B (Groq)',
-    provider: 'groq',
-    endpoint: 'https://api.groq.com/openai/v1/chat/completions',
-    model: 'llama-3.3-70b-versatile',
-    apiKeyEnv: 'GROQ_API_KEY',
-    maxTokens: 8192,
-    capabilities: ['reasoning', 'coding', 'instruction_following'],
-    tier: 'primary',
-  },
-  // Fireworks for Qwen
+
+  // Qwen via Fireworks
   'qwen-2.5-fireworks': {
     name: 'Qwen 2.5 72B (Fireworks)',
     provider: 'fireworks',
@@ -66,10 +131,22 @@ const MODEL_CONFIGS = {
     apiKeyEnv: 'FIREWORKS_API_KEY',
     maxTokens: 8192,
     capabilities: ['tool_use', 'instruction_following', 'reasoning'],
-    tier: 'primary',
+    tier: 'open-source',
   },
 
-  // === COMMERCIAL MODELS ===
+  // Mistral via their API
+  'mistral-large': {
+    name: 'Mistral Large',
+    provider: 'mistral',
+    endpoint: 'https://api.mistral.ai/v1/chat/completions',
+    model: 'mistral-large-latest',
+    apiKeyEnv: 'MISTRAL_API_KEY',
+    maxTokens: 4096,
+    capabilities: ['reasoning', 'coding', 'multilingual'],
+    tier: 'open-source',
+  },
+
+  // === COMMERCIAL MODELS (FALLBACK) ===
   'claude-sonnet': {
     name: 'Claude Sonnet 4',
     provider: 'anthropic',
@@ -81,28 +158,8 @@ const MODEL_CONFIGS = {
     tier: 'premium',
     isAnthropic: true,
   },
-  'gpt-5': {
-    name: 'GPT-5',
-    provider: 'openai',
-    endpoint: 'https://api.openai.com/v1/chat/completions',
-    model: 'gpt-5-2025-08-07',
-    apiKeyEnv: 'OPENAI_API_KEY',
-    maxTokens: 8192,
-    capabilities: ['reasoning', 'coding', 'multimodal'],
-    tier: 'premium',
-  },
-  'gpt-4o': {
-    name: 'GPT-4o',
-    provider: 'openai',
-    endpoint: 'https://api.openai.com/v1/chat/completions',
-    model: 'gpt-4o',
-    apiKeyEnv: 'OPENAI_API_KEY',
-    maxTokens: 4096,
-    capabilities: ['reasoning', 'coding', 'multimodal'],
-    tier: 'fallback',
-  },
 
-  // === LOVABLE AI (Always available) ===
+  // === LOVABLE AI (Ultimate fallback - always available) ===
   'gemini-2.5-flash': {
     name: 'Gemini 2.5 Flash',
     provider: 'lovable',
@@ -165,6 +222,7 @@ interface LLMRequest {
   stream?: boolean;
   tools?: any[];
   tool_choice?: any;
+  preferOpenSource?: boolean;
   // CrewAI specific
   agents?: CrewAgent[];
   // Mastra specific
@@ -200,15 +258,16 @@ serve(async (req) => {
       model: request.model || 'auto',
       task: request.task,
       orchestration: request.orchestration || 'simple',
+      preferOpenSource: request.preferOpenSource,
     });
 
     // Select model based on task if not specified
     let modelId = request.model === 'auto' || !request.model 
-      ? selectModelForTask(request.task)
+      ? selectModelForTask(request.task, request.preferOpenSource)
       : request.model;
 
-    // Build fallback chain
-    const fallbackChain = request.fallbackChain || buildFallbackChain(modelId);
+    // Build fallback chain prioritizing open source
+    const fallbackChain = request.fallbackChain || buildFallbackChain(modelId, request.preferOpenSource);
     const usedFallbacks: string[] = [];
 
     // Try models in order until one succeeds
@@ -292,38 +351,92 @@ serve(async (req) => {
 
 // ============ MODEL SELECTION ============
 
-function selectModelForTask(task?: string): ModelId {
+function selectModelForTask(task?: string, preferOpenSource?: boolean): ModelId {
+  // Prioritize OpenAI if available and not preferring open source
+  const hasOpenAI = !!Deno.env.get('OPENAI_API_KEY');
+  const hasGroq = !!Deno.env.get('GROQ_API_KEY');
+  const hasDeepSeek = !!Deno.env.get('DEEPSEEK_API_KEY');
+  const hasClaude = !!Deno.env.get('ANTHROPIC_API_KEY');
+
+  if (preferOpenSource) {
+    // Try open source first
+    if (hasGroq) return 'llama-3.3-70b-groq';
+    if (hasDeepSeek) return 'deepseek-v3';
+  }
+
   switch (task) {
     case 'reasoning':
-      return 'deepseek-v3'; // Best for complex reasoning
+      if (hasOpenAI) return 'gpt-4o';
+      if (hasDeepSeek) return 'deepseek-v3';
+      if (hasGroq) return 'llama-3.3-70b-groq';
+      return 'gemini-2.5-pro';
+      
     case 'coding':
-      return 'deepseek-v3'; // Excellent at code
+      if (hasDeepSeek) return 'deepseek-v3';
+      if (hasOpenAI) return 'gpt-4o';
+      if (hasGroq) return 'llama-3.3-70b-groq';
+      return 'gemini-2.5-flash';
+      
     case 'planning':
-      return 'claude-sonnet'; // Great for planning
+      if (hasClaude) return 'claude-sonnet';
+      if (hasOpenAI) return 'gpt-4o';
+      return 'gemini-2.5-pro';
+      
     case 'synthesis':
-      return 'gemini-2.5-pro'; // Strong synthesis capabilities
+      if (hasOpenAI) return 'gpt-4o';
+      if (hasClaude) return 'claude-sonnet';
+      return 'gemini-2.5-pro';
+      
     case 'research':
-      return 'qwen-2.5'; // Good at tool use for research
+      if (hasOpenAI) return 'gpt-4o';
+      if (hasGroq) return 'llama-3.3-70b-groq';
+      return 'gemini-2.5-flash';
+      
     default:
-      return 'gemini-2.5-flash'; // Fast default
+      // Default priority: OpenAI > Groq (free Llama) > DeepSeek > Gemini
+      if (hasOpenAI) return 'gpt-4o-mini';
+      if (hasGroq) return 'llama-3.3-70b-groq';
+      if (hasDeepSeek) return 'deepseek-v3';
+      return 'gemini-2.5-flash';
   }
 }
 
-function buildFallbackChain(primary: ModelId): ModelId[] {
+function buildFallbackChain(primary: ModelId, preferOpenSource?: boolean): ModelId[] {
   const chain: ModelId[] = [];
 
-  // Priority order based on capability and availability
-  const priorityOrder: ModelId[] = [
-    'deepseek-v3',
-    'llama-3.3-70b-groq',
-    'llama-3.3-70b',
-    'qwen-2.5-fireworks',
-    'qwen-2.5',
-    'claude-sonnet',
-    'gpt-4o',
-    'gemini-2.5-pro',
-    'gemini-2.5-flash', // Always last as ultimate fallback
-  ];
+  // Priority order - OpenAI first since user has API key, then open source free tiers
+  const priorityOrder: ModelId[] = preferOpenSource
+    ? [
+        // Open source first
+        'llama-3.3-70b-groq',
+        'deepseek-v3',
+        'llama-3.1-70b-hf',
+        'llama-3.3-70b',
+        'qwen-2.5-fireworks',
+        'qwen-2.5',
+        'mistral-large',
+        // Then commercial
+        'gpt-4o',
+        'gpt-4o-mini',
+        'claude-sonnet',
+        'gemini-2.5-pro',
+        'gemini-2.5-flash',
+      ]
+    : [
+        // Commercial first (OpenAI has key)
+        'gpt-4o',
+        'gpt-4o-mini',
+        'gpt-4-turbo',
+        'claude-sonnet',
+        // Then open source
+        'llama-3.3-70b-groq',
+        'deepseek-v3',
+        'llama-3.3-70b',
+        'qwen-2.5',
+        // Ultimate fallback
+        'gemini-2.5-pro',
+        'gemini-2.5-flash',
+      ];
 
   for (const model of priorityOrder) {
     if (model !== primary && !chain.includes(model)) {
@@ -347,6 +460,17 @@ async function callModel(
     return callAnthropic(config, apiKey, request);
   }
 
+  // Handle HuggingFace
+  if (config.provider === 'huggingface') {
+    return callHuggingFace(config, apiKey, request);
+  }
+
+  // Handle Cloudflare Workers AI
+  if (config.provider === 'cloudflare') {
+    return callCloudflare(config, apiKey, request);
+  }
+
+  // Standard OpenAI-compatible API
   const response = await fetch(config.endpoint, {
     method: 'POST',
     headers: {
@@ -441,6 +565,84 @@ async function callAnthropic(
   };
 }
 
+async function callHuggingFace(
+  config: typeof MODEL_CONFIGS[ModelId],
+  apiKey: string,
+  request: LLMRequest
+): Promise<{ success: boolean; content: string; usage?: any }> {
+  
+  // Convert to HuggingFace format
+  const prompt = request.messages
+    .map(m => `${m.role}: ${m.content}`)
+    .join('\n') + '\nassistant:';
+
+  const response = await fetch(config.endpoint, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      inputs: prompt,
+      parameters: {
+        max_new_tokens: Math.min(request.maxTokens || 1024, config.maxTokens),
+        temperature: request.temperature ?? 0.7,
+        return_full_text: false,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`HuggingFace API error: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json();
+  const content = Array.isArray(data) ? data[0]?.generated_text || '' : data.generated_text || '';
+
+  return {
+    success: true,
+    content,
+  };
+}
+
+async function callCloudflare(
+  config: typeof MODEL_CONFIGS[ModelId],
+  apiKey: string,
+  request: LLMRequest
+): Promise<{ success: boolean; content: string; usage?: any }> {
+  
+  const accountId = Deno.env.get('CF_ACCOUNT_ID');
+  if (!accountId) {
+    throw new Error('CF_ACCOUNT_ID not configured');
+  }
+
+  const endpoint = config.endpoint.replace('${CF_ACCOUNT_ID}', accountId);
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      messages: request.messages,
+      max_tokens: Math.min(request.maxTokens || 1024, config.maxTokens),
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Cloudflare AI error: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json();
+  return {
+    success: true,
+    content: data.result?.response || '',
+  };
+}
+
 // ============ ORCHESTRATION PATTERNS ============
 
 // LangGraph pattern: Stateful graph execution
@@ -498,21 +700,21 @@ async function executeLangGraph(
 function getNodeInstruction(node: string): string {
   switch (node) {
     case 'analyze':
-      return 'Break down the query into sub-questions and identify key entities.';
+      return 'Analyze the user request. Identify key entities, requirements, and constraints.';
     case 'plan':
-      return 'Create a research plan with specific sources and methods.';
+      return 'Create a step-by-step plan to address the request. List specific actions needed.';
     case 'execute':
-      return 'Execute the research plan and gather information.';
+      return 'Execute the plan. Gather information and perform the required actions.';
     case 'observe':
-      return 'Validate findings and identify contradictions.';
+      return 'Observe the results. Check for errors, inconsistencies, or missing information.';
     case 'synthesize':
-      return 'Synthesize all findings into a coherent response with citations.';
+      return 'Synthesize all findings into a comprehensive, well-structured response.';
     default:
-      return 'Process the current task.';
+      return 'Process the current step in the workflow.';
   }
 }
 
-// CrewAI pattern: Role-based multi-agent
+// CrewAI pattern: Role-based agent collaboration
 async function executeCrewAI(
   config: typeof MODEL_CONFIGS[ModelId],
   apiKey: string,
@@ -520,37 +722,41 @@ async function executeCrewAI(
 ): Promise<{ success: boolean; content: string; usage?: any }> {
   console.log('[CrewAI] Executing role-based multi-agent workflow');
 
-  const defaultAgents: CrewAgent[] = [
+  const defaultAgents: CrewAgent[] = request.agents || [
     {
       role: 'Researcher',
-      goal: 'Find accurate and comprehensive information',
-      backstory: 'Expert at discovering and analyzing data from multiple sources',
-      model: 'deepseek-v3',
+      goal: 'Gather comprehensive information from multiple sources',
+      backstory: 'Expert researcher with experience in data collection and verification',
+      model: 'gpt-4o' as ModelId,
     },
     {
       role: 'Analyst',
-      goal: 'Verify claims and identify contradictions',
-      backstory: 'Skilled at critical analysis and fact-checking',
-      model: 'qwen-2.5',
+      goal: 'Analyze data and identify patterns, insights, and contradictions',
+      backstory: 'Senior analyst skilled in critical thinking and data interpretation',
+      model: 'claude-sonnet' as ModelId,
     },
     {
       role: 'Writer',
-      goal: 'Synthesize findings into clear reports',
-      backstory: 'Professional at creating structured, evidence-based reports',
-      model: 'claude-sonnet',
+      goal: 'Produce clear, accurate, and well-structured reports',
+      backstory: 'Professional technical writer with expertise in research communication',
+      model: 'gpt-4o' as ModelId,
     },
   ];
 
-  const agents = request.agents || defaultAgents;
-  let agentOutputs: string[] = [];
+  let context = '';
   let totalUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 
-  for (const agent of agents) {
+  for (const agent of defaultAgents) {
     const agentPrompt = {
       role: 'system',
-      content: `You are a ${agent.role}. Your goal: ${agent.goal}. Background: ${agent.backstory}. 
-Previous agent outputs: ${agentOutputs.join('\n\n')}
-Provide your contribution based on your role.`,
+      content: `You are a ${agent.role}. 
+Goal: ${agent.goal}
+Background: ${agent.backstory}
+
+Previous agent context:
+${context || 'You are the first agent in the workflow.'}
+
+Complete your task based on the user's request.`,
     };
 
     const result = await callModel(config, apiKey, {
@@ -559,7 +765,8 @@ Provide your contribution based on your role.`,
     });
 
     if (result.success) {
-      agentOutputs.push(`[${agent.role}]: ${result.content}`);
+      context += `\n\n[${agent.role}]:\n${result.content}`;
+      
       if (result.usage) {
         totalUsage.promptTokens += result.usage.promptTokens || 0;
         totalUsage.completionTokens += result.usage.completionTokens || 0;
@@ -568,57 +775,57 @@ Provide your contribution based on your role.`,
     }
   }
 
-  return {
-    success: true,
-    content: agentOutputs.join('\n\n---\n\n'),
-    usage: totalUsage,
+  return { 
+    success: true, 
+    content: context, 
+    usage: totalUsage 
   };
 }
 
-// Mastra pattern: Production-ready with monitoring
+// Mastra pattern: Production-ready with retries and monitoring
 async function executeMastra(
   config: typeof MODEL_CONFIGS[ModelId],
   apiKey: string,
   request: LLMRequest
 ): Promise<{ success: boolean; content: string; usage?: any }> {
-  console.log('[Mastra] Executing production-ready workflow');
+  console.log('[Mastra] Executing production workflow with monitoring');
 
-  const mastraConfig = request.mastraConfig || {
+  const mastraConfig: MastraConfig = request.mastraConfig || {
     enableMetrics: true,
     retryPolicy: { maxRetries: 3, backoffMs: 1000 },
-    timeout: 60000,
+    timeout: 30000,
   };
 
   let lastError: Error | null = null;
+  let attempt = 0;
 
-  for (let attempt = 0; attempt <= mastraConfig.retryPolicy.maxRetries; attempt++) {
+  while (attempt < mastraConfig.retryPolicy.maxRetries) {
+    attempt++;
+    console.log(`[Mastra] Attempt ${attempt}/${mastraConfig.retryPolicy.maxRetries}`);
+
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), mastraConfig.timeout);
 
       const result = await callModel(config, apiKey, request);
-
       clearTimeout(timeoutId);
 
       if (result.success) {
-        console.log(`[Mastra] Success on attempt ${attempt + 1}`);
+        console.log(`[Mastra] Success on attempt ${attempt}`);
         return result;
       }
     } catch (error) {
-      lastError = error as Error;
-      console.log(`[Mastra] Attempt ${attempt + 1} failed:`, error);
-
+      lastError = error instanceof Error ? error : new Error(String(error));
+      console.log(`[Mastra] Attempt ${attempt} failed:`, lastError.message);
+      
+      // Exponential backoff
       if (attempt < mastraConfig.retryPolicy.maxRetries) {
         await new Promise(resolve => 
-          setTimeout(resolve, mastraConfig.retryPolicy.backoffMs * Math.pow(2, attempt))
+          setTimeout(resolve, mastraConfig.retryPolicy.backoffMs * Math.pow(2, attempt - 1))
         );
       }
     }
   }
 
-  return {
-    success: false,
-    content: '',
-    usage: undefined,
-  };
+  throw lastError || new Error('Mastra workflow failed after all retries');
 }
