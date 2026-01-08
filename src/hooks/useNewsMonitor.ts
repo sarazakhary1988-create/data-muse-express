@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { validateUrl, OFFICIAL_DOMAINS, VERIFIED_DOMAINS, PREMIUM_DOMAINS } from '@/lib/urlValidator';
 
 // Extended categories for lead generation
 export type NewsCategory = 
@@ -100,39 +101,31 @@ export interface NewsFilters {
   dateTo?: Date;
 }
 
-// Build search queries based on filters
+// MANUS 1.6 MAX - Category-specific keyword mapping
+// Each category uses specific keyword-tuned queries (NOT generic)
+const MANUS_CATEGORY_KEYWORDS: Record<string, string[]> = {
+  cma_violation: ['CMA announcement', 'CMA regulation', 'CMA violation', 'CMA fine', 'Capital Market Authority penalty', 'CMA suspension', 'CMA warning'],
+  ipo: ['IPO', 'initial public offering', 'listing', 'prospectus', 'public float', 'stock debut', 'goes public', 'IPO filing'],
+  acquisition: ['merger', 'acquisition', 'M&A', 'buyout', 'takeover', 'deal closed', 'acquiring company'],
+  banking: ['banking sector', 'bank profit', 'bank earnings', 'SNB', 'Al Rajhi Bank', 'banking services', 'loan growth', 'bank assets'],
+  real_estate: ['real estate', 'property development', 'construction project', 'housing', 'commercial property', 'ROSHN', 'property market', 'real estate investment'],
+  tech_funding: ['technology startup', 'fintech', 'venture capital', 'series A', 'series B', 'tech investment', 'software company', 'startup funding'],
+  vision_2030: ['Vision 2030', 'Saudi Vision 2030', 'NEOM', 'giga project', 'Qiddiya', 'Red Sea Project', 'Diriyah', 'THE LINE'],
+  expansion: ['expansion', 'new opening', 'launch', 'new branch', 'entering market', 'growth plan', 'new facility', 'market expansion'],
+  contract: ['contract awarded', 'billion deal', 'agreement signed', 'project contract', 'tender won', 'SAR million contract'],
+  joint_venture: ['joint venture', 'JV partnership', 'MOU signed', 'strategic alliance', 'business partnership'],
+  appointment: ['CEO appointed', 'chairman named', 'executive hire', 'board member appointed', 'CFO announcement', 'director named'],
+  regulatory: ['regulation', 'compliance', 'regulatory filing', 'SEC filing', 'CMA announcement', 'regulatory approval'],
+  market: ['stock market', 'trading update', 'index movement', 'market cap', 'shares trading', 'equity market', 'TASI'],
+};
+
+// Build search queries based on filters - MANUS KEYWORD-SPECIFIC FILTERING
 function buildFilteredQueries(filters?: NewsFilters): string[] {
-  const baseQueries = [...GCC_NEWS_QUERIES];
-  
-  if (!filters) return baseQueries;
-  
   const queries: string[] = [];
-  const activeCountries = filters.countries?.filter(c => c !== 'all') || [];
-  const activeCategories = filters.categories?.filter(c => c !== 'all') || [];
-  const activeSources = filters.sources?.filter(s => s !== 'all') || [];
+  const activeCountries = filters?.countries?.filter(c => c !== 'all') || [];
+  const activeCategories = filters?.categories?.filter(c => c !== 'all') || [];
+  const activeSources = filters?.sources?.filter(s => s !== 'all') || [];
   
-  // No filters active = use base queries
-  if (activeCountries.length === 0 && activeCategories.length === 0 && activeSources.length === 0) {
-    return baseQueries;
-  }
-
-  // Category-to-query mapping
-  const categoryQueryMap: Record<string, string> = {
-    ipo: 'IPO listing prospectus public offering Tadawul NOMU CMA',
-    acquisition: 'M&A merger acquisition takeover buyout deal',
-    market: 'stock market trading index shares equity Tadawul',
-    regulatory: 'CMA SEC regulation compliance filing penalty',
-    expansion: 'expansion launch growth new branch office opening',
-    contract: 'contract awarded deal agreement billion million SAR project',
-    joint_venture: 'joint venture partnership MOU strategic alliance',
-    appointment: 'CEO CFO chairman director appointment executive hire',
-    cma_violation: 'CMA violation fine penalty sanction breach warning',
-    vision_2030: 'Vision 2030 NEOM Red Sea Qiddiya giga project',
-    banking: 'banking bank SNB Al Rajhi Riyad Bank profit earnings',
-    real_estate: 'real estate property ROSHN REIT development housing',
-    tech_funding: 'startup fintech venture funding series investment tech',
-  };
-
   // Source-to-site mapping for search
   const sourceToSite: Record<string, string> = {
     argaam: 'site:argaam.com',
@@ -142,55 +135,59 @@ function buildFilteredQueries(filters?: NewsFilters): string[] {
     arabnews: 'site:arabnews.com',
     ft: 'site:ft.com',
     yahoo: 'site:finance.yahoo.com',
-    tadawul: 'site:saudiexchange.sa',
+    tadawul: 'site:saudiexchange.sa OR site:tadawul.com.sa',
+    cma: 'site:cma.org.sa OR site:cma.gov.sa',
   };
-
-  // Build country string
-  const countryStr = activeCountries.length > 0 
-    ? activeCountries.join(' OR ') 
-    : '';
 
   // Build source site string
   const siteStr = activeSources.length > 0
     ? activeSources.map(s => sourceToSite[s] || '').filter(Boolean).join(' OR ')
     : '';
 
-  // Case 1: Countries + Categories
-  if (activeCountries.length > 0 && activeCategories.length > 0) {
-    activeCategories.forEach(cat => {
-      const catQuery = categoryQueryMap[cat] || cat;
-      activeCountries.forEach(country => {
-        queries.push(`${catQuery} ${country}${siteStr ? ' ' + siteStr : ''}`);
-      });
+  // MANUS KEYWORD-SPECIFIC: If categories are active, use ONLY category-specific keywords
+  if (activeCategories.length > 0) {
+    activeCategories.forEach(category => {
+      const keywords = MANUS_CATEGORY_KEYWORDS[category];
+      if (keywords && keywords.length > 0) {
+        // Use first 3 keywords for focused search
+        const keywordQuery = keywords.slice(0, 3).join(' OR ');
+        
+        if (activeCountries.length > 0) {
+          activeCountries.forEach(country => {
+            queries.push(`(${keywordQuery}) ${country}${siteStr ? ' ' + siteStr : ''}`);
+          });
+        } else {
+          // Default to MENA/GCC region
+          queries.push(`(${keywordQuery}) Saudi Arabia GCC${siteStr ? ' ' + siteStr : ''}`);
+          queries.push(`(${keywordQuery}) MENA${siteStr ? ' ' + siteStr : ''}`);
+        }
+      }
     });
   }
-  // Case 2: Countries only
+  // Countries only - use general financial news for those countries
   else if (activeCountries.length > 0) {
     activeCountries.forEach(country => {
       queries.push(`financial news ${country}${siteStr ? ' ' + siteStr : ''}`);
       queries.push(`business market ${country}${siteStr ? ' ' + siteStr : ''}`);
-      queries.push(`IPO listing ${country}${siteStr ? ' ' + siteStr : ''}`);
-      queries.push(`M&A acquisition ${country}${siteStr ? ' ' + siteStr : ''}`);
+      queries.push(`stock exchange ${country}${siteStr ? ' ' + siteStr : ''}`);
     });
   }
-  // Case 3: Categories only
-  else if (activeCategories.length > 0) {
-    activeCategories.forEach(cat => {
-      const catQuery = categoryQueryMap[cat] || cat;
-      queries.push(`${catQuery} GCC MENA${siteStr ? ' ' + siteStr : ''}`);
-    });
-  }
-  // Case 4: Sources only
+  // Sources only
   else if (activeSources.length > 0) {
     queries.push(`financial news GCC ${siteStr}`);
     queries.push(`business Saudi Arabia UAE ${siteStr}`);
+    queries.push(`market update MENA ${siteStr}`);
+  }
+  // No filters - use base GCC queries
+  else {
+    return [...GCC_NEWS_QUERIES].slice(0, 5);
   }
 
   // Log constructed queries for debugging
-  console.log('[NewsMonitor] Built filtered queries:', queries);
+  console.log('[NewsMonitor] MANUS keyword-specific queries:', queries);
   
-  // Ensure we have at least some queries, limit to 10
-  return queries.length > 0 ? [...new Set(queries)].slice(0, 10) : baseQueries.slice(0, 5);
+  // Limit to 10 unique queries
+  return [...new Set(queries)].slice(0, 10);
 }
 
 export function useNewsMonitor() {
@@ -256,20 +253,36 @@ export function useNewsMonitor() {
     }));
   }, []);
 
-  // Validate URL is real (not AI-generated)
+  // MANUS URL VALIDATION - Uses whitelist and validation system
   const isValidNewsUrl = (url: string): boolean => {
     if (!url || !url.startsWith('http')) return false;
-    // Reject obviously fake/generated URLs
-    if (url.includes('source-') && url.includes('.com')) return false;
-    if (url.includes('example.com')) return false;
-    if (url.includes('placeholder')) return false;
-    // Must have a proper domain structure
-    try {
-      const urlObj = new URL(url);
-      return urlObj.hostname.includes('.') && urlObj.hostname.length > 3;
-    } catch {
+    
+    // Use the comprehensive URL validator
+    const validation = validateUrl(url);
+    
+    // Reject if URL structure is invalid or suspicious
+    if (!validation.hasValidStructure || validation.isSuspicious) {
+      console.log('[NewsMonitor] URL validation failed:', url, validation.reasons);
       return false;
     }
+    
+    // Accept whitelisted domains and allow unverified for now (with warning badge)
+    return validation.isValid;
+  };
+  
+  // Determine source credibility for badges
+  const getSourceCredibility = (url: string, source: string): { isOfficial: boolean; isVerified: boolean; isPremium: boolean } => {
+    const validation = validateUrl(url);
+    const domain = validation.domain.toLowerCase();
+    
+    return {
+      isOfficial: OFFICIAL_DOMAINS.some(d => domain.includes(d)) || 
+                  ['cma', 'tadawul', 'saudiexchange', 'sec'].some(s => source.toLowerCase().includes(s)),
+      isVerified: VERIFIED_DOMAINS.some(d => domain.includes(d)) ||
+                  ['reuters', 'bloomberg', 'bbc', 'aljazeera', 'cnbc'].some(s => source.toLowerCase().includes(s)),
+      isPremium: PREMIUM_DOMAINS.some(d => domain.includes(d)) ||
+                 ['ft', 'financial times', 'bloomberg', 'wsj', 'economist'].some(s => source.toLowerCase().includes(s)),
+    };
   };
 
   // Filter news by date range - default to last 7 days
@@ -371,6 +384,9 @@ export function useNewsMonitor() {
           const tsCandidate = result.fetchedAt || result.publishDate || result.publishedAt;
           const parsedTs = tsCandidate ? new Date(tsCandidate) : new Date();
           const timestamp = Number.isNaN(parsedTs.getTime()) ? new Date() : parsedTs;
+          
+          // Get credibility information using MANUS validation
+          const credibility = getSourceCredibility(result.url, source);
 
           return {
             id,
@@ -384,8 +400,8 @@ export function useNewsMonitor() {
             country,
             region: country ? REGION_MAP[country] : 'global',
             companies: extractCompanies(text),
-            isOfficial: OFFICIAL_SOURCES.some(s => source.toLowerCase().includes(s)),
-            isValidated: true,
+            isOfficial: credibility.isOfficial,
+            isValidated: credibility.isVerified || credibility.isOfficial,
           };
         })
         // Filter by date range (last 7 days default, or custom range)

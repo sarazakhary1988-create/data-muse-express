@@ -485,6 +485,28 @@ export function NewsRibbon({ filterState, onResearchNews, onPositionChange }: Ne
     return `${Math.floor(seconds / 86400)}d`;
   };
 
+  // Format article date prominently for summary dialog
+  const formatArticleDate = (date: Date) => {
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    
+    if (diffHours < 1) {
+      const diffMins = Math.floor(diffMs / (1000 * 60));
+      return diffMins <= 1 ? 'Just now' : `${diffMins} minutes ago`;
+    }
+    if (diffHours < 24) {
+      return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    }
+    
+    // Format as "Jan 8, 2026"
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  };
+
   const formatCountdown = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -686,6 +708,13 @@ export function NewsRibbon({ filterState, onResearchNews, onPositionChange }: Ne
                     {categoryIcons[item.category]}
                     <span className="hidden sm:inline">{categoryLabels[item.category]}</span>
                   </span>
+                  
+                  {/* Credibility badge - Official/Verified/Premium */}
+                  {item.isOfficial && (
+                    <span className="inline-flex items-center px-1 py-0.5 rounded text-[8px] font-medium bg-green-500/20 text-green-400 border border-green-500/30">
+                      🏛️
+                    </span>
+                  )}
                   
                   {/* Title */}
                   <span className={cn(
@@ -1156,7 +1185,7 @@ export function NewsRibbon({ filterState, onResearchNews, onPositionChange }: Ne
       {/* Spacer to prevent content from going under the ribbon */}
       <div className={cn("h-10", position === 'bottom' && "order-last")} />
 
-      {/* AI Summary Dialog */}
+      {/* AI Summary Dialog with Publication Date Display */}
       <Dialog open={summaryDialogOpen} onOpenChange={setSummaryDialogOpen}>
         <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader>
@@ -1166,6 +1195,34 @@ export function NewsRibbon({ filterState, onResearchNews, onPositionChange }: Ne
           </DialogHeader>
           
           <div className="space-y-4">
+            {/* PUBLICATION DATE & SOURCE INFO - Displayed prominently at TOP */}
+            {summaryItem && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground border-b border-border/50 pb-3">
+                <Clock className="w-3.5 h-3.5" />
+                <span className="font-medium">
+                  {formatArticleDate(summaryItem.timestamp)}
+                </span>
+                <span className="text-muted-foreground/50">|</span>
+                <span>{summaryItem.source}</span>
+                {summaryItem.isOfficial && (
+                  <>
+                    <span className="text-muted-foreground/50">|</span>
+                    <Badge variant="outline" className="h-4 px-1.5 text-[9px] border-green-500/30 text-green-500 bg-green-500/10">
+                      🏛️ Official Source
+                    </Badge>
+                  </>
+                )}
+                {!summaryItem.isOfficial && summaryItem.isValidated && (
+                  <>
+                    <span className="text-muted-foreground/50">|</span>
+                    <Badge variant="outline" className="h-4 px-1.5 text-[9px] border-blue-500/30 text-blue-500 bg-blue-500/10">
+                      ✓ Verified
+                    </Badge>
+                  </>
+                )}
+              </div>
+            )}
+
             {summaryLoading ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="w-6 h-6 animate-spin text-primary" />
