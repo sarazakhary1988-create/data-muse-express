@@ -74,6 +74,15 @@ export interface StrictModeSettings {
   minSources: number;
 }
 
+// Research options that flow from SearchInput to research engine
+export interface ResearchOptions {
+  aiConnector: string;  // 'auto' | 'openai' | 'claude' | 'gemini' | 'perplexity' | 'cohere'
+  mcpConnector: string; // 'manus' | 'firecrawl' | 'tavily' | 'browserbase'
+  dataSource: string;   // 'auto' | specific source ID
+  customDomains: string[]; // Domain restrictions
+  enrichWithExplorium: boolean;
+}
+
 // Research settings
 export interface ResearchSettings {
   useDemoData: boolean; // Toggle for demo/synthetic data
@@ -233,6 +242,9 @@ interface ResearchStore {
   countryFilter: string;
   strictMode: StrictModeSettings;
   
+  // Research options from SearchInput
+  researchOptions: ResearchOptions;
+  
   // New settings
   researchSettings: ResearchSettings;
   runHistory: RunHistoryEntry[];
@@ -273,6 +285,7 @@ interface ResearchStore {
   setTimeFrameFilter: (filter: TimeFrameValue) => void;
   setCountryFilter: (country: string) => void;
   setStrictMode: (settings: StrictModeSettings) => void;
+  setResearchOptions: (options: Partial<ResearchOptions>) => void;
   
   // New actions
   setResearchSettings: (settings: Partial<ResearchSettings>) => void;
@@ -314,6 +327,15 @@ export const useResearchStore = create<ResearchStore>()(
       timeFrameFilter: { type: 'all' } as TimeFrameValue,
       countryFilter: 'global',
       strictMode: { enabled: true, minSources: 2 } as StrictModeSettings,
+      
+      // Research options from SearchInput
+      researchOptions: {
+        aiConnector: 'auto',
+        mcpConnector: 'manus',
+        dataSource: 'auto',
+        customDomains: [],
+        enrichWithExplorium: true,
+      } as ResearchOptions,
       
       // New settings
       researchSettings: {
@@ -429,6 +451,10 @@ export const useResearchStore = create<ResearchStore>()(
       setCountryFilter: (country) => set({ countryFilter: country }),
       
       setStrictMode: (settings) => set({ strictMode: settings }),
+      
+      setResearchOptions: (options) => set((s) => ({
+        researchOptions: { ...s.researchOptions, ...options }
+      })),
       
       // Agent state actions
       setAgentState: (state) => set((s) => ({

@@ -34,11 +34,29 @@ interface QueryAnalysis {
   suggestedAgents: string[];
 }
 
+// Research options passed from frontend
+interface ResearchOptions {
+  aiConnector?: string;
+  mcpConnector?: string;
+  dataSource?: string;
+  customDomains?: string[];
+  enrichWithExplorium?: boolean;
+  timeframe?: string;
+  country?: string;
+  reportFormat?: string;
+  deepVerifyMode?: boolean;
+  maxResults?: number;
+  categories?: string[];
+  countries?: string[];
+  sourceUrls?: string[];
+}
+
 interface RouteResult {
   analysis: QueryAnalysis;
   results: any[];
   sources: string[];
   executionTimeMs: number;
+  optionsUsed: ResearchOptions;
 }
 
 // URL pattern detection
@@ -211,8 +229,8 @@ async function executeLeadEnrichment(query: string, sourceUrls?: string[]): Prom
   }
 }
 
-// Execute wide research
-async function executeWideResearch(query: string, options: any = {}): Promise<any> {
+// Execute wide research with full options
+async function executeWideResearch(query: string, options: ResearchOptions = {}): Promise<any> {
   try {
     const response = await fetch(`${supabaseUrl}/functions/v1/wide-research`, {
       method: 'POST',
@@ -223,7 +241,10 @@ async function executeWideResearch(query: string, options: any = {}): Promise<an
       body: JSON.stringify({ 
         query,
         maxResults: options.maxResults || 15,
-        ...options,
+        country: options.country,
+        domains: options.customDomains,
+        timeframe: options.timeframe,
+        newsMode: false,
       }),
     });
     
@@ -255,8 +276,8 @@ async function executeDeepResearch(query: string): Promise<any> {
   }
 }
 
-// Execute news search
-async function executeNewsSearch(query: string, options: any = {}): Promise<any> {
+// Execute news search with full options
+async function executeNewsSearch(query: string, options: ResearchOptions = {}): Promise<any> {
   try {
     const response = await fetch(`${supabaseUrl}/functions/v1/news-search`, {
       method: 'POST',
@@ -268,13 +289,15 @@ async function executeNewsSearch(query: string, options: any = {}): Promise<any>
         query,
         categories: options.categories,
         countries: options.countries,
+        country: options.country,
         maxResults: options.maxResults || 20,
+        timeframe: options.timeframe,
       }),
     });
     
     if (!response.ok) {
       // Fallback to wide-research in news mode
-      return executeWideResearch(query, { newsMode: true });
+      return executeWideResearch(query, { ...options, maxResults: 15 });
     }
     return await response.json();
   } catch (error) {
@@ -283,15 +306,17 @@ async function executeNewsSearch(query: string, options: any = {}): Promise<any>
   }
 }
 
-// Route and execute query
-async function routeAndExecute(query: string, options: any = {}): Promise<RouteResult> {
+// Route and execute query with full options
+async function routeAndExecute(query: string, options: ResearchOptions = {}): Promise<RouteResult> {
   const startTime = Date.now();
   const analysis = analyzeQuery(query);
   const results: any[] = [];
   const sources: string[] = [];
   
+  console.log(`[Router] ===== ROUTING DECISION =====`);
   console.log(`[Router] Query intent: ${analysis.intent} (${(analysis.confidence * 100).toFixed(0)}%)`);
   console.log(`[Router] Suggested agents:`, analysis.suggestedAgents);
+  console.log(`[Router] Options received:`, JSON.stringify(options));
   
   // Execute based on intent - parallel where possible
   const promises: Promise<any>[] = [];
@@ -427,6 +452,7 @@ async function routeAndExecute(query: string, options: any = {}): Promise<RouteR
     results,
     sources: [...new Set(sources)],
     executionTimeMs: Date.now() - startTime,
+    optionsUsed: options,
   };
 }
 

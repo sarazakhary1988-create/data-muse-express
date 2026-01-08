@@ -7,14 +7,26 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 
+interface ResearchContext {
+  timeframe?: string;
+  country?: string;
+  domains?: string[];
+  dataSource?: string;
+  aiConnector?: string;
+  mcpConnector?: string;
+  reportFormat?: string;
+  deepVerifyMode?: boolean;
+  enrichWithExplorium?: boolean;
+}
+
 interface PromptEnhancerProps {
   query: string;
   onEnhanced: (enhancedQuery: string) => void;
   disabled?: boolean;
-  timeContext?: string;
+  researchContext?: ResearchContext;
 }
 
-export const PromptEnhancer = ({ query, onEnhanced, disabled, timeContext }: PromptEnhancerProps) => {
+export const PromptEnhancer = ({ query, onEnhanced, disabled, researchContext }: PromptEnhancerProps) => {
   const { t, isRTL } = useLanguage();
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [isEnhanced, setIsEnhanced] = useState(false);
@@ -26,10 +38,16 @@ export const PromptEnhancer = ({ query, onEnhanced, disabled, timeContext }: Pro
     setIsEnhanced(false);
 
     try {
+      // Pass full research context to enhance-prompt edge function
       const { data, error } = await supabase.functions.invoke('enhance-prompt', {
         body: { 
           description: query,
-          geographic_focus: timeContext || undefined,
+          geographic_focus: researchContext?.timeframe || undefined,
+          country: researchContext?.country || undefined,
+          custom_websites: researchContext?.domains || undefined,
+          research_depth: researchContext?.deepVerifyMode ? 'deep' : 'standard',
+          taskType: 'web_research',
+          timeframe: researchContext?.timeframe || undefined,
         },
       });
 
