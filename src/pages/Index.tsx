@@ -9,7 +9,7 @@ import { Sidebar, ViewType } from '@/components/Sidebar';
 import { TopNavigation } from '@/components/TopNavigation';
 import { SearchInput } from '@/components/SearchInput';
 import { HeroSection } from '@/components/HeroSection';
-import { FeatureGrid } from '@/components/FeatureGrid';
+// FeatureGrid removed for cleaner landing page
 import { ResearchProgress, defaultResearchSteps, deepVerifyResearchSteps } from '@/components/ResearchProgress';
 import { ResultsView } from '@/components/ResultsView';
 import { ReportViewer } from '@/components/ReportViewer';
@@ -251,7 +251,7 @@ const Index = () => {
               )}
             </AnimatePresence>
             
-            {!isSearching && <FeatureGrid />}
+            {/* Feature boxes removed for cleaner landing page */}
           </div>
         );
 

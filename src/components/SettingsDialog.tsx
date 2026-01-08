@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Settings, Moon, Sun, Trash2, Database, RefreshCw, Newspaper, Bell } from 'lucide-react';
+import { Settings, Moon, Sun, Trash2, Database, RefreshCw, Newspaper, Bell, Globe } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { NewsSourceSettings } from '@/components/NewsSourceSettings';
 import { NewsNotificationSettings } from '@/components/NewsNotificationSettings';
+import { CustomCrawlSourceSettings } from '@/components/CustomCrawlSourceSettings';
 
 interface SettingsDialogProps {
   collapsed?: boolean;
@@ -133,6 +134,17 @@ export const SettingsDialog = ({ collapsed = false }: SettingsDialogProps) => {
               News Source Filters
             </h4>
             <NewsSourceSettings />
+          </div>
+
+          <Separator />
+
+          {/* Custom Crawl Sources */}
+          <div className="space-y-4">
+            <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
+              <Globe className="w-4 h-4" />
+              Custom News Sources to Crawl
+            </h4>
+            <CustomCrawlSourceSettings />
           </div>
 
           <Separator />

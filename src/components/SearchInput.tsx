@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Sparkles, Globe, ArrowRight, Loader2, Link, FileSearch, Shield, ShieldCheck, FileText, Table, FileBarChart, Zap, Clock, MapPin, ChevronDown } from 'lucide-react';
+import { Search, Sparkles, Globe, ArrowRight, Loader2, Link, FileSearch, Shield, ShieldCheck, FileText, Table, FileBarChart, Zap, Clock, MapPin, ChevronDown, Brain, Puzzle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useResearchStore, REPORT_FORMAT_OPTIONS, ReportFormat } from '@/store/researchStore';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +12,24 @@ import { TimeFrameFilter, formatTimeFrameForQuery } from '@/components/TimeFrame
 import { PromptEnhancer } from '@/components/PromptEnhancer';
 import { CountryFilter, formatCountryForQuery } from '@/components/CountryFilter';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+
+// AI Connector/Model options for research
+const AI_CONNECTORS = [
+  { id: 'auto', name: 'Auto (Manus 1.6)', icon: '🧠', description: 'Automatic model selection' },
+  { id: 'openai', name: 'OpenAI GPT-5', icon: '🤖', description: 'Latest GPT model' },
+  { id: 'claude', name: 'Claude 4', icon: '🧠', description: 'Anthropic Claude' },
+  { id: 'gemini', name: 'Gemini Pro', icon: '💫', description: 'Google Gemini' },
+  { id: 'perplexity', name: 'Perplexity', icon: '🔮', description: 'Real-time search AI' },
+  { id: 'cohere', name: 'Cohere', icon: '🌊', description: 'Enterprise AI' },
+];
+
+// MCP (Model Context Protocol) options
+const MCP_CONNECTORS = [
+  { id: 'manus', name: 'Manus 1.6 MAX', icon: '🔬', description: 'Full research engine' },
+  { id: 'firecrawl', name: 'Firecrawl', icon: '🔥', description: 'Web scraping' },
+  { id: 'tavily', name: 'Tavily', icon: '🔎', description: 'AI search API' },
+  { id: 'browserbase', name: 'Browserbase', icon: '🌐', description: 'Browser automation' },
+];
 
 interface SearchInputProps {
   onSearch: (query: string) => void;
@@ -50,6 +68,8 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
   const [hoveredSuggestion, setHoveredSuggestion] = useState<number | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [customDomains, setCustomDomains] = useState('');
+  const [selectedConnector, setSelectedConnector] = useState('auto');
+  const [selectedMcp, setSelectedMcp] = useState('manus');
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const detectedUrl = isUrl(searchQuery);
@@ -419,6 +439,82 @@ export const SearchInput = ({ onSearch, onScrapeUrl }: SearchInputProps) => {
                             <p className="font-medium">Report Format</p>
                             <p className="text-xs text-muted-foreground mt-1">
                               {REPORT_FORMAT_OPTIONS.find(o => o.value === reportFormat)?.description}
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </motion.div>
+                    
+                    {/* AI Connector Selector */}
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.2 }}
+                    >
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="flex items-center gap-1.5">
+                              <Brain className="w-3.5 h-3.5 text-muted-foreground" />
+                              <Select value={selectedConnector} onValueChange={setSelectedConnector}>
+                                <SelectTrigger className="h-7 w-[140px] text-xs border-muted bg-background/50 hover:bg-background transition-colors">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent className="bg-popover">
+                                  {AI_CONNECTORS.map((connector) => (
+                                    <SelectItem key={connector.id} value={connector.id} className="text-xs">
+                                      <div className="flex items-center gap-2">
+                                        <span>{connector.icon}</span>
+                                        {connector.name}
+                                      </div>
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-xs">
+                            <p className="font-medium">AI Connector</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {AI_CONNECTORS.find(c => c.id === selectedConnector)?.description}
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </motion.div>
+                    
+                    {/* MCP Connector Selector */}
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.25 }}
+                    >
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="flex items-center gap-1.5">
+                              <Puzzle className="w-3.5 h-3.5 text-muted-foreground" />
+                              <Select value={selectedMcp} onValueChange={setSelectedMcp}>
+                                <SelectTrigger className="h-7 w-[130px] text-xs border-muted bg-background/50 hover:bg-background transition-colors">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent className="bg-popover">
+                                  {MCP_CONNECTORS.map((mcp) => (
+                                    <SelectItem key={mcp.id} value={mcp.id} className="text-xs">
+                                      <div className="flex items-center gap-2">
+                                        <span>{mcp.icon}</span>
+                                        {mcp.name}
+                                      </div>
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-xs">
+                            <p className="font-medium">MCP Research Engine</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {MCP_CONNECTORS.find(m => m.id === selectedMcp)?.description}
                             </p>
                           </TooltipContent>
                         </Tooltip>
