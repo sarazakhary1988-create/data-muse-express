@@ -210,10 +210,17 @@ export const researchApi = {
       searchEngine?: 'duckduckgo' | 'google' | 'bing' | 'all';
       scrapeContent?: boolean;
       country?: string;
+      // Priority sources - user-selected sources to prioritize
+      prioritySources?: string[];
+      // Data source ID from connector
+      dataSourceId?: string;
     }
   ): Promise<WebSearchResult> {
     try {
-      console.log('[researchApi] Calling embedded web-search:', query);
+      console.log('[researchApi] Calling embedded web-search:', query, {
+        prioritySources: options?.prioritySources?.length || 0,
+        dataSourceId: options?.dataSourceId,
+      });
       
       const { data, error } = await supabase.functions.invoke('web-search', {
         body: withLLMConfig({ 
@@ -222,6 +229,8 @@ export const researchApi = {
           searchEngine: options?.searchEngine || 'all',
           scrapeContent: options?.scrapeContent !== false,
           country: options?.country,
+          prioritySources: options?.prioritySources,
+          dataSourceId: options?.dataSourceId,
         }),
       });
 

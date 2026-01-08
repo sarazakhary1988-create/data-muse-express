@@ -13,7 +13,43 @@ interface WebSearchRequest {
   scrapeContent?: boolean;
   country?: string;
   language?: string;
+  // Priority sources to search first (URLs or domains)
+  prioritySources?: string[];
+  // Data source ID from connector config
+  dataSourceId?: string;
 }
+
+// Priority source URLs from DATA_SOURCE_CONNECTORS
+const PRIORITY_SOURCE_URLS: Record<string, string> = {
+  // Official/Government Sources
+  'cma': 'https://cma.org.sa',
+  'tadawul': 'https://www.saudiexchange.sa',
+  'sec': 'https://www.sec.gov',
+  // Saudi/Regional News
+  'argaam': 'https://www.argaam.com',
+  'mubasher': 'https://www.mubasher.info',
+  'aleqt': 'https://www.aleqt.com',
+  'asharq': 'https://asharqbusiness.com',
+  'arabnews': 'https://www.arabnews.com',
+  'saudigazette': 'https://saudigazette.com.sa',
+  // Premium Global News
+  'reuters': 'https://www.reuters.com',
+  'bloomberg': 'https://www.bloomberg.com',
+  'ft': 'https://www.ft.com',
+  // Financial Data Providers
+  'yahoo': 'https://finance.yahoo.com',
+  'tradingview': 'https://www.tradingview.com',
+  'marketscreener': 'https://www.marketscreener.com',
+  'marketwatch': 'https://www.marketwatch.com',
+  'simplywall': 'https://simplywall.st',
+  'investing': 'https://www.investing.com',
+  'seekingalpha': 'https://seekingalpha.com',
+  'morningstar': 'https://www.morningstar.com',
+  'zacks': 'https://www.zacks.com',
+  'koyfin': 'https://www.koyfin.com',
+  'stockanalysis': 'https://stockanalysis.com',
+  'tradingeconomics': 'https://tradingeconomics.com',
+};
 
 interface SearchResult {
   url: string;
@@ -507,14 +543,67 @@ serve(async (req) => {
     const maxResults = Math.min(Math.max(body.maxResults || 10, 1), MAX_RESULTS);
     const searchEngine = body.searchEngine || 'all';
     const scrapeContent = body.scrapeContent !== false;
+    const prioritySources = body.prioritySources || [];
+    const dataSourceId = body.dataSourceId;
 
-    console.log('[web-search] Starting search:', { rawLength: rawQuery.length, query: query.slice(0, 80), searchEngine, maxResults, scrapeContent });
+    console.log('[web-search] Starting search:', { 
+      rawLength: rawQuery.length, 
+      query: query.slice(0, 80), 
+      searchEngine, 
+      maxResults, 
+      scrapeContent,
+      prioritySources: prioritySources.length,
+      dataSourceId,
+    });
 
-    // Execute searches based on engine preference
+    // Build site-restricted queries for priority sources
+    let priorityResults: SearchResult[] = [];
+    
+    // If a specific data source is selected, add its site restriction
+    if (dataSourceId && dataSourceId !== 'auto' && PRIORITY_SOURCE_URLS[dataSourceId]) {
+      const sourceUrl = PRIORITY_SOURCE_URLS[dataSourceId];
+      try {
+        const domain = new URL(sourceUrl).hostname.replace('www.', '');
+        const siteQuery = `site:${domain} ${query}`;
+        console.log('[web-search] Priority source search:', siteQuery);
+        
+        // Search with site restriction
+        const siteResults = await searchDuckDuckGo(siteQuery, Math.min(maxResults, 5));
+        priorityResults.push(...siteResults.map(r => ({ ...r, source: `${dataSourceId}-priority` })));
+      } catch (e) {
+        console.log('[web-search] Priority source search error:', e);
+      }
+    }
+    
+    // Search additional priority sources
+    if (prioritySources.length > 0) {
+      const priorityDomains = prioritySources.slice(0, 5);
+      const prioritySearches = priorityDomains.map(async (source) => {
+        let domain = source;
+        try {
+          if (source.startsWith('http')) {
+            domain = new URL(source).hostname.replace('www.', '');
+          }
+        } catch {}
+        
+        const siteQuery = `site:${domain} ${query}`;
+        console.log('[web-search] Priority search:', siteQuery);
+        return searchDuckDuckGo(siteQuery, 3);
+      });
+      
+      const prioritySearchResults = await Promise.allSettled(prioritySearches);
+      for (const result of prioritySearchResults) {
+        if (result.status === 'fulfilled') {
+          priorityResults.push(...result.value.map(r => ({ ...r, source: 'user-priority' })));
+        }
+      }
+    }
+
+    // Execute standard searches based on engine preference
     let allResults: SearchResult[] = [];
 
     if (searchEngine === 'all') {
-      // Search all engines in parallel, prioritize DuckDuckGo (most reliable for scraping)
+      // Search all engines in parallel
       const [ddgResults, googleResults, bingResults] = await Promise.allSettled([
         searchDuckDuckGo(query, maxResults),
         searchGoogle(query, maxResults),
@@ -531,10 +620,14 @@ serve(async (req) => {
     } else if (searchEngine === 'bing') {
       allResults = await searchBing(query, maxResults);
     }
+    
+    // Combine priority results first, then regular results
+    const combinedResults = [...priorityResults, ...allResults];
+    console.log('[web-search] Combined results:', { priority: priorityResults.length, regular: allResults.length });
 
-    // Deduplicate by URL
+    // Deduplicate by URL (priority sources first)
     const seen = new Set<string>();
-    const deduped = allResults.filter(r => {
+    const deduped = combinedResults.filter(r => {
       if (seen.has(r.url)) return false;
       seen.add(r.url);
       return true;
