@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 
 import { SettingsDialog } from '@/components/SettingsDialog';
 import { HelpDialog } from '@/components/HelpDialog';
+import { LLMStatusIndicator } from '@/components/LLMStatusIndicator';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -281,10 +282,17 @@ export const Sidebar = ({ activeView, onViewChange }: SidebarProps) => {
           ))}
         </nav>
 
-        {/* Footer - Only Settings and Help, no Theme/Language */}
-        <div className="p-3 border-t border-border/30 space-y-1">
-          <SettingsDialog collapsed={isCollapsed} />
-          <HelpDialog collapsed={isCollapsed} />
+        {/* Footer - LLM Status, Settings and Help */}
+        <div className="p-3 border-t border-border/30 space-y-2">
+          {/* LLM Backend Status */}
+          <LLMStatusIndicator collapsed={isCollapsed} />
+          
+          <Separator className="opacity-30" />
+          
+          <div className="space-y-1">
+            <SettingsDialog collapsed={isCollapsed} />
+            <HelpDialog collapsed={isCollapsed} />
+          </div>
           
           {/* Collapse toggle */}
           <Button
