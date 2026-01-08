@@ -537,7 +537,8 @@ export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
     return (
       <>
         <div className={cn(
-          "fixed left-0 right-0 z-30 h-10 bg-background/95 backdrop-blur-sm border-b border-border/50",
+          "fixed right-0 z-30 h-10 bg-background/95 backdrop-blur-sm border-b border-border/50",
+          "left-[72px] md:left-[72px]",
           position === 'top' ? "top-14" : "bottom-0 border-t border-b-0"
         )}>
           <div className="flex items-center justify-center gap-3 h-full px-4">
@@ -570,9 +571,11 @@ export function NewsRibbon({ filterState, onResearchNews }: NewsRibbonProps) {
       {/* Draggable News Ribbon */}
       <div 
         className={cn(
-          "fixed left-0 right-0 z-30",
+          "fixed right-0 z-30",
           "bg-background/95 backdrop-blur-sm border-border/50",
           "transition-all duration-300",
+          // Leave space for sidebar (72px collapsed, 288px expanded) - we'll use CSS var
+          "left-[72px] md:left-[72px]",
           position === 'top' ? "top-14 border-b" : "bottom-0 border-t"
         )}
       >
