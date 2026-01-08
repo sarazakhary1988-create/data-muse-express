@@ -12,11 +12,14 @@ interface WideResearchRequest {
   items?: string[];
   maxResults?: number;
   newsMode?: boolean;
+  deepResearch?: boolean; // Enable GPT-Researcher with parallel agents & fact verification
   config?: {
     maxSubAgents?: number;
     scrapeDepth?: 'shallow' | 'medium' | 'deep';
     minSourcesPerItem?: number;
     country?: string;
+    includeFactVerification?: boolean;
+    reportType?: 'research_report' | 'resource_report' | 'outline_report';
   };
   // LLM config from UI
   preferLocal?: boolean;
@@ -25,6 +28,13 @@ interface WideResearchRequest {
     vllmUrl?: string;
     hfTgiUrl?: string;
   };
+}
+
+interface VerifiedFact {
+  claim: string;
+  verified: boolean;
+  sources: string[];
+  confidence: number;
 }
 
 interface WebSource {
@@ -351,6 +361,106 @@ async function performMultiAgentResearch(
   console.log(`[wide-research] Research complete with ${finalSources.length} sources`);
   
   return { answer, sources: finalSources };
+}
+
+// ============ GPT-RESEARCHER DEEP RESEARCH MODE ============
+// Uses parallel sub-agents: Planner → Searcher → Scraper → Analyzer → Verifier → Writer
+async function performDeepResearch(
+  query: string,
+  config: WideResearchRequest['config']
+): Promise<{ 
+  report: string; 
+  sources: WebSource[]; 
+  verifiedFacts: VerifiedFact[];
+  metadata: { totalAgents: number; queriesExecuted: number; llmProvider: string }
+}> {
+  const { url, key } = getSupabaseConfig();
+  
+  console.log('[wide-research] Starting GPT-Researcher deep research...');
+  
+  try {
+    // Call the GPT-Researcher edge function
+    const response = await fetch(`${url}/functions/v1/gpt-researcher`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query,
+        reportType: config?.reportType || 'research_report',
+        maxSources: 15,
+        parallelAgents: config?.maxSubAgents || 4,
+        includeFactVerification: config?.includeFactVerification !== false,
+        outputFormat: 'markdown',
+      }),
+    });
+    
+    if (!response.ok) {
+      console.error('[wide-research] GPT-Researcher call failed:', response.status);
+      return { 
+        report: '', 
+        sources: [], 
+        verifiedFacts: [],
+        metadata: { totalAgents: 0, queriesExecuted: 0, llmProvider: 'none' }
+      };
+    }
+    
+    const data = await response.json();
+    
+    console.log(`[wide-research] GPT-Researcher completed:`, {
+      sources: data.sources?.length || 0,
+      facts: data.factsVerified?.length || 0,
+      agents: data.metadata?.totalAgents || 0,
+    });
+    
+    // Transform GPT-Researcher sources to WebSource format
+    const sources: WebSource[] = (data.sources || []).map((s: any) => ({
+      url: s.url,
+      title: s.title,
+      domain: s.domain,
+      content: s.extractedContent || '',
+      markdown: s.extractedContent || '',
+      snippet: (s.extractedContent || '').slice(0, 280),
+      fetchedAt: new Date().toISOString(),
+      reliability: s.relevanceScore || 0.8,
+      source: 'GPT-Researcher',
+      relevanceScore: s.relevanceScore || 0.8,
+      status: 'scraped' as const,
+    }));
+    
+    // Add the report as the primary source
+    if (data.report) {
+      sources.unshift({
+        url: 'manus://gpt-researcher-report',
+        title: `Deep Research Report: ${query.slice(0, 50)}...`,
+        domain: 'manus.gpt-researcher',
+        content: data.report,
+        markdown: data.report,
+        snippet: data.report.slice(0, 280),
+        fetchedAt: new Date().toISOString(),
+        reliability: 0.95,
+        source: 'GPT-Researcher Multi-Agent',
+        relevanceScore: 0.99,
+        status: 'scraped' as const,
+      });
+    }
+    
+    return {
+      report: data.report || '',
+      sources,
+      verifiedFacts: data.factsVerified || [],
+      metadata: data.metadata || { totalAgents: 6, queriesExecuted: 5, llmProvider: 'LLM Router' },
+    };
+  } catch (error) {
+    console.error('[wide-research] GPT-Researcher error:', error);
+    return { 
+      report: '', 
+      sources: [], 
+      verifiedFacts: [],
+      metadata: { totalAgents: 0, queriesExecuted: 0, llmProvider: 'error' }
+    };
+  }
 }
 
 // ============ FALLBACK: DIRECT HTML SCRAPING ============
@@ -766,15 +876,60 @@ serve(async (req) => {
 
     const query = body.query.trim();
     const isNewsMode = body.newsMode === true;
+    const isDeepResearch = body.deepResearch === true;
     const maxResults = body.maxResults || 15;
 
-    console.log('[wide-research] Starting:', { query: query.slice(0, 80), isNewsMode, maxResults });
+    console.log('[wide-research] Starting:', { 
+      query: query.slice(0, 80), 
+      isNewsMode, 
+      isDeepResearch,
+      maxResults 
+    });
 
     const subQueries = body.items && body.items.length > 0 
       ? body.items 
       : decomposeQuery(query);
 
     let sources: WebSource[] = [];
+
+    // DEEP RESEARCH MODE: Use GPT-Researcher with parallel agents & fact verification
+    if (isDeepResearch) {
+      console.log('[wide-research] Deep research mode: using GPT-Researcher...');
+      
+      const { report, sources: deepSources, verifiedFacts, metadata: deepMeta } = 
+        await performDeepResearch(query, body.config);
+      
+      if (deepSources.length > 0) {
+        const totalTime = Date.now() - startTime;
+        console.log('[wide-research] GPT-Researcher complete:', { 
+          totalSources: deepSources.length, 
+          verifiedFacts: verifiedFacts.length,
+          agents: deepMeta.totalAgents,
+          time: totalTime 
+        });
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            searchResults: deepSources.slice(0, maxResults),
+            results: deepSources.slice(0, maxResults),
+            directAnswer: report,
+            verifiedFacts,
+            metadata: {
+              query,
+              totalSources: deepSources.length,
+              searchMethod: 'gpt-researcher-deep',
+              processingTimeMs: totalTime,
+              ...deepMeta,
+            },
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      // If GPT-Researcher failed, fall through to standard research
+      console.log('[wide-research] GPT-Researcher returned no results, falling back to standard research...');
+    }
 
     // NEWS MODE: Fetch real headlines/links via RSS (no LLM-generated news)
     if (isNewsMode) {
@@ -949,3 +1104,4 @@ serve(async (req) => {
     );
   }
 });
+
