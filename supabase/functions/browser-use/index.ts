@@ -159,30 +159,20 @@ serve(async (req) => {
   }
 });
 
-// Use LLM to plan browser actions based on task description
+// Use LLM Router to plan browser actions based on task description
 async function planBrowserActions(task: string, startUrl?: string): Promise<BrowserAction[]> {
-  const apiKey = Deno.env.get('LOVABLE_API_KEY') || Deno.env.get('OPENAI_API_KEY');
-  
-  if (!apiKey) {
-    // Return basic actions if no API key
-    if (startUrl) {
-      return [
-        { type: 'navigate', url: startUrl },
-        { type: 'extract' },
-      ];
-    }
-    return [];
-  }
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   try {
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    // Use LLM Router which prioritizes local models (DeepSeek/Llama/Qwen)
+    const response = await fetch(`${supabaseUrl}/functions/v1/llm-router`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        'Authorization': `Bearer ${supabaseKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
         messages: [
           {
             role: 'system',
@@ -203,18 +193,32 @@ Example: {"actions": [{"type": "navigate", "url": "https://example.com"}, {"type
             content: `Task: ${task}${startUrl ? `\nStart URL: ${startUrl}` : ''}`
           }
         ],
-        response_format: { type: 'json_object' },
+        task: 'planning',
+        preferLocal: true,
+        maxTokens: 1024,
       }),
     });
 
     if (!response.ok) {
+      console.log('[browser-use] LLM Router failed, using fallback actions');
       return startUrl ? [{ type: 'navigate', url: startUrl }, { type: 'extract' }] : [];
     }
 
     const data = await response.json();
-    const parsed = JSON.parse(data.choices[0].message.content);
-    return parsed.actions || [];
-  } catch {
+    if (!data.success) {
+      return startUrl ? [{ type: 'navigate', url: startUrl }, { type: 'extract' }] : [];
+    }
+
+    console.log(`[browser-use] Actions planned using ${data.model} (${data.inferenceType})`);
+    
+    try {
+      const parsed = JSON.parse(data.content.replace(/```json\n?|\n?```/g, ''));
+      return parsed.actions || [];
+    } catch {
+      return startUrl ? [{ type: 'navigate', url: startUrl }, { type: 'extract' }] : [];
+    }
+  } catch (error) {
+    console.error('[browser-use] Planning error:', error);
     return startUrl ? [{ type: 'navigate', url: startUrl }, { type: 'extract' }] : [];
   }
 }

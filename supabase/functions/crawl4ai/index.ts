@@ -263,96 +263,57 @@ function extractDescription(content: string): string {
   return '';
 }
 
-// Extract structured data using LLM - prioritize OpenAI/Claude over Lovable AI
+// Extract structured data using LLM Router (prioritizes local inference)
 async function extractWithLLM(
   text: string, 
   schema: Record<string, any>,
   preferredProvider?: 'openai' | 'anthropic' | 'groq' | 'auto'
 ): Promise<{ data: Record<string, any>; provider: string }> {
   
-  // Try providers in order: OpenAI -> Claude -> Groq -> Lovable AI (fallback)
-  const providers = [
-    { key: 'OPENAI_API_KEY', name: 'openai', endpoint: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o-mini' },
-    { key: 'ANTHROPIC_API_KEY', name: 'anthropic', endpoint: 'https://api.anthropic.com/v1/messages', model: 'claude-3-haiku-20240307' },
-    { key: 'GROQ_API_KEY', name: 'groq', endpoint: 'https://api.groq.com/openai/v1/chat/completions', model: 'llama-3.3-70b-versatile' },
-    { key: 'LOVABLE_API_KEY', name: 'lovable', endpoint: 'https://ai.gateway.lovable.dev/v1/chat/completions', model: 'google/gemini-2.5-flash' },
-  ];
-
-  // If preferred provider specified, try it first
-  if (preferredProvider && preferredProvider !== 'auto') {
-    const preferred = providers.find(p => p.name === preferredProvider);
-    if (preferred) {
-      providers.unshift(preferred);
-    }
-  }
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   const systemPrompt = `Extract data from the provided text according to this schema:
 ${JSON.stringify(schema, null, 2)}
 
 Return ONLY valid JSON matching the schema. Do not include any explanation or markdown formatting.`;
 
-  for (const provider of providers) {
-    const apiKey = Deno.env.get(provider.key);
-    if (!apiKey) continue;
+  try {
+    // Use LLM Router which prioritizes local models (DeepSeek/Llama/Qwen)
+    const response = await fetch(`${supabaseUrl}/functions/v1/llm-router`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${supabaseKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: text.substring(0, 10000) },
+        ],
+        task: 'reasoning',
+        preferLocal: true,
+        maxTokens: 2048,
+      }),
+    });
 
-    try {
-      if (provider.name === 'anthropic') {
-        // Anthropic has different API format
-        const response = await fetch(provider.endpoint, {
-          method: 'POST',
-          headers: {
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: provider.model,
-            max_tokens: 2048,
-            system: systemPrompt,
-            messages: [{ role: 'user', content: text.substring(0, 10000) }],
-          }),
-        });
-
-        if (!response.ok) continue;
-
-        const data = await response.json();
-        const content = data.content?.[0]?.text || '';
-        return {
-          data: JSON.parse(content),
-          provider: provider.name,
-        };
-      } else {
-        // OpenAI-compatible API
-        const response = await fetch(provider.endpoint, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: provider.model,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: text.substring(0, 10000) },
-            ],
-            response_format: provider.name !== 'groq' ? { type: 'json_object' } : undefined,
-          }),
-        });
-
-        if (!response.ok) continue;
-
-        const data = await response.json();
-        const content = data.choices?.[0]?.message?.content || '{}';
-        return {
-          data: JSON.parse(content),
-          provider: provider.name,
-        };
-      }
-    } catch (error) {
-      console.log(`[crawl4ai] ${provider.name} extraction failed:`, error);
-      continue;
+    if (!response.ok) {
+      throw new Error(`LLM Router failed: ${response.status}`);
     }
-  }
 
-  return { data: { error: 'No LLM provider available for extraction' }, provider: 'none' };
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || 'LLM extraction failed');
+    }
+
+    console.log(`[crawl4ai] Extraction using ${data.model} (${data.inferenceType})`);
+
+    return {
+      data: JSON.parse(data.content.replace(/```json\n?|\n?```/g, '')),
+      provider: data.model,
+    };
+  } catch (error) {
+    console.error('[crawl4ai] LLM extraction error:', error);
+    return { data: { error: 'LLM extraction failed' }, provider: 'none' };
+  }
 }
