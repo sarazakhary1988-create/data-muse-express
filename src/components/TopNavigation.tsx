@@ -176,11 +176,37 @@ export const TopNavigation = ({ className }: TopNavigationProps) => {
   // Custom source URLs
   const [customSources, setCustomSources] = useState<string[]>([]);
   const [newSourceUrl, setNewSourceUrl] = useState('');
+  const [urlError, setUrlError] = useState('');
+
+  const validateUrl = (url: string): boolean => {
+    if (!url.trim()) {
+      setUrlError('URL cannot be empty');
+      return false;
+    }
+    try {
+      const parsedUrl = new URL(url);
+      if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+        setUrlError('URL must start with http:// or https://');
+        return false;
+      }
+      if (!parsedUrl.hostname.includes('.')) {
+        setUrlError('Please enter a valid domain');
+        return false;
+      }
+      setUrlError('');
+      return true;
+    } catch {
+      setUrlError('Please enter a valid URL');
+      return false;
+    }
+  };
 
   const addCustomSource = () => {
-    if (newSourceUrl && !customSources.includes(newSourceUrl)) {
-      setCustomSources([...customSources, newSourceUrl]);
+    const trimmedUrl = newSourceUrl.trim();
+    if (validateUrl(trimmedUrl) && !customSources.includes(trimmedUrl)) {
+      setCustomSources([...customSources, trimmedUrl]);
       setNewSourceUrl('');
+      setUrlError('');
     }
   };
 
@@ -649,17 +675,28 @@ export const TopNavigation = ({ className }: TopNavigationProps) => {
                       <Link className="w-4 h-4" />
                       Custom Source URLs
                     </Label>
-                    <div className="flex gap-2">
-                      <Input
-                        placeholder="https://example.com/rss"
-                        value={newSourceUrl}
-                        onChange={(e) => setNewSourceUrl(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && addCustomSource()}
-                        className="flex-1"
-                      />
-                      <Button size="sm" onClick={addCustomSource} disabled={!newSourceUrl}>
-                        <Plus className="w-4 h-4" />
-                      </Button>
+                    <div className="space-y-1">
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="https://example.com/rss"
+                          value={newSourceUrl}
+                          onChange={(e) => {
+                            setNewSourceUrl(e.target.value);
+                            if (urlError) setUrlError('');
+                          }}
+                          onKeyDown={(e) => e.key === 'Enter' && addCustomSource()}
+                          className={cn("flex-1", urlError && "border-destructive focus-visible:ring-destructive")}
+                        />
+                        <Button size="sm" onClick={addCustomSource} disabled={!newSourceUrl.trim()}>
+                          <Plus className="w-4 h-4" />
+                        </Button>
+                      </div>
+                      {urlError && (
+                        <p className="text-[10px] text-destructive flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" />
+                          {urlError}
+                        </p>
+                      )}
                     </div>
                     {customSources.length > 0 && (
                       <div className="space-y-2 mt-2">
