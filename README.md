@@ -1,22 +1,16 @@
-# Welcome to your Lovable project
+# ORKESTRA - Data Muse Express
 
 ## Project info
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+A custom-created research and data analysis platform powered by MANUS 1.6 MAX architecture.
 
 ## How can I edit this code?
 
 There are several ways of editing your application.
 
-**Use Lovable**
-
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
 **Use your preferred IDE**
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+You can work locally using your own IDE by cloning this repo and pushing changes.
 
 The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
 
@@ -62,10 +56,6 @@ This project is built with:
 
 ## How can I deploy this project?
 
-### Deploy via Lovable
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
 ### Deploy via Netlify
 
 This project includes Netlify configuration for easy deployment. You have three options:
@@ -89,12 +79,6 @@ Once connected via the Netlify Dashboard, every push to your main branch will au
 For detailed instructions, see [NETLIFY_DEPLOYMENT.md](./NETLIFY_DEPLOYMENT.md)
 
 ## Can I connect a custom domain?
-
-### Lovable Project
-
-Yes, you can! Navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
 
 ### Netlify
 
