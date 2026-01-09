@@ -121,7 +121,7 @@ The git configuration (`.git/config`) contains:
     fetch = +refs/heads/*:refs/remotes/origin/*
 
 [remote "upstream"]
-    url = https://github.com/sarazakhary1988-create/data-muse-express-main.git
+    url = https://github.com/sarazakhary1988-create/data-muse-express-main
     fetch = +refs/heads/*:refs/remotes/upstream/*
 ```
 
