@@ -21,26 +21,34 @@ export interface AgentStep {
 }
 
 export async function analyzePhase(context: AgentContext): Promise<string> {
+  // TODO: Implement situation assessment logic
+  // Gather context, analyze current state, identify requirements
+  // Production implementation: See src/lib/agent/planningAgent.ts
   console.log(`[Phase 1] Analyzing: ${context.goal}`);
-  // Assess situation, gather context
   return 'Analysis complete';
 }
 
 export async function planPhase(context: AgentContext, analysis: string): Promise<string[]> {
+  // TODO: Implement planning logic
+  // Generate action plan, assign tools, define success criteria
+  // Production implementation: See src/lib/agent/planningAgent.ts
   console.log(`[Phase 2] Planning based on: ${analysis}`);
-  // Generate action plan
   return ['Action 1', 'Action 2', 'Action 3'];
 }
 
 export async function executePhase(context: AgentContext, plan: string[]): Promise<unknown> {
+  // TODO: Implement tool execution
+  // Run tools: CodeAct, Browser-Use, Web Scrape, etc.
+  // Production implementation: See src/lib/agent/parallelExecutor.ts
   console.log(`[Phase 3] Executing ${plan.length} actions`);
-  // Run tools: CodeAct, Browser-Use, Scrape
   return { success: true, results: [] };
 }
 
 export async function observePhase(context: AgentContext, result: unknown): Promise<boolean> {
+  // TODO: Implement result evaluation
+  // Evaluate outcomes, check success criteria, plan next iteration
+  // Production implementation: See src/lib/agent/criticAgent.ts
   console.log(`[Phase 4] Observing results`);
-  // Evaluate outcomes, check success criteria
   return true;
 }
 

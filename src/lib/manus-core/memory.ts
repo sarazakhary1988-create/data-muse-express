@@ -41,7 +41,10 @@ export class MemoryManager {
   }
 
   async search(query: string, limit: number = 10): Promise<MemoryItem[]> {
-    // Semantic search implementation
+    // TODO: Implement semantic search with vector embeddings
+    // Use cosine similarity on embeddings for semantic matching
+    // Production implementation with pgvector: See src/lib/agent/memorySystem.ts
+    // This is a placeholder that returns most recent memories
     return this.shortTermMemory.slice(0, limit);
   }
 

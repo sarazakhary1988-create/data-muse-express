@@ -75,7 +75,10 @@ export class WideResearchOrchestrator {
   }
 
   private detectContradictions(findings: ResearchFinding[]): string[] {
-    // Detect disagreements between agents
+    // TODO: Implement contradiction detection logic
+    // Compare findings across agents to identify disagreements
+    // Example: Different confidence scores, conflicting conclusions, etc.
+    // Production implementation: See src/lib/agent/wideResearch.ts
     return [];
   }
 }

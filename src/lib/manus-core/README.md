@@ -1,6 +1,16 @@
 # MANUS 1.6 MAX - Core Implementation
 
-This directory contains the core implementation of the MANUS 1.6 MAX architecture.
+This directory contains the **foundational architecture** of the MANUS 1.6 MAX system. These components provide the reference implementation and architectural patterns that are extended in the production code.
+
+## 🎯 Purpose
+
+The `manus-core` directory serves as:
+1. **Architectural Reference** - Clean, documented examples of each component
+2. **Integration Point** - Clear interfaces for component interaction
+3. **Educational Resource** - Understanding the Manus 1.6 Max architecture
+4. **Development Base** - Foundation for building production features
+
+**Note**: These are foundational implementations with TODOs marking integration points. Full production implementations with web scraping, database integration, and advanced features are in `src/lib/agent/`.
 
 ## Components
 

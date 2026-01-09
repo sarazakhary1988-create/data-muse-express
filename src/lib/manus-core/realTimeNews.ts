@@ -27,37 +27,38 @@ export interface FetchedArticle {
 }
 
 export async function discoverNewsSourcesViaGPT(topic: string): Promise<NewsSource[]> {
-  // GPT/Claude discovers relevant news sources
+  // TODO: Implement GPT/Claude integration for source discovery
+  // Use LLM to identify authoritative news sources for the given topic
+  // Production implementation available via src/lib/agent/researchAgent.ts
   console.log(`Discovering news sources for: ${topic}`);
-  // Implementation uses LLM to identify sources
   return [];
 }
 
 export async function fetchViaBrowserUse(source: NewsSource): Promise<FetchedArticle[]> {
-  // Browser-Use tool with LLM guidance
+  // TODO: Implement Browser-Use integration
+  // See production implementation in src/lib/agent/
   console.log(`Fetching from ${source.name} via Browser-Use`);
-  // Implementation uses browser-use agent
   return [];
 }
 
 export async function fetchViaPlaywright(source: NewsSource): Promise<FetchedArticle[]> {
-  // Playwright browser automation
+  // TODO: Implement Playwright automation
+  // See production implementation in src/lib/agent/
   console.log(`Fetching from ${source.name} via Playwright`);
-  // Implementation uses Playwright
   return [];
 }
 
 export async function fetchViaCrawl4AI(source: NewsSource): Promise<FetchedArticle[]> {
-  // Crawl4AI web crawling
+  // TODO: Implement Crawl4AI integration
+  // See production implementation in src/lib/agent/
   console.log(`Fetching from ${source.name} via Crawl4AI`);
-  // Implementation uses Crawl4AI
   return [];
 }
 
 export async function fetchViaCodeAct(source: NewsSource): Promise<FetchedArticle[]> {
-  // CodeAct code execution
+  // TODO: Implement CodeAct code generation and execution
+  // See production implementation in src/lib/agent/
   console.log(`Fetching from ${source.name} via CodeAct`);
-  // Implementation generates and executes code
   return [];
 }
 

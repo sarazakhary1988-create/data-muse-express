@@ -37,9 +37,12 @@ export class LLMRouter {
   }
 
   async request(prompt: string, options: { model?: string; maxTokens?: number } = {}): Promise<string> {
+    // TODO: Implement actual LLM API integration
+    // Make HTTP requests to anthropic/openai/google/together APIs
+    // Handle retries, timeouts, and failover to backup models
+    // Production implementation: See src/lib/llmConfig.ts and integrations
     const model = await this.selectModel('completion');
     console.log(`Using model: ${model.name}`);
-    // Make request to selected model
     return `Response from ${model.name}`;
   }
 
