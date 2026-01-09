@@ -1,7 +1,6 @@
-ORKESTRA : Research Anything with Orchestrated Intelligence
 ## 🚀 Project Overview
 
-**ORKESTRA** is a production-ready autonomous AI agent system based on the **Manus 1.6 Max architecture**, featuring:
+**ORKESTRA** is a production-ready autonomous AI agent system replica of **Manus 1.6 Max architecture**, featuring:
 
 - **12 LLM Models** with automatic failover and health checks
 - **Real-Time News** via 5 MANUS tools (no external APIs)
@@ -9,8 +8,6 @@ ORKESTRA : Research Anything with Orchestrated Intelligence
 - **Memory & RAG** with vector embeddings
 - **6-Agent Research** consensus system
 - **Zero Mock Data** - all data is real-time and fresh
-
-**Project URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
 
 ## 📚 Documentation
 
@@ -36,8 +33,6 @@ This project is configured to work with two GitHub repositories:
 - **[Full Git Setup Guide](./docs/DUAL_REPOSITORY_SETUP.md)** - Detailed dual-repository workflow
 
 ## How can I edit this code?
-
-There are several ways of editing your application.
 
 **Use your preferred IDE**
 
@@ -88,7 +83,7 @@ This project is built with:
 ## How can I deploy this project?
 
 ### Deploy via Netlify
-
+ 
 This project includes Netlify configuration for easy deployment. You have three options:
 
 **1. Deploy via Netlify Dashboard (Recommended)**
