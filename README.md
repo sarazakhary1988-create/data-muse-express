@@ -11,7 +11,7 @@
 - **6-Agent Research** consensus system
 - **Zero Mock Data** - all data is real-time and fresh
 - **4-Phase Agent Loop** (Analyze → Plan → Execute → Observe)
-- **Memory &amp; RAG** with vector embeddings
+- **Memory & RAG** with vector embeddings
 
 ## 📚 Documentation
 
