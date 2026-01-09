@@ -10,6 +10,13 @@ import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, Headi
 import ExcelJS from 'exceljs';
 import PptxGenJS from 'pptxgenjs';
 
+// Extend jsPDF type to include autoTable's finalY property
+interface jsPDFWithAutoTable extends jsPDF {
+  lastAutoTable?: {
+    finalY: number;
+  };
+}
+
 // Types for enriched data
 export interface EnrichedProfile {
   fullName: string;
@@ -128,8 +135,9 @@ export async function generatePDF(data: EnrichedProfile): Promise<Blob> {
       headStyles: { fillColor: [66, 139, 202] },
     });
     
-    // @ts-ignore - autoTable adds finalY to doc
-    yPos = (doc as any).lastAutoTable.finalY + 10;
+    // Safely access finalY using type assertion
+    yPos = (doc as jsPDFWithAutoTable).lastAutoTable?.finalY ?? yPos + 50;
+    yPos += 10;
   }
   
   // Education
@@ -152,8 +160,9 @@ export async function generatePDF(data: EnrichedProfile): Promise<Blob> {
       headStyles: { fillColor: [66, 139, 202] },
     });
     
-    // @ts-ignore
-    yPos = (doc as any).lastAutoTable.finalY + 10;
+    // Safely access finalY using type assertion
+    yPos = (doc as jsPDFWithAutoTable).lastAutoTable?.finalY ?? yPos + 50;
+    yPos += 10;
   }
   
   // Skills

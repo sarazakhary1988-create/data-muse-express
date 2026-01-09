@@ -103,10 +103,11 @@ export function extractDomainFromUrl(url: string): string | null {
 }
 
 /**
- * Validate email using DNS MX record lookup (browser-compatible approach)
- * Note: In browser, we can only do format validation. Full MX validation requires server-side.
+ * Validate email format using regex and basic checks
+ * Note: Full MX record validation requires server-side implementation.
+ * This browser-compatible version only performs format validation.
  */
-export async function validateEmailWithMX(email: string): Promise<{
+export async function validateEmailFormat(email: string): Promise<{
   valid: boolean;
   reason: string;
 }> {
@@ -132,6 +133,12 @@ export async function validateEmailWithMX(email: string): Promise<{
   // Return valid for well-formed emails
   return { valid: true, reason: 'Format valid (MX check requires server)' };
 }
+
+/**
+ * Alias for backward compatibility
+ * @deprecated Use validateEmailFormat instead
+ */
+export const validateEmailWithMX = validateEmailFormat;
 
 /**
  * Score email likelihood based on pattern commonality
@@ -181,7 +188,7 @@ export interface EmailVerificationResult {
 
 export async function verifyEmail(email: string): Promise<EmailVerificationResult> {
   const formatValid = isValidEmailFormat(email);
-  const mxResult = await validateEmailWithMX(email);
+  const mxResult = await validateEmailFormat(email);
   const score = scoreEmailPattern(email) * 100;
   
   let status: 'valid' | 'invalid' | 'unknown' | 'risky' = 'unknown';
@@ -286,7 +293,8 @@ export default {
   generateEmailPatterns,
   generateRankedEmails,
   isValidEmailFormat,
-  validateEmailWithMX,
+  validateEmailFormat,
+  validateEmailWithMX, // deprecated alias
   verifyEmail,
   findMostLikelyEmail,
   extractDomainFromUrl,

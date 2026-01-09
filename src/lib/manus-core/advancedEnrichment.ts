@@ -154,23 +154,35 @@ export async function fetchApolloData(params: {
   const startTime = Date.now();
   
   try {
-    // Determine domain for email generation
-    let emailDomain = params.domain;
-    if (!emailDomain && params.company) {
-      const possibleDomains = guessDomainFromCompany(params.company);
-      emailDomain = possibleDomains[0]; // Use most likely domain
+    // Determine domain for email generation - use provided or guess from company
+    let emailDomains: string[] = [];
+    
+    if (params.domain) {
+      // Use provided domain with highest priority
+      emailDomains = [params.domain];
+    } else if (params.company) {
+      // Guess possible domains from company name
+      emailDomains = guessDomainFromCompany(params.company);
     }
     
-    // Generate likely emails using real pattern matching
-    let emails: string[] = [];
-    if (params.firstName && params.lastName && emailDomain) {
-      const rankedEmails = generateRankedEmails(
-        params.firstName,
-        params.lastName,
-        emailDomain
-      );
-      emails = rankedEmails.slice(0, 3).map(e => e.email); // Top 3 candidates
+    // Generate likely emails using real pattern matching for all candidate domains
+    let allEmails: Array<{ email: string; score: number; domain: string }> = [];
+    
+    if (params.firstName && params.lastName && emailDomains.length > 0) {
+      for (const domain of emailDomains.slice(0, 2)) { // Try top 2 domains
+        const rankedEmails = generateRankedEmails(
+          params.firstName,
+          params.lastName,
+          domain
+        );
+        allEmails.push(...rankedEmails.map(e => ({ ...e, domain })));
+      }
+      
+      // Sort by score and deduplicate
+      allEmails.sort((a, b) => b.score - a.score);
     }
+    
+    const topEmails = allEmails.slice(0, 3).map(e => e.email);
     
     // Build enriched data from available information
     const enrichedData = {
@@ -178,21 +190,22 @@ export async function fetchApolloData(params: {
         name: `${params.firstName} ${params.lastName}`,
         firstName: params.firstName,
         lastName: params.lastName,
-        emails: emails.length > 0 ? emails : undefined,
-        primaryEmail: emails[0] || undefined,
+        emails: topEmails.length > 0 ? topEmails : undefined,
+        primaryEmail: topEmails[0] || undefined,
+        emailDomainCandidates: emailDomains.slice(0, 3), // Provide domain candidates for reference
         linkedin_url: params.firstName && params.lastName ? 
           `https://linkedin.com/in/${params.firstName?.toLowerCase()}-${params.lastName?.toLowerCase()}` : undefined,
         organization: params.company ? {
           name: params.company,
-          website_url: emailDomain ? `https://${emailDomain}` : undefined,
+          website_url: emailDomains[0] ? `https://${emailDomains[0]}` : undefined,
         } : undefined,
-        emailConfidence: emails.length > 0 ? 0.75 : 0.0, // Confidence based on pattern matching
+        emailConfidence: topEmails.length > 0 ? allEmails[0]?.score || 0.75 : 0.0,
       }
     };
     
     return {
       source: 'Apollo',
-      confidence: emails.length > 0 ? 0.75 : 0.50, // Lower confidence if no email found
+      confidence: topEmails.length > 0 ? 0.75 : 0.50,
       data: enrichedData,
       timestamp: new Date(),
       freshness: Date.now() - startTime

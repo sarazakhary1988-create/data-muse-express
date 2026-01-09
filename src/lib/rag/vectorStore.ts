@@ -104,9 +104,10 @@ export class VectorStore {
   async addDocuments(documents: Array<{ id: string; text: string; metadata?: Record<string, any> }>): Promise<void> {
     console.log(`[VectorStore] Adding ${documents.length} documents...`);
     
-    for (const doc of documents) {
-      await this.addDocument(doc.id, doc.text, doc.metadata || {});
-    }
+    // Process in parallel for better performance
+    await Promise.all(
+      documents.map(doc => this.addDocument(doc.id, doc.text, doc.metadata || {}))
+    );
     
     console.log(`[VectorStore] Batch add complete: ${this.documents.length} total documents`);
   }

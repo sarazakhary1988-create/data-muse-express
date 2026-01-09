@@ -47,6 +47,7 @@ If you don't have enough information to answer a question, say so clearly.`;
       temperature?: number;
       model?: string;
       includeHistory?: boolean;
+      maxTokens?: number;
     } = {}
   ): Promise<ChatResponse> {
     const {
@@ -54,6 +55,7 @@ If you don't have enough information to answer a question, say so clearly.`;
       temperature = 0.7,
       model = 'orkestra-gemini',
       includeHistory = true,
+      maxTokens = 1000,
     } = options;
 
     try {
@@ -93,7 +95,7 @@ User question: ${question}
 Please provide a helpful answer based on the context above. Cite sources when appropriate using [Source N] format.`;
 
       // Step 5: Call LLM
-      const response = await this.callLLM(prompt, model, temperature);
+      const response = await this.callLLM(prompt, model, temperature, maxTokens);
 
       // Step 6: Track conversation history
       this.addToHistory({ role: 'user', content: question });
@@ -124,7 +126,8 @@ Please provide a helpful answer based on the context above. Cite sources when ap
   private async callLLM(
     prompt: string,
     model: string,
-    temperature: number
+    temperature: number,
+    maxTokens: number = 1000
   ): Promise<string> {
     try {
       const { data, error } = await supabase.functions.invoke('llm-router', {
@@ -132,7 +135,7 @@ Please provide a helpful answer based on the context above. Cite sources when ap
           model,
           prompt,
           temperature,
-          max_tokens: 1000,
+          max_tokens: maxTokens,
         },
       });
 
