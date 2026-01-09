@@ -148,40 +148,43 @@ export async function fetchApolloData(params: {
   const startTime = Date.now();
   
   try {
-    // Apollo.io People Search API pattern
-    const searchQuery = {
-      person_titles: params.firstName && params.lastName ? 
-        `${params.firstName} ${params.lastName}` : undefined,
-      organization_names: params.company ? [params.company] : undefined,
-      organization_domains: params.domain ? [params.domain] : undefined
-    };
-    
-    // Note: Actual API would require authentication
-    // This is a pattern-based implementation
-    const mockApolloData = {
-      person: {
-        name: `${params.firstName} ${params.lastName}`,
-        title: 'Senior Executive',
-        email: params.domain ? `${params.firstName?.toLowerCase()}@${params.domain}` : undefined,
-        phone: '+1 (555) 123-4567',
-        linkedin_url: `https://linkedin.com/in/${params.firstName?.toLowerCase()}-${params.lastName?.toLowerCase()}`,
-        organization: {
-          name: params.company,
-          website_url: params.domain ? `https://${params.domain}` : undefined,
-          industry: 'Technology',
-          estimated_num_employees: 5000
+    // Call lead-enrichment Edge Function with Apollo.io integration
+    const { supabase } = await import('@/integrations/supabase/client');
+    const { data: enrichedData, error } = await supabase.functions.invoke('lead-enrichment', {
+      body: {
+        source: 'apollo',
+        person: {
+          firstName: params.firstName,
+          lastName: params.lastName,
+          company: params.company,
+          domain: params.domain,
         },
-        employment_history: [],
-        technologies: ['Salesforce', 'HubSpot', 'Slack']
-      }
-    };
-    
+      },
+    });
+
+    if (error || !enrichedData) {
+      console.warn('[Apollo] Enrichment failed, using basic data structure:', error);
+      // Return minimal data structure instead of mock data
+      return {
+        source: 'Apollo',
+        confidence: 0.3,
+        data: {
+          person: {
+            name: `${params.firstName} ${params.lastName}`,
+            organization: { name: params.company },
+          },
+        },
+        timestamp: new Date(),
+        freshness: Date.now() - startTime,
+      };
+    }
+
     return {
       source: 'Apollo',
-      confidence: 0.85,
-      data: mockApolloData,
+      confidence: enrichedData.confidence || 0.85,
+      data: enrichedData.person || enrichedData,
       timestamp: new Date(),
-      freshness: Date.now() - startTime
+      freshness: Date.now() - startTime,
     };
   } catch (error) {
     console.error('Apollo data fetching failed:', error);
@@ -190,7 +193,7 @@ export async function fetchApolloData(params: {
       confidence: 0,
       data: null,
       timestamp: new Date(),
-      freshness: Date.now() - startTime
+      freshness: Date.now() - startTime,
     };
   }
 }
