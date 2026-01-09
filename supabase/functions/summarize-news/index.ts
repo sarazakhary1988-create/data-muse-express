@@ -39,11 +39,11 @@ serve(async (req) => {
     }
 
     // Get all available API keys
-    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
+    const orkestraApiKey = Deno.env.get('ORKESTRA_API_KEY');
     const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
     const anthropicApiKey = Deno.env.get('ANTHROPIC_API_KEY');
     
-    if (!lovableApiKey && !openaiApiKey && !anthropicApiKey) {
+    if (!orkestraApiKey && !openaiApiKey && !anthropicApiKey) {
       return new Response(
         JSON.stringify({ 
           success: false, 
@@ -57,7 +57,7 @@ serve(async (req) => {
     }
 
     console.log('[summarize-news] Multi-model summary for:', body.title.slice(0, 60));
-    console.log('[summarize-news] Available models - OpenAI:', !!openaiApiKey, 'Claude:', !!anthropicApiKey, 'Gemini:', !!lovableApiKey);
+    console.log('[summarize-news] Available models - OpenAI:', !!openaiApiKey, 'Claude:', !!anthropicApiKey, 'Gemini:', !!orkestraApiKey);
 
     // Try to fetch the actual article content for better summary
     let articleContent = body.snippet || '';
@@ -157,9 +157,9 @@ Return as JSON:
       aiCalls.push(callAnthropic(anthropicApiKey, systemPrompt, userPrompt));
     }
     
-    // Lovable AI / Gemini (if available)
-    if (lovableApiKey) {
-      aiCalls.push(callLovableAI(lovableApiKey, systemPrompt, userPrompt));
+    // ORKESTRA AI / Gemini (if available)
+    if (orkestraApiKey) {
+      aiCalls.push(callOrkestraAI(orkestraApiKey, systemPrompt, userPrompt));
     }
 
     // Wait for all AI calls to complete
@@ -313,12 +313,12 @@ async function callAnthropic(apiKey: string, systemPrompt: string, userPrompt: s
   }
 }
 
-// Call Lovable AI (Gemini)
-async function callLovableAI(apiKey: string, systemPrompt: string, userPrompt: string): Promise<AIModelResponse | null> {
+// Call ORKESTRA AI (Gemini)
+async function callOrkestraAI(apiKey: string, systemPrompt: string, userPrompt: string): Promise<AIModelResponse | null> {
   try {
-    console.log('[summarize-news] Calling Lovable AI (Gemini)...');
+    console.log('[summarize-news] Calling ORKESTRA AI (Gemini)...');
     
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    const response = await fetch('https://ai.gateway.orkestra.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -335,7 +335,7 @@ async function callLovableAI(apiKey: string, systemPrompt: string, userPrompt: s
     });
 
     if (!response.ok) {
-      console.error('[summarize-news] Lovable AI error:', response.status);
+      console.error('[summarize-news] ORKESTRA AI error:', response.status);
       return null;
     }
 
@@ -352,7 +352,7 @@ async function callLovableAI(apiKey: string, systemPrompt: string, userPrompt: s
       confidence: 0.88,
     };
   } catch (error) {
-    console.error('[summarize-news] Lovable AI call failed:', error);
+    console.error('[summarize-news] ORKESTRA AI call failed:', error);
     return null;
   }
 }

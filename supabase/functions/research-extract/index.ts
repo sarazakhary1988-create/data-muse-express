@@ -336,7 +336,7 @@ Extract ALL numeric financial data:
   const timeoutId = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
 
   try {
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    const response = await fetch('https://ai.gateway.orkestra.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -654,9 +654,9 @@ serve(async (req) => {
     const validatedExtractType = validateExtractType(extractType);
     const truncatedContent = contentValidation.value.substring(0, 35000);
 
-    const apiKey = Deno.env.get('LOVABLE_API_KEY');
+    const apiKey = Deno.env.get('ORKESTRA_API_KEY');
     if (!apiKey) {
-      console.error('LOVABLE_API_KEY not configured');
+      console.error('ORKESTRA_API_KEY not configured');
       return new Response(
         JSON.stringify({ success: false, error: 'AI not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -697,7 +697,7 @@ serve(async (req) => {
       console.log('[research-extract] Zero companies found, attempting secondary extraction with focused prompt...');
       
       try {
-        const secondaryResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        const secondaryResponse = await fetch('https://ai.gateway.orkestra.dev/v1/chat/completions', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${apiKey}`,

@@ -63,7 +63,7 @@ async function fetchText(url: string): Promise<{ ok: boolean; status: number; te
       redirect: 'follow',
       signal: controller.signal,
       headers: {
-        'User-Agent': 'LovableResearchBot/1.0',
+        'User-Agent': 'OrkestraResearchBot/1.0',
         'Accept': 'text/plain,application/xml,text/xml,*/*;q=0.5'
       }
     });

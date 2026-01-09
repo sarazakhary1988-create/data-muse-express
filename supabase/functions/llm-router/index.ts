@@ -5,7 +5,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // ========================================
 // LOCAL INFERENCE: DeepSeek (Ollama/vLLM), Llama (HF TGI), Qwen (HF TGI)
 // COMMERCIAL: OpenAI, Claude (when API keys available)
-// FALLBACK: Lovable AI (Gemini - always available)
+// FALLBACK: ORKESTRA AI (Gemini - always available)
 // Orchestration: LangGraph, CrewAI, Mastra patterns
 
 const corsHeaders = {
@@ -153,13 +153,13 @@ const MODEL_CONFIGS = {
     isAnthropic: true,
   },
 
-  // === LOVABLE AI (Ultimate fallback - always available) ===
+  // === ORKESTRA AI (Ultimate fallback - always available) ===
   'gemini-2.5-flash': {
     name: 'Gemini 2.5 Flash',
-    provider: 'lovable' as const,
-    endpoint: 'https://ai.gateway.lovable.dev/v1/chat/completions',
+    provider: 'orkestra' as const,
+    endpoint: 'https://ai.gateway.orkestra.dev/v1/chat/completions',
     model: 'google/gemini-2.5-flash',
-    apiKeyEnv: 'LOVABLE_API_KEY',
+    apiKeyEnv: 'ORKESTRA_API_KEY',
     maxTokens: 8192,
     capabilities: ['reasoning', 'multimodal', 'synthesis'],
     tier: 'fallback' as const,
@@ -168,10 +168,10 @@ const MODEL_CONFIGS = {
   },
   'gemini-2.5-pro': {
     name: 'Gemini 2.5 Pro',
-    provider: 'lovable' as const,
-    endpoint: 'https://ai.gateway.lovable.dev/v1/chat/completions',
+    provider: 'orkestra' as const,
+    endpoint: 'https://ai.gateway.orkestra.dev/v1/chat/completions',
     model: 'google/gemini-2.5-pro',
-    apiKeyEnv: 'LOVABLE_API_KEY',
+    apiKeyEnv: 'ORKESTRA_API_KEY',
     maxTokens: 8192,
     capabilities: ['reasoning', 'multimodal', 'complex_analysis'],
     tier: 'fallback' as const,
@@ -473,7 +473,7 @@ function selectModelForTask(task?: string, preferLocal?: boolean): ModelId {
 function buildFallbackChain(primary: ModelId, preferLocal?: boolean): ModelId[] {
   const chain: ModelId[] = [];
 
-  // Priority: Local models first, then commercial, then Lovable AI fallback
+  // Priority: Local models first, then commercial, then ORKESTRA AI fallback
   const priorityOrder: ModelId[] = preferLocal
     ? [
         // Local models first
@@ -533,7 +533,7 @@ async function callModel(
     return callAnthropic(config, apiKey, request);
   }
 
-  // Standard OpenAI-compatible API (vLLM, HF TGI, OpenAI, Lovable)
+  // Standard OpenAI-compatible API (vLLM, HF TGI, OpenAI, ORKESTRA)
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };

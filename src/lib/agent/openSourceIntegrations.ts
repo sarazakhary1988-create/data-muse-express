@@ -279,7 +279,7 @@ export const DEFAULT_INTEGRATION_CONFIG: OpenSourceIntegrationConfig = {
   enableCrawl4ai: true,
   enableGPTResearcher: true,
   enableOpenDeepResearch: true,
-  sandboxType: 'pyodide', // Browser-based for Lovable compatibility
+  sandboxType: 'pyodide', // Browser-based for ORKESTRA compatibility
   apiKeys: {},
 };
 
@@ -366,7 +366,7 @@ export function createToolConnectors(config: OpenSourceIntegrationConfig): ToolC
 }
 
 // ============ HYBRID EXECUTION STRATEGY ============
-// Combines Lovable AI models with open-source tools
+// Combines ORKESTRA AI models with open-source tools
 
 export interface HybridExecutionPlan {
   steps: HybridStep[];
