@@ -1,6 +1,6 @@
 ## 🚀 Project Overview
 
-**ORKESTRA** is a production-ready autonomous AI agent system replica of **Manus 1.6 Max architecture**, featuring:
+**ORKESTRA** is a production-ready autonomous AI agent system based on **Manus 1.6 Max architecture**, featuring:
 
 - **12 LLM Models** with automatic failover and health checks
 - **Real-Time News** via 5 MANUS tools (no external APIs)
