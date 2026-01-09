@@ -2,7 +2,7 @@
 
 ## 🚀 Project Overview
 
-**ORKESTRA** is a production-ready autonomous AI agent system replica of **Manus 1.6 Max architecture**, featuring:
+**ORKESTRA** is a production-ready autonomous AI agent system based on **Manus 1.6 Max architecture**, featuring:
 
 - **12 LLM Models** with automatic failover and health checks
 - **Real-Time News** via 5 MANUS tools (no external APIs)
@@ -98,7 +98,6 @@ This project is built with:
 ## How can I deploy this project?
 
 ### Deploy via Netlify
-
 This project includes Netlify configuration for easy deployment. You have three options:
 
 **1. Deploy via Netlify Dashboard (Recommended)**
