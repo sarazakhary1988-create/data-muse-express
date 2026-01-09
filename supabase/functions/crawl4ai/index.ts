@@ -6,7 +6,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // LLM-friendly web crawling and data extraction
 // GitHub: https://github.com/unclecode/crawl4ai
 // Provides: web scraping, content extraction, markdown conversion, structured output
-// Uses: OpenAI/Claude for LLM extraction (not Lovable AI as primary)
+// Uses: OpenAI/Claude for LLM extraction (not ORKESTRA AI as primary)
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

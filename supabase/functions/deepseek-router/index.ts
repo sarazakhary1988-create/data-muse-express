@@ -6,7 +6,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // DeepSeek: via Ollama or vLLM (local server)
 // Llama 3.3 70B: via HuggingFace local / vLLM
 // Qwen 2.5: via HuggingFace local / vLLM
-// Fallback: Lovable AI
+// Fallback: ORKESTRA AI
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -79,13 +79,13 @@ const MODEL_CONFIGS = {
     maxTokens: 8192,
     isOllama: true,
   },
-  // Lovable AI as ultimate fallback (always available)
-  'lovable-gemini': {
-    name: 'Lovable AI (Gemini)',
-    provider: 'lovable',
-    endpoint: 'https://ai.gateway.lovable.dev/v1/chat/completions',
+  // ORKESTRA AI as ultimate fallback (always available)
+  'orkestra-gemini': {
+    name: 'ORKESTRA AI (Gemini)',
+    provider: 'orkestra',
+    endpoint: 'https://ai.gateway.orkestra.dev/v1/chat/completions',
     model: 'google/gemini-2.5-flash',
-    apiKeyEnv: 'LOVABLE_API_KEY',
+    apiKeyEnv: 'ORKESTRA_API_KEY',
     maxTokens: 8192,
     isOllama: false,
   },
@@ -143,7 +143,7 @@ serve(async (req) => {
       try {
         console.log(`[Local LLM Router] Trying ${config.name}...`);
         
-        // Check if it's a cloud model (Lovable) and needs API key
+        // Check if it's a cloud model (ORKESTRA) and needs API key
         if ((config as any).apiKeyEnv) {
           const apiKey = Deno.env.get((config as any).apiKeyEnv);
           if (!apiKey) {
@@ -165,7 +165,7 @@ serve(async (req) => {
             content: result.content,
             usage: result.usage,
             fallbacksUsed: usedFallbacks.length > 0 ? usedFallbacks : undefined,
-            inferenceType: config.provider === 'lovable' ? 'cloud' : 'local',
+            inferenceType: config.provider === 'orkestra' ? 'cloud' : 'local',
           };
 
           return new Response(JSON.stringify(response), {
@@ -216,11 +216,11 @@ function selectModelForTask(task?: string): ModelId {
   }
 }
 
-// Build fallback chain - local models first, Lovable AI as last resort
+// Build fallback chain - local models first, ORKESTRA AI as last resort
 function buildFallbackChain(primary: ModelId): ModelId[] {
   const chain: ModelId[] = [];
   
-  // Prioritize local models, end with Lovable AI as ultimate fallback
+  // Prioritize local models, end with ORKESTRA AI as ultimate fallback
   const allModels: ModelId[] = [
     'deepseek-v3',
     'deepseek-vllm',
@@ -228,7 +228,7 @@ function buildFallbackChain(primary: ModelId): ModelId[] {
     'llama-ollama',
     'qwen-2.5',
     'qwen-ollama',
-    'lovable-gemini', // Ultimate fallback
+    'orkestra-gemini', // Ultimate fallback
   ];
   
   for (const model of allModels) {
@@ -280,7 +280,7 @@ async function callOllama(
   };
 }
 
-// Call OpenAI-compatible API (vLLM, HuggingFace TGI, Lovable AI)
+// Call OpenAI-compatible API (vLLM, HuggingFace TGI, ORKESTRA AI)
 async function callOpenAICompatible(
   config: typeof MODEL_CONFIGS[ModelId],
   request: RouterRequest
@@ -290,7 +290,7 @@ async function callOpenAICompatible(
     'Content-Type': 'application/json',
   };
 
-  // Add API key for Lovable AI
+  // Add API key for ORKESTRA AI
   if ((config as any).apiKeyEnv) {
     const apiKey = Deno.env.get((config as any).apiKeyEnv);
     if (apiKey) {

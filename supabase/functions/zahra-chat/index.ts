@@ -12,10 +12,10 @@ serve(async (req) => {
 
   try {
     const { messages, personality } = await req.json();
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+    const ORKESTRA_API_KEY = Deno.env.get('ORKESTRA_API_KEY');
     
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY is not configured');
+    if (!ORKESTRA_API_KEY) {
+      throw new Error('ORKESTRA_API_KEY is not configured');
     }
 
     // Build system prompt based on personality
@@ -43,10 +43,10 @@ Guidelines:
 
     console.log('[ZAHRA] Processing chat with personality:', personality);
 
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    const response = await fetch('https://ai.gateway.orkestra.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'Authorization': `Bearer ${ORKESTRA_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -67,7 +67,7 @@ Guidelines:
         });
       }
       if (response.status === 402) {
-        return new Response(JSON.stringify({ error: 'Usage limit reached. Please check your Lovable AI credits.' }), {
+        return new Response(JSON.stringify({ error: 'Usage limit reached. Please check your ORKESTRA AI credits.' }), {
           status: 402,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });

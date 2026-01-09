@@ -90,7 +90,7 @@ export const LLMStatusIndicator = ({ collapsed, onOpenSettings }: LLMStatusIndic
             {preferLocal ? 'Local LLM' : 'Cloud LLM'}
           </span>
           <span className="text-[10px] text-muted-foreground truncate">
-            {preferLocal ? 'Ollama/vLLM/HF' : 'Lovable AI'}
+            {preferLocal ? 'Ollama/vLLM/HF' : 'ORKESTRA AI'}
           </span>
         </div>
       )}
@@ -170,8 +170,8 @@ export const LLMStatusIndicator = ({ collapsed, onOpenSettings }: LLMStatusIndic
       {/* Fallback note */}
       <p className="text-[10px] text-muted-foreground leading-relaxed">
         {preferLocal 
-          ? "Requests go to local endpoints first, falling back to Lovable AI if unavailable."
-          : "Using Lovable AI (Gemini) for all requests. Enable 'Prefer Local' in Settings to use local models."
+          ? "Requests go to local endpoints first, falling back to ORKESTRA AI if unavailable."
+          : "Using ORKESTRA AI (Gemini) for all requests. Enable 'Prefer Local' in Settings to use local models."
         }
       </p>
 

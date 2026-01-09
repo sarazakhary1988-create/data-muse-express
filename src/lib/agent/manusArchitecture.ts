@@ -8,7 +8,7 @@
 
 // ============ FOUNDATION MODEL CONFIGURATION ============
 export const FOUNDATION_MODELS = {
-  // Primary reasoning model (DeepSeek-V3 equivalent via Lovable AI)
+  // Primary reasoning model (DeepSeek-V3 equivalent via ORKESTRA AI)
   PRIMARY_REASONER: 'google/gemini-2.5-pro',
   // Tool use and complex instructions (Qwen 2.5 equivalent)
   TOOL_EXECUTOR: 'google/gemini-2.5-flash',

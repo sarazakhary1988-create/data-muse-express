@@ -121,7 +121,7 @@ For this search, provide:
 DO NOT use placeholder names like "Company A" or "XYZ Corp" - use REAL company names you know.
 Include specific numbers even if approximate - real data is better than generic text.`;
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const response = await fetch("https://ai.gateway.orkestra.dev/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,

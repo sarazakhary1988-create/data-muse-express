@@ -6,7 +6,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // Integrates with GPT-Researcher for autonomous deep research
 // GitHub: https://github.com/assafelovic/gpt-researcher
 // Provides parallel research, source aggregation, fact verification
-// Uses: OpenAI/Claude as primary (NOT Lovable AI)
+// Uses: OpenAI/Claude as primary (NOT ORKESTRA AI)
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -67,7 +67,7 @@ const RESEARCH_AGENTS = [
 
 // LLM Provider configuration - prioritize local models via LLM Router
 // The LLM Router handles Ollama/vLLM/HuggingFace TGI local inference
-// Fallback chain: Local (DeepSeek/Llama/Qwen) -> OpenAI -> Claude -> Lovable AI
+// Fallback chain: Local (DeepSeek/Llama/Qwen) -> OpenAI -> Claude -> ORKESTRA AI
 
 function getSupabaseClient() {
   return {
