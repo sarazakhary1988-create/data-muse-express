@@ -1,7 +1,7 @@
 ORKESTRA : Research Anything with Orchestrated Intelligence
 ## 🚀 Project Overview
 
-**ORKESTRA** is a production-ready autonomous AI agent system based on the **Manus 1.6 Max architecture**, featuring:
+**ORKESTRA** is a production-ready autonomous AI agent system replica of **Manus 1.6 Max architecture**, featuring:
 
 - **12 LLM Models** with automatic failover and health checks
 - **Real-Time News** via 5 MANUS tools (no external APIs)
@@ -9,8 +9,6 @@ ORKESTRA : Research Anything with Orchestrated Intelligence
 - **Memory & RAG** with vector embeddings
 - **6-Agent Research** consensus system
 - **Zero Mock Data** - all data is real-time and fresh
-
-**Project URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
 
 ## 📚 Documentation
 
