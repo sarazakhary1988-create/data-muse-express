@@ -47,14 +47,38 @@ export class LLMRouter {
     return healthyModels[0] || this.models[0];
   }
 
-  async request(prompt: string, options: { model?: string; maxTokens?: number } = {}): Promise<string> {
-    // TODO: Implement actual LLM API integration
-    // Make HTTP requests to anthropic/openai/google/together APIs
-    // Handle retries, timeouts, and failover to backup models
-    // Production implementation: See src/lib/llmConfig.ts and integrations
-    const model = await this.selectModel('completion');
-    console.log(`Using model: ${model.name}`);
-    return `Response from ${model.name}`;
+  async request(prompt: string, options: { model?: string; maxTokens?: number; temperature?: number } = {}): Promise<string> {
+    try {
+      const model = options.model || (await this.selectModel('completion')).name;
+      console.log(`Using model: ${model}`);
+      
+      // Call Supabase Edge Function that routes to actual LLM APIs
+      const { supabase } = await import('@/integrations/supabase/client');
+      const { data, error } = await supabase.functions.invoke('llm-router', {
+        body: {
+          model,
+          prompt,
+          maxTokens: options.maxTokens || 2000,
+          temperature: options.temperature || 0.7,
+        },
+      });
+
+      if (error) {
+        console.error(`[LLM Router] Error with ${model}:`, error);
+        // Failover to next model
+        const backupModel = this.models.find(m => m.name !== model && m.isHealthy);
+        if (backupModel) {
+          console.log(`Failing over to ${backupModel.name}`);
+          return this.request(prompt, { ...options, model: backupModel.name });
+        }
+        throw error;
+      }
+
+      return data?.response || data?.text || '';
+    } catch (error) {
+      console.error('[LLM Router] Request failed:', error);
+      throw error;
+    }
   }
 
   async deepResearch(question: string, options: { models?: string[]; iterations?: number } = {}): Promise<string> {
