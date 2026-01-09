@@ -42,9 +42,9 @@ serve(async (req) => {
 
     const trimmedQuery = query.trim().slice(0, MAX_QUERY_LENGTH);
 
-    const apiKey = Deno.env.get("LOVABLE_API_KEY");
+    const apiKey = Deno.env.get("ORKESTRA_API_KEY");
     if (!apiKey) {
-      console.error("LOVABLE_API_KEY not configured");
+      console.error("ORKESTRA_API_KEY not configured");
       return new Response(JSON.stringify({ success: false, error: "AI not configured" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

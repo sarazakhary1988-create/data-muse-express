@@ -231,7 +231,7 @@ async function synthesizeAnswer(
   query: string, 
   sources: WebSource[]
 ): Promise<{ answer: string; confidence: string }> {
-  const apiKey = Deno.env.get('LOVABLE_API_KEY');
+  const apiKey = Deno.env.get('ORKESTRA_API_KEY');
   
   if (!apiKey || sources.length === 0) {
     return { answer: '', confidence: 'low' };
