@@ -83,8 +83,26 @@ export class ManusFullSystem {
 
 export function createManusInstance(config: Partial<ManusConfig> = {}): ManusFullSystem {
   const defaultConfig: ManusConfig = {
-    models: ['claude-3-5-sonnet', 'gpt-4o', 'gemini-2.0', 'llama-70b', 'qwen-2.5-72b'],
-    tools: ['browser-use', 'playwright', 'crawl4ai', 'codeact', 'gpt-research'],
+    models: [
+      'claude-3-5-sonnet',
+      'claude-3-7-sonnet',
+      'gpt-5',
+      'gpt-4o',
+      'deepseek-v3',
+      'gemini-2.0-flash',
+      'gemini-2.0-pro',
+      'llama-4-scout-17b-16e',
+      'qwen-2.5-72b',
+      'qwen-2.5-coder-32b'
+    ],
+    tools: [
+      'browser-use',
+      'playwright',
+      'crawl4ai',
+      'codeact',
+      'gpt-research',
+      'openai-web-researcher'
+    ],
     memorySize: 100,
     maxIterations: 5,
     ...config,

@@ -69,8 +69,26 @@ export class ManusFeatureProcessor {
 
   constructor(sessionId: string = `session_${Date.now()}`) {
     this.manus = createManusInstance({
-      models: ['claude-3-5-sonnet', 'gpt-4o', 'gemini-2.0'],
-      tools: ['browser-use', 'playwright', 'crawl4ai', 'codeact', 'gpt-research'],
+      models: [
+        'claude-3-5-sonnet',
+        'claude-3-7-sonnet',
+        'gpt-5',
+        'gpt-4o',
+        'deepseek-v3',
+        'gemini-2.0-flash',
+        'gemini-2.0-pro',
+        'llama-4-scout-17b-16e',
+        'qwen-2.5-72b',
+        'qwen-2.5-coder-32b'
+      ],
+      tools: [
+        'browser-use',
+        'playwright',
+        'crawl4ai',
+        'codeact',
+        'gpt-research',
+        'openai-web-researcher'
+      ],
       memorySize: 100,
       maxIterations: 5,
       sessionId,

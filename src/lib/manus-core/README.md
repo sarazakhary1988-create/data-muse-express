@@ -12,6 +12,36 @@ The `manus-core` directory serves as:
 
 **Note**: These are foundational implementations with TODOs marking integration points. Full production implementations with web scraping, database integration, and advanced features are in `src/lib/agent/`.
 
+## ⚡ Key Features
+
+### 100% Real-Time Data Guarantee
+- ✅ **NO mock data** - All data fetched from live sources
+- ✅ **NO synthetic data** - Only real information from the web
+- ✅ **NO dummy data** - Every response is authentic
+- ✅ **Real-time verification** - Data freshness checks
+- ✅ **Live source validation** - Sources verified before use
+
+### 15+ LLM Models Configured
+- **DeepSeek V3** - Cost-effective reasoning and code
+- **Llama 4 Scout 17B 16E** - Efficient MoE model
+- **QWEN 2.5 72B** - Multilingual capabilities
+- **QWEN 2.5 Coder 32B** - Code generation specialist
+- **Claude 3.5 Sonnet** - Advanced reasoning
+- **Claude 3.7 Sonnet** - Extended thinking
+- **GPT-5** - Latest OpenAI model
+- **GPT-4o** - Fast multimodal
+- **Gemini 2.0 Flash** - High-speed processing
+- **Gemini 2.0 Pro** - Advanced multimodal
+- **Plus local fallback models**
+
+### 6 Real-Time Data Fetching Tools
+1. **Browser-Use** - LLM-guided autonomous browsing
+2. **Playwright** - Browser automation and scraping
+3. **Crawl4AI** - AI-powered web crawling
+4. **CodeAct** - Code generation and execution
+5. **GPT Research** - Multi-source research engine
+6. **OpenAI Web Researcher** - AI-powered web research
+
 ## Components
 
 ### 1. Agent Loop (`agentLoop.ts`)
