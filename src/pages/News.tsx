@@ -34,6 +34,7 @@ import {
 import { AnimatedBackground } from '@/components/AnimatedBackground';
 import { Sidebar } from '@/components/Sidebar';
 import { TopNavigation } from '@/components/TopNavigation';
+import { MANUSNewsEngine } from '@/components/MANUSNewsEngine';
 import { useNewsMonitor, NewsItem, NewsCategory as NewsCategoryType, COUNTRY_REGULATORS, COUNTRY_EXCHANGES } from '@/hooks/useNewsMonitor';
 import { useNewsDeduplication } from '@/hooks/useNewsDeduplication';
 import { supabase } from '@/integrations/supabase/client';
@@ -453,6 +454,13 @@ const News = () => {
                   ))}
                 </div>
               </div>
+
+              {/* MANUS Real-Time News Engine */}
+              <MANUSNewsEngine 
+                onArticlesLoaded={(manusArticles) => {
+                  console.log('[News Page] MANUS Engine loaded articles:', manusArticles.length);
+                }}
+              />
 
               {/* Results count */}
               <div className="flex items-center justify-between">
