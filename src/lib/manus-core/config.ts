@@ -175,6 +175,53 @@ export const MANUS_TOOLS = {
     apiEndpoint: null, // No API required - uses Playwright + LLM orchestration
     useFor: ['comprehensive-research', 'multi-source-verification', 'academic-research', 'fact-checking'],
   },
+  
+  // Advanced Crawlers - Specialized engines
+  FINANCIAL_CRAWLER: {
+    id: 'financial-crawler',
+    name: 'Financial Data Crawler',
+    description: 'Multi-source financial data aggregation (prices, fundamentals, news)',
+    capabilities: ['market-data', 'financial-fundamentals', 'earnings-data', 'price-history', 'news-sentiment'],
+    dataType: 'REAL-TIME',
+    apiEndpoint: null, // Uses direct web crawling
+    useFor: ['stock-analysis', 'market-research', 'financial-reporting', 'investment-analysis'],
+  },
+  REALTIME_NEWS_CRAWLER: {
+    id: 'realtime-news-crawler',
+    name: 'Real-Time News Crawler',
+    description: 'Multi-source news aggregation with keyword filtering and categorization',
+    capabilities: ['news-aggregation', 'keyword-filtering', 'multi-source', 'real-time-updates', 'sentiment-ready'],
+    dataType: 'REAL-TIME',
+    apiEndpoint: null,
+    useFor: ['news-monitoring', 'trend-detection', 'market-sentiment', 'event-tracking'],
+  },
+  LINKEDIN_CRAWLER: {
+    id: 'linkedin-crawler',
+    name: 'LinkedIn Professional Crawler',
+    description: 'Professional profile and company data extraction',
+    capabilities: ['profile-extraction', 'experience-history', 'education-data', 'skills-analysis', 'company-info'],
+    dataType: 'REAL-TIME',
+    apiEndpoint: null,
+    useFor: ['lead-enrichment', 'recruitment', 'professional-research', 'company-analysis'],
+  },
+  AI_SCRAPER: {
+    id: 'ai-scraper',
+    name: 'AI-Powered Intelligent Scraper',
+    description: 'LLM-powered scraper with natural language extraction goals',
+    capabilities: ['intelligent-extraction', 'pattern-recognition', 'schema-based', 'confidence-scoring', 'auto-retry'],
+    dataType: 'REAL-TIME',
+    apiEndpoint: null,
+    useFor: ['custom-extraction', 'difficult-pages', 'flexible-scraping', 'ai-guided-extraction'],
+  },
+  DISTRIBUTED_CRAWLER: {
+    id: 'distributed-crawler',
+    name: 'Distributed Web Crawler',
+    description: 'Large-scale parallel crawling with depth control',
+    capabilities: ['parallel-crawling', 'depth-control', 'domain-restrictions', 'link-extraction', 'deduplication'],
+    dataType: 'REAL-TIME',
+    apiEndpoint: null,
+    useFor: ['site-mapping', 'content-discovery', 'large-scale-crawling', 'sitemap-generation'],
+  },
 } as const;
 
 // ============================================
@@ -243,6 +290,13 @@ export const TOOL_SELECTION_STRATEGY = {
   'api-endpoint': ['codeact', 'openai-web-researcher'],
   'research-task': ['gpt-research', 'openai-web-researcher', 'browser-use'],
   'news-scraping': ['crawl4ai', 'browser-use', 'playwright'],
+  
+  // Specialized crawling tasks
+  'financial-data': ['financial-crawler', 'crawl4ai', 'playwright'],
+  'news-aggregation': ['realtime-news-crawler', 'gpt-research', 'crawl4ai'],
+  'professional-profiles': ['linkedin-crawler', 'ai-scraper', 'playwright'],
+  'intelligent-extraction': ['ai-scraper', 'perplexity-research', 'codeact'],
+  'large-scale-crawling': ['distributed-crawler', 'crawl4ai', 'browser-use'],
   
   // All tools for comprehensive fetching (use all in parallel)
   'comprehensive': [

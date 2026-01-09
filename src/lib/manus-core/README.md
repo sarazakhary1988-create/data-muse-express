@@ -34,7 +34,7 @@ The `manus-core` directory serves as:
 - **Gemini 2.0 Pro** - Advanced multimodal
 - **Plus local fallback models**
 
-### 7 Real-Time Data Fetching Tools
+### 12 Real-Time Data Fetching Tools
 1. **Browser-Use** - LLM-guided autonomous browsing
 2. **Playwright** - Browser automation and scraping
 3. **Crawl4AI** - AI-powered web crawling
@@ -42,6 +42,11 @@ The `manus-core` directory serves as:
 5. **GPT Research** - Multi-source research engine
 6. **OpenAI Web Researcher** - AI-powered web research
 7. **Perplexity Research** - Open-source Perplexity-style research with evaluation
+8. **Financial Crawler** - Real-time market data and fundamentals
+9. **News Crawler** - Multi-source news aggregation
+10. **LinkedIn Crawler** - Professional profile extraction
+11. **AI Scraper** - Intelligent LLM-powered extraction
+12. **Distributed Crawler** - Large-scale parallel crawling
 
 ## Components
 
@@ -258,6 +263,90 @@ const company = await playwrightScrapeWithRules(
   COMPANY_PAGE_RULES
 );
 ```
+
+### 9. Advanced Crawlers (`advancedCrawlers.ts`)
+
+**5 Specialized Crawling Engines** for comprehensive data extraction:
+
+#### Financial Data Crawler
+Real-time market data from multiple sources (Yahoo Finance, Bloomberg, MarketWatch, Investing.com)
+
+```typescript
+import { crawlFinancialData } from '@/lib/manus-core';
+
+// Get stock data
+const stockData = await crawlFinancialData({
+  ticker: 'AAPL',
+  exchange: 'NASDAQ',
+  dataTypes: ['price', 'fundamentals', 'news']
+});
+
+console.log('Current Price:', stockData.price?.current);
+console.log('Market Cap:', stockData.fundamentals?.marketCap);
+console.log('Data Quality:', stockData.metadata.dataQuality + '%');
+```
+
+#### Real-Time News Crawler
+Multi-source news aggregation with keyword filtering
+
+```typescript
+import { crawlRealtimeNews } from '@/lib/manus-core';
+
+const news = await crawlRealtimeNews({
+  keywords: ['IPO', 'Saudi Arabia'],
+  sources: ['https://www.reuters.com', 'https://www.bloomberg.com'],
+  maxArticles: 20
+});
+```
+
+#### LinkedIn Professional Crawler
+Professional profile and company data extraction
+
+```typescript
+import { crawlLinkedInProfile } from '@/lib/manus-core';
+
+const profile = await crawlLinkedInProfile(
+  'https://www.linkedin.com/in/username'
+);
+
+console.log('Name:', profile.name);
+console.log('Experience:', profile.experience.length, 'positions');
+console.log('Skills:', profile.skills.join(', '));
+```
+
+#### AI-Powered Intelligent Scraper
+LLM-powered scraper with natural language extraction goals
+
+```typescript
+import { scraperAI } from '@/lib/manus-core';
+
+const result = await scraperAI({
+  url: 'https://example.com/contact',
+  goal: 'Extract all email addresses and phone numbers from this page'
+});
+
+console.log('Success:', result.success);
+console.log('Confidence:', result.confidence);
+console.log('Extracted:', result.data);
+```
+
+#### Distributed Web Crawler
+Large-scale parallel crawling with depth control
+
+```typescript
+import { distributedCrawl } from '@/lib/manus-core';
+
+const results = await distributedCrawl({
+  startUrls: ['https://example.com'],
+  maxDepth: 2,
+  maxPages: 50,
+  parallelism: 5
+});
+
+console.log(`Crawled ${results.length} pages`);
+```
+
+**See [docs/ADVANCED_CRAWLERS.md](../../../docs/ADVANCED_CRAWLERS.md) for complete guide**
 
 ## Integration with Main Application
 

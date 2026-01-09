@@ -114,3 +114,23 @@ export {
   type PlaywrightSearchResult,
   type ScrapingRule,
 } from './playwrightEngine';
+
+// Advanced Crawlers - Specialized Engines
+export {
+  crawlFinancialData,
+  crawlRealtimeNews,
+  crawlLinkedInProfile,
+  scraperAI,
+  distributedCrawl,
+  advancedCrawlers,
+  type FinancialDataConfig,
+  type FinancialData,
+  type NewsConfig,
+  type NewsArticle,
+  type LinkedInProfile,
+  type ScraperAIConfig,
+  type ScraperAIResult,
+  type DistributedCrawlConfig,
+  type CrawlResult,
+} from './advancedCrawlers';
+
