@@ -135,7 +135,7 @@ export interface WebSearchResult {
 // 1. web-search - embedded search engine scraping (DuckDuckGo/Google/Bing)
 // 2. research-search - sitemap discovery + internal scraping
 // 3. research-scrape - direct URL content extraction
-// 4. research-analyze - AI analysis (Lovable AI for report generation only)
+// 4. research-analyze - AI analysis (ORKESTRA AI for report generation only)
 // 5. research-extract - structured data extraction
 // 6. research-map - URL discovery from sitemaps
 
@@ -352,7 +352,7 @@ export const researchApi = {
     }
   },
 
-  // ANALYZE: Uses research-analyze (Lovable AI) - only AI usage in the system
+  // ANALYZE: Uses research-analyze (ORKESTRA AI) - only AI usage in the system
   async analyze(
     query: string, 
     content: string, 
@@ -376,7 +376,7 @@ export const researchApi = {
     }
   },
 
-  // EXTRACT: Uses research-extract (Lovable AI for structured extraction)
+  // EXTRACT: Uses research-extract (ORKESTRA AI for structured extraction)
   async extract(
     query: string,
     content: string,

@@ -231,7 +231,7 @@ async function synthesizeAnswer(
   query: string, 
   sources: WebSource[]
 ): Promise<{ answer: string; confidence: string }> {
-  const apiKey = Deno.env.get('LOVABLE_API_KEY');
+  const apiKey = Deno.env.get('ORKESTRA_API_KEY');
   
   if (!apiKey || sources.length === 0) {
     return { answer: '', confidence: 'low' };
@@ -280,7 +280,7 @@ Analyze these sources and provide a direct answer to the query. Only use informa
   try {
     console.log('[wide-research] Synthesizing answer from real sources...');
     
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    const response = await fetch('https://ai.gateway.orkestra.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,

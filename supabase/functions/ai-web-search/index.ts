@@ -42,9 +42,9 @@ serve(async (req) => {
 
     const trimmedQuery = query.trim().slice(0, MAX_QUERY_LENGTH);
 
-    const apiKey = Deno.env.get("LOVABLE_API_KEY");
+    const apiKey = Deno.env.get("ORKESTRA_API_KEY");
     if (!apiKey) {
-      console.error("LOVABLE_API_KEY not configured");
+      console.error("ORKESTRA_API_KEY not configured");
       return new Response(JSON.stringify({ success: false, error: "AI not configured" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -121,7 +121,7 @@ For this search, provide:
 DO NOT use placeholder names like "Company A" or "XYZ Corp" - use REAL company names you know.
 Include specific numbers even if approximate - real data is better than generic text.`;
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const response = await fetch("https://ai.gateway.orkestra.dev/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,

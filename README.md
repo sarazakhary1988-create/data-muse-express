@@ -1,8 +1,8 @@
-# ORKESTRA - Data Muse Express
+# ORKESTRA - Autonomous Research Engine
 
 ## Project info
 
-A custom-created research and data analysis platform powered by MANUS 1.6 MAX architecture.
+**ORKESTRA website** - Manus 1.6 MAX-class Wide Research Engine
 
 ## How can I edit this code?
 
@@ -10,7 +10,7 @@ There are several ways of editing your application.
 
 **Use your preferred IDE**
 
-You can work locally using your own IDE by cloning this repo and pushing changes.
+If you want to work locally using your own IDE, you can clone this repo and push changes.
 
 The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
 

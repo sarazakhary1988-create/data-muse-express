@@ -31,9 +31,9 @@ serve(async (req) => {
     console.log("[ai-scrape-command] Processing command:", command);
     console.log("[ai-scrape-command] Stream mode:", stream);
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+    const ORKESTRA_API_KEY = Deno.env.get("ORKESTRA_API_KEY");
+    if (!ORKESTRA_API_KEY) {
+      throw new Error("ORKESTRA_API_KEY is not configured");
     }
 
     // Build the system prompt
@@ -80,10 +80,10 @@ Available scraping formats: markdown, html, links, screenshot, branding, summary
             );
 
             // Call AI with streaming
-            const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+            const aiResponse = await fetch("https://ai.gateway.orkestra.dev/v1/chat/completions", {
               method: "POST",
               headers: {
-                Authorization: `Bearer ${LOVABLE_API_KEY}`,
+                Authorization: `Bearer ${ORKESTRA_API_KEY}`,
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({
@@ -287,12 +287,12 @@ ${rawContent.slice(0, 15000)}`;
                         console.error("[ai-scrape-command] Profile generation error:", profileError);
                       }
                     } else {
-                      // Fallback to Lovable AI if no OpenAI key
+                      // Fallback to ORKESTRA AI if no OpenAI key
                       try {
-                        const profileResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+                        const profileResponse = await fetch("https://ai.gateway.orkestra.dev/v1/chat/completions", {
                           method: "POST",
                           headers: {
-                            Authorization: `Bearer ${LOVABLE_API_KEY}`,
+                            Authorization: `Bearer ${ORKESTRA_API_KEY}`,
                             "Content-Type": "application/json",
                           },
                           body: JSON.stringify({
@@ -402,10 +402,10 @@ ${rawContent.slice(0, 15000)}`;
     }
 
     // Non-streaming mode (original behavior)
-    const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const aiResponse = await fetch("https://ai.gateway.orkestra.dev/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        Authorization: `Bearer ${ORKESTRA_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
