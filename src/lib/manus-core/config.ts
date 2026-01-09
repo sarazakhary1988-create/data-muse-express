@@ -222,6 +222,15 @@ export const MANUS_TOOLS = {
     apiEndpoint: null,
     useFor: ['site-mapping', 'content-discovery', 'large-scale-crawling', 'sitemap-generation'],
   },
+  GCC_FINANCIAL_NEWS: {
+    id: 'gcc-financial-news',
+    name: 'GCC Financial News Engine',
+    description: 'Specialized GCC financial news with 11 targeted categories and AI categorization',
+    capabilities: ['gcc-markets', 'ai-categorization', 'entity-extraction', 'multi-source', '28-sources', 'deduplication', 'cma-monitoring', 'ipo-tracking'],
+    dataType: 'REAL-TIME',
+    apiEndpoint: null,
+    useFor: ['gcc-news', 'regulatory-monitoring', 'ipo-tracking', 'ma-monitoring', 'board-changes', 'cma-violations'],
+  },
 } as const;
 
 // ============================================

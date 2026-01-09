@@ -134,3 +134,15 @@ export {
   type CrawlResult,
 } from './advancedCrawlers';
 
+// GCC Financial News Engine - Specialized GCC Market News
+export {
+  fetchGCCFinancialNews,
+  startGCCNewsMonitor,
+  GCC_NEWS_SOURCES,
+  type GCCNewsArticle,
+  type GCCNewsCategory,
+  type GCCRegion,
+  type GCCNewsSource,
+  type FetchGCCNewsOptions,
+} from './gccFinancialNews';
+
