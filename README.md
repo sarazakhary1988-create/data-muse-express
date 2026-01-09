@@ -1,8 +1,7 @@
-# MANUS 1.6 MAX - Data Muse Express
-
+ORKESTRA : Research Anything with Orchestrated Intelligence
 ## 🚀 Project Overview
 
-**Data Muse Express** is a production-ready autonomous AI agent system based on the **Manus 1.6 Max architecture**, featuring:
+**ORKESTRA** is a production-ready autonomous AI agent system based on the **Manus 1.6 Max architecture**, featuring:
 
 - **12 LLM Models** with automatic failover and health checks
 - **Real-Time News** via 5 MANUS tools (no external APIs)
@@ -39,12 +38,6 @@ This project is configured to work with two GitHub repositories:
 ## How can I edit this code?
 
 There are several ways of editing your application.
-
-**Use Lovable**
-
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
 
 **Use your preferred IDE**
 
@@ -94,10 +87,6 @@ This project is built with:
 
 ## How can I deploy this project?
 
-### Deploy via Lovable
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
 ### Deploy via Netlify
 
 This project includes Netlify configuration for easy deployment. You have three options:
@@ -121,12 +110,6 @@ Once connected via the Netlify Dashboard, every push to your main branch will au
 For detailed instructions, see [NETLIFY_DEPLOYMENT.md](./docs/deployment/NETLIFY_DEPLOYMENT.md)
 
 ## Can I connect a custom domain?
-
-### Lovable Project
-
-Yes, you can! Navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
 
 ### Netlify
 
