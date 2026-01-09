@@ -1,4 +1,3 @@
-ORKESTRA : Research Anything with Orchestrated Intelligence
 ## 🚀 Project Overview
 
 **ORKESTRA** is a production-ready autonomous AI agent system replica of **Manus 1.6 Max architecture**, featuring:
