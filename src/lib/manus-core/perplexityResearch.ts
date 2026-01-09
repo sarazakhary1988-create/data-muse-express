@@ -183,7 +183,8 @@ async function decomposeQuery(query: ResearchQuery): Promise<string[]> {
     try {
       const parsed = JSON.parse(data.response);
       return Array.isArray(parsed) ? parsed : [query.question];
-    } catch {
+    } catch (parseError) {
+      console.warn('[Query Decomposition] JSON parse failed:', parseError);
       return [query.question];
     }
   } catch (error) {

@@ -35,7 +35,8 @@ export class ResearchAgent {
       const { supabase } = await import('@/integrations/supabase/client');
       
       // Craft specialty-specific prompts
-      const prompts: Record<typeof this.specialty, string> = {
+      type SpecialtyType = 'technical' | 'market' | 'data' | 'philosophical' | 'historical' | 'risk';
+      const prompts: Record<SpecialtyType, string> = {
         technical: `As a technical analyst, evaluate the technology and architecture aspects of: ${topic}. Focus on technical capabilities, infrastructure, innovation, and technological strengths/weaknesses.`,
         market: `As a market analyst, evaluate the market position and competitive landscape of: ${topic}. Focus on market share, competition, positioning, and market dynamics.`,
         data: `As a data analyst, extract and analyze quantitative metrics for: ${topic}. Focus on financial data, performance metrics, growth rates, and statistical insights.`,

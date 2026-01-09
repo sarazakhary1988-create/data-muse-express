@@ -45,8 +45,11 @@ export class MemoryManager {
       // Implement basic semantic search using text similarity
       // For production, this would use vector embeddings and cosine similarity
       
+      const MIN_WORD_LENGTH = 2;
+      const MEMORY_DECAY_DAYS = 30;
+      
       const queryLower = query.toLowerCase();
-      const queryWords = queryLower.split(/\s+/).filter(w => w.length > 2);
+      const queryWords = queryLower.split(/\s+/).filter(w => w.length > MIN_WORD_LENGTH);
       
       // Score memories based on keyword overlap
       const scored = this.shortTermMemory.map(item => {
@@ -63,7 +66,7 @@ export class MemoryManager {
         // Boost recent memories
         const ageMs = Date.now() - item.lastAccessed.getTime();
         const ageDays = ageMs / (1000 * 60 * 60 * 24);
-        const recencyBoost = Math.max(0, 1 - ageDays / 30); // Decay over 30 days
+        const recencyBoost = Math.max(0, 1 - ageDays / MEMORY_DECAY_DAYS); // Decay over 30 days
         
         // Boost frequently accessed memories
         const accessBoost = Math.min(1, item.accessCount / 10);

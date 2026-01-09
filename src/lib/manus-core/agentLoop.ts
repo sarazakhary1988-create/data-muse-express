@@ -94,7 +94,8 @@ Plan:`,
     try {
       const plan = JSON.parse(data.response);
       return Array.isArray(plan) ? plan : [data.response];
-    } catch {
+    } catch (parseError) {
+      console.warn('[Plan Phase] JSON parse failed:', parseError);
       // Parse as text if not JSON
       const steps = data.response.split('\n').filter((s: string) => s.trim().length > 0);
       return steps.length > 0 ? steps : ['Execute research', 'Analyze results', 'Compile findings'];
