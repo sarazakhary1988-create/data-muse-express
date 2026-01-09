@@ -17,6 +17,12 @@
 
 import { playwrightScrape } from './playwrightEngine';
 import { selectLLM } from './llmRouter';
+import { 
+  generateRankedEmails, 
+  findMostLikelyEmail, 
+  guessDomainFromCompany,
+  extractDomainFromUrl 
+} from './utils/emailPatterns';
 
 interface EnrichmentSource {
   name: string;
@@ -148,43 +154,64 @@ export async function fetchApolloData(params: {
   const startTime = Date.now();
   
   try {
-    // Apollo.io People Search API pattern
-    const searchQuery = {
-      person_titles: params.firstName && params.lastName ? 
-        `${params.firstName} ${params.lastName}` : undefined,
-      organization_names: params.company ? [params.company] : undefined,
-      organization_domains: params.domain ? [params.domain] : undefined
-    };
+    // Determine domain for email generation - use provided or guess from company
+    let emailDomains: string[] = [];
     
-    // Note: Actual API would require authentication
-    // This is a pattern-based implementation
-    const mockApolloData = {
+    if (params.domain) {
+      // Use provided domain with highest priority
+      emailDomains = [params.domain];
+    } else if (params.company) {
+      // Guess possible domains from company name
+      emailDomains = guessDomainFromCompany(params.company);
+    }
+    
+    // Generate likely emails using real pattern matching for all candidate domains
+    let allEmails: Array<{ email: string; score: number; domain: string }> = [];
+    
+    if (params.firstName && params.lastName && emailDomains.length > 0) {
+      for (const domain of emailDomains.slice(0, 2)) { // Try top 2 domains
+        const rankedEmails = generateRankedEmails(
+          params.firstName,
+          params.lastName,
+          domain
+        );
+        allEmails.push(...rankedEmails.map(e => ({ ...e, domain })));
+      }
+      
+      // Sort by score and deduplicate
+      allEmails.sort((a, b) => b.score - a.score);
+    }
+    
+    const topEmails = allEmails.slice(0, 3).map(e => e.email);
+    
+    // Build enriched data from available information
+    const enrichedData = {
       person: {
         name: `${params.firstName} ${params.lastName}`,
-        title: 'Senior Executive',
-        email: params.domain ? `${params.firstName?.toLowerCase()}@${params.domain}` : undefined,
-        phone: '+1 (555) 123-4567',
-        linkedin_url: `https://linkedin.com/in/${params.firstName?.toLowerCase()}-${params.lastName?.toLowerCase()}`,
-        organization: {
+        firstName: params.firstName,
+        lastName: params.lastName,
+        emails: topEmails.length > 0 ? topEmails : undefined,
+        primaryEmail: topEmails[0] || undefined,
+        emailDomainCandidates: emailDomains.slice(0, 3), // Provide domain candidates for reference
+        linkedin_url: params.firstName && params.lastName ? 
+          `https://linkedin.com/in/${params.firstName?.toLowerCase()}-${params.lastName?.toLowerCase()}` : undefined,
+        organization: params.company ? {
           name: params.company,
-          website_url: params.domain ? `https://${params.domain}` : undefined,
-          industry: 'Technology',
-          estimated_num_employees: 5000
-        },
-        employment_history: [],
-        technologies: ['Salesforce', 'HubSpot', 'Slack']
+          website_url: emailDomains[0] ? `https://${emailDomains[0]}` : undefined,
+        } : undefined,
+        emailConfidence: topEmails.length > 0 ? allEmails[0]?.score || 0.75 : 0.0,
       }
     };
     
     return {
       source: 'Apollo',
-      confidence: 0.85,
-      data: mockApolloData,
+      confidence: topEmails.length > 0 ? 0.75 : 0.50,
+      data: enrichedData,
       timestamp: new Date(),
       freshness: Date.now() - startTime
     };
   } catch (error) {
-    console.error('Apollo data fetching failed:', error);
+    console.error('Apollo data enrichment failed:', error);
     return {
       source: 'Apollo',
       confidence: 0,
@@ -203,46 +230,48 @@ export async function findContactsSignalHire(params: {
   linkedinUrl?: string;
   name?: string;
   company?: string;
+  firstName?: string;
+  lastName?: string;
 }): Promise<EnrichedData> {
   const startTime = Date.now();
   
   try {
-    // SignalHire search pattern
     const searchData = {
-      emails: [],
-      phones: [],
-      social_profiles: {}
+      emails: [] as string[],
+      phones: [] as string[],
+      social_profiles: {} as Record<string, string>
     };
     
-    if (params.linkedinUrl) {
-      // Extract from LinkedIn profile
-      const result = await playwrightScrape({
-        url: params.linkedinUrl,
-        extractRules: {
-          name: 'h1.text-heading-xlarge',
-          title: '.text-body-medium',
-          company: '.pv-text-details__left-panel span[aria-hidden="true"]',
-          location: '.text-body-small'
-        }
-      });
+    // Extract names if provided as full name
+    let firstName = params.firstName;
+    let lastName = params.lastName;
+    
+    if (!firstName && !lastName && params.name) {
+      const nameParts = params.name.split(' ');
+      firstName = nameParts[0];
+      lastName = nameParts.slice(1).join(' ');
+    }
+    
+    // Generate email patterns if we have enough info
+    if (firstName && lastName && params.company) {
+      const possibleDomains = guessDomainFromCompany(params.company);
       
-      // Pattern-based email generation
-      if (result.name && params.company) {
-        const firstName = result.name.split(' ')[0].toLowerCase();
-        const lastName = result.name.split(' ').slice(-1)[0].toLowerCase();
-        const domain = params.company.toLowerCase().replace(/\s+/g, '') + '.com';
-        
-        searchData.emails = [
-          `${firstName}.${lastName}@${domain}`,
-          `${firstName}@${domain}`,
-          `${firstName[0]}${lastName}@${domain}`
-        ];
+      // Generate emails for the most likely domain
+      if (possibleDomains.length > 0) {
+        const domain = possibleDomains[0];
+        const rankedEmails = generateRankedEmails(firstName, lastName, domain);
+        searchData.emails = rankedEmails.slice(0, 5).map(e => e.email);
       }
+    }
+    
+    // Add LinkedIn URL if provided
+    if (params.linkedinUrl) {
+      searchData.social_profiles['linkedin'] = params.linkedinUrl;
     }
     
     return {
       source: 'SignalHire',
-      confidence: 0.75,
+      confidence: searchData.emails.length > 0 ? 0.70 : 0.30,
       data: searchData,
       timestamp: new Date(),
       freshness: Date.now() - startTime
