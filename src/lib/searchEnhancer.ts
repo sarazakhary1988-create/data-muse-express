@@ -39,8 +39,143 @@ export interface EnhancedSearchQuery {
 }
 
 /**
+ * Detect query context for smart enhancement
+ */
+function detectQueryContext(query: string): {
+  type: 'company_unlisted' | 'employee_search' | 'url_research' | 'ipo' | 'financial_data' | 'general';
+  entities: string[];
+  needsDeepResearch: boolean;
+} {
+  const lowerQuery = query.toLowerCase();
+  
+  // URL research detection
+  const urlMatch = query.match(/https?:\/\/[^\s]+/gi);
+  if (urlMatch) {
+    return {
+      type: 'url_research',
+      entities: urlMatch,
+      needsDeepResearch: true,
+    };
+  }
+  
+  // Employee/person search
+  if (
+    /\b(employee|staff|ceo|cfo|coo|director|manager|executive|founder|president|vp)\b/i.test(lowerQuery) ||
+    /\b(find|search|lookup)\s+(people|employees|staff)\b/i.test(lowerQuery)
+  ) {
+    return {
+      type: 'employee_search',
+      entities: [],
+      needsDeepResearch: true,
+    };
+  }
+  
+  // Unlisted/private company
+  if (
+    /\b(unlisted|private|pre-ipo|startup|unicorn|privately.held)\b/i.test(lowerQuery) ||
+    /\b(company)\b.*\b(not listed|not public)\b/i.test(lowerQuery)
+  ) {
+    return {
+      type: 'company_unlisted',
+      entities: [],
+      needsDeepResearch: true,
+    };
+  }
+  
+  // IPO research
+  if (/\b(ipo|initial public offering|going public|listing)\b/i.test(lowerQuery)) {
+    return {
+      type: 'ipo',
+      entities: [],
+      needsDeepResearch: true,
+    };
+  }
+  
+  // Financial data
+  if (/\b(revenue|earnings|profit|financial|balance sheet|income statement|cash flow)\b/i.test(lowerQuery)) {
+    return {
+      type: 'financial_data',
+      entities: [],
+      needsDeepResearch: false,
+    };
+  }
+  
+  return {
+    type: 'general',
+    entities: [],
+    needsDeepResearch: false,
+  };
+}
+
+/**
+ * Build context-aware enhancement instructions
+ */
+function buildEnhancementInstructions(
+  query: string,
+  queryContext: ReturnType<typeof detectQueryContext>,
+  searchContext: Partial<SearchContext>
+): string {
+  const instructions: string[] = [];
+  
+  switch (queryContext.type) {
+    case 'company_unlisted':
+      instructions.push('Focus on private company data, funding rounds, investor information, and recent news');
+      instructions.push('Include searches on Crunchbase, PitchBook, CB Insights, and LinkedIn');
+      instructions.push('Look for press releases, funding announcements, and employee counts');
+      break;
+      
+    case 'employee_search':
+      instructions.push('Search for individual profiles, employment history, and professional backgrounds');
+      instructions.push('Include LinkedIn profiles, company directories, and professional networks');
+      instructions.push('Look for verified employment information and professional credentials');
+      break;
+      
+    case 'url_research':
+      instructions.push(`Research content from specific URL: ${queryContext.entities.join(', ')}`);
+      instructions.push('Extract key information, company details, and relevant data points');
+      instructions.push('Cross-reference information with other authoritative sources');
+      break;
+      
+    case 'ipo':
+      instructions.push('Focus on IPO filings, prospectus documents, and listing details');
+      instructions.push('Include pricing, valuation, underwriters, and market conditions');
+      instructions.push('Look for regulatory filings and exchange announcements');
+      break;
+      
+    case 'financial_data':
+      instructions.push('Prioritize official financial statements and regulatory filings');
+      instructions.push('Include quarterly reports, annual reports, and SEC/exchange filings');
+      instructions.push('Look for verified financial metrics and accounting data');
+      break;
+      
+    default:
+      instructions.push('Conduct comprehensive research across multiple authoritative sources');
+      instructions.push('Prioritize recent, verified, and high-quality information');
+      break;
+  }
+  
+  // Add geographic focus
+  if (searchContext.country) {
+    instructions.push(`Geographic focus: ${searchContext.country}`);
+  }
+  
+  // Add time constraints
+  if (searchContext.timeFrame) {
+    instructions.push(`Time frame: ${searchContext.timeFrame}`);
+  }
+  
+  // Add source constraints
+  if (searchContext.selectedDomains && searchContext.selectedDomains.length > 0) {
+    instructions.push(`STRICT: Only use these sources: ${searchContext.selectedDomains.join(', ')}`);
+  }
+  
+  return instructions.join('\n');
+}
+
+/**
  * Automatically enhance search query with AI
  * This is MANDATORY and enforced for all searches
+ * Now includes context-aware enhancement for better results
  */
 export async function autoEnhanceQuery(
   query: string,
@@ -59,6 +194,13 @@ export async function autoEnhanceQuery(
     errors.push(...configValidation.errors);
   }
   
+  // Detect query context for smart enhancement
+  const queryContext = detectQueryContext(query);
+  console.log('🎯 Query context detected:', queryContext.type);
+  
+  // Build context-aware instructions
+  const enhancementInstructions = buildEnhancementInstructions(query, queryContext, context);
+  
   try {
     // Call enhance-prompt edge function with full context
     const { data, error } = await supabase.functions.invoke('enhance-prompt', {
@@ -67,13 +209,17 @@ export async function autoEnhanceQuery(
         geographic_focus: context.country,
         country: context.country,
         custom_websites: context.selectedDomains || [],
-        research_depth: context.deepVerifyMode ? 'deep' : 'standard',
-        taskType: 'web_research',
+        research_depth: queryContext.needsDeepResearch || context.deepVerifyMode ? 'deep' : 'standard',
+        taskType: queryContext.type === 'url_research' ? 'url_analysis' : 'web_research',
         timeframe: context.timeFrame,
         // Add Manus context
         useManusEngine: true,
         strictSourceFiltering: true,
         realTimeOnly: true,
+        // Add context-aware instructions
+        queryType: queryContext.type,
+        enhancementInstructions,
+        targetUrls: queryContext.entities,
       },
     });
 
@@ -82,7 +228,7 @@ export async function autoEnhanceQuery(
       errors.push(`Enhancement failed: ${error.message}`);
     } else if (data?.enhanced_description) {
       enhancedQuery = data.enhanced_description;
-      enhancementReason = 'AI-enhanced for better results';
+      enhancementReason = `AI-enhanced for ${queryContext.type} with context-aware instructions`;
       console.log('✅ Query enhanced successfully');
     } else {
       errors.push('No enhanced query returned');
