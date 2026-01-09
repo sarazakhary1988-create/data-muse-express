@@ -80,3 +80,37 @@ export {
   createManusInstance,
   type ManusConfig,
 } from './manusFullSystem';
+
+// Perplexity-Style Research (Open Source)
+export {
+  perplexityResearch,
+  evaluateResearch,
+  formatResearchResult,
+  quickResearch,
+  type ResearchQuery,
+  type ResearchSource,
+  type ResearchResult,
+  type Citation,
+  type EvaluationMetrics,
+} from './perplexityResearch';
+
+// Playwright Research Engine
+export {
+  initPlaywrightBrowser,
+  playwrightSearch,
+  playwrightScrape,
+  playwrightExtract,
+  playwrightExecuteJS,
+  playwrightScreenshot,
+  playwrightPDF,
+  playwrightMonitorNetwork,
+  playwrightBatchScrape,
+  playwrightSmartScrape,
+  playwrightScrapeWithRules,
+  NEWS_ARTICLE_RULES,
+  COMPANY_PAGE_RULES,
+  type PlaywrightConfig,
+  type ScrapedData,
+  type PlaywrightSearchResult,
+  type ScrapingRule,
+} from './playwrightEngine';

@@ -34,13 +34,14 @@ The `manus-core` directory serves as:
 - **Gemini 2.0 Pro** - Advanced multimodal
 - **Plus local fallback models**
 
-### 6 Real-Time Data Fetching Tools
+### 7 Real-Time Data Fetching Tools
 1. **Browser-Use** - LLM-guided autonomous browsing
 2. **Playwright** - Browser automation and scraping
 3. **Crawl4AI** - AI-powered web crawling
 4. **CodeAct** - Code generation and execution
 5. **GPT Research** - Multi-source research engine
 6. **OpenAI Web Researcher** - AI-powered web research
+7. **Perplexity Research** - Open-source Perplexity-style research with evaluation
 
 ## Components
 
@@ -174,6 +175,88 @@ const result = await manus.execute('Research quantum computing trends');
 // Access components
 const context = await manus.getMemoryContext('quantum computing');
 const memories = await manus.recall('previous research');
+```
+
+### 7. Perplexity Research (`perplexityResearch.ts`)
+**Open-Source Perplexity-Style Research Engine** - NO API required:
+
+**Features**:
+- Multi-source web research with Playwright automation
+- Automatic citation generation [1], [2], etc.
+- Fact verification and cross-referencing
+- Quality evaluation (Perplexity Eval) - scores research 0-100%
+- LLM-powered query understanding and answer synthesis
+- Real-time data from live sources only
+
+**Usage**:
+```typescript
+import { perplexityResearch, quickResearch } from '@/lib/manus-core';
+
+// Quick research
+const report = await quickResearch(
+  "What is Saudi Aramco's revenue for 2024?"
+);
+
+// Advanced research with filters
+const result = await perplexityResearch({
+  question: "Latest Saudi IPOs",
+  filters: {
+    timeRange: 'month',
+    sources: ['tadawul.sa', 'argaam.com', 'bloomberg.com']
+  }
+}, {
+  maxSources: 10,
+  usePlaywright: true,
+  enableEvaluation: true
+});
+
+console.log('Answer:', result.answer);
+console.log('Quality Score:', result.evaluationScore * 100 + '%');
+console.log('Sources:', result.sources.length);
+console.log('Confidence:', result.confidence * 100 + '%');
+```
+
+**Based on**:
+- https://github.com/perplexityai/rules_playwright (Playwright rules engine)
+- Perplexity AI's research methodology
+
+### 8. Playwright Engine (`playwrightEngine.ts`)
+**Advanced Playwright Automation** for web research and scraping:
+
+**Features**:
+- Multi-browser support (Chromium, Firefox, WebKit)
+- JavaScript execution and dynamic content handling
+- Batch scraping with connection pooling
+- Screenshot and PDF generation
+- Network monitoring and interception
+- Rules-based extraction (based on rules_playwright)
+
+**Usage**:
+```typescript
+import {
+  playwrightSearch,
+  playwrightScrape,
+  playwrightScrapeWithRules,
+  NEWS_ARTICLE_RULES,
+  COMPANY_PAGE_RULES
+} from '@/lib/manus-core';
+
+// Search the web
+const results = await playwrightSearch('Saudi Aramco IPO');
+
+// Scrape content
+const data = await playwrightScrape('https://www.saudiexchange.sa/aramco');
+
+// Scrape with rules (reliable extraction)
+const article = await playwrightScrapeWithRules(
+  'https://www.bloomberg.com/article',
+  NEWS_ARTICLE_RULES
+);
+
+const company = await playwrightScrapeWithRules(
+  'https://www.tadawul.sa/company',
+  COMPANY_PAGE_RULES
+);
 ```
 
 ## Integration with Main Application

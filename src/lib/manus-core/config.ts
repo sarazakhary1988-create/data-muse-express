@@ -166,6 +166,15 @@ export const MANUS_TOOLS = {
     apiEndpoint: 'https://api.openai.com/v1/chat/completions', // Uses OpenAI API with web access
     useFor: ['web-research', 'fact-finding', 'source-discovery'],
   },
+  PERPLEXITY_RESEARCH: {
+    id: 'perplexity-research',
+    name: 'Perplexity Research (Open Source)',
+    description: 'Open-source Perplexity-style research engine with Playwright automation',
+    capabilities: ['multi-source-research', 'playwright-automation', 'fact-verification', 'citation-generation', 'quality-evaluation'],
+    dataType: 'REAL-TIME', // Confirms real-time data only
+    apiEndpoint: null, // No API required - uses Playwright + LLM orchestration
+    useFor: ['comprehensive-research', 'multi-source-verification', 'academic-research', 'fact-checking'],
+  },
 } as const;
 
 // ============================================
@@ -243,6 +252,7 @@ export const TOOL_SELECTION_STRATEGY = {
     'codeact',
     'gpt-research',
     'openai-web-researcher',
+    'perplexity-research',
   ],
 } as const;
 
