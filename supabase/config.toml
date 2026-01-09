@@ -23,15 +23,12 @@ additional_redirect_urls = ["http://localhost:3000", "http://127.0.0.1:3000", "h
 jwt_expiry = 2592000
 enable_signup = true
 enable_anonymous_sign_ins = false
-refresh_token_rotation_enabled = true
-security_refresh_token_reuse_interval = 10
 
 [auth.email]
 enable_signup = true
 double_confirm_changes = false
 enable_confirmations = false
 secure_password_change = false
-max_frequency = 3600
 
 [functions.research-scrape]
 verify_jwt = false
