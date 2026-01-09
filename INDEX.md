@@ -1,129 +1,138 @@
-# MANUS 1.6 MAX - GitHub Deployment Complete ✅
+# MANUS 1.6 MAX - Documentation Index
 
 ## 🎯 Status: READY FOR PRODUCTION
 
-**Repository**: https://github.com/sarazakhary1988-create/data-muse-express-main
+**Repository**: https://github.com/sarazakhary1988-create/data-muse-express
 
-**Deployment Date**: January 9, 2026
+**Last Updated**: January 9, 2026
 
 ---
 
 ## 📖 Where to Start
 
 ### 1️⃣ First Time? Start Here (5 min)
-📄 [START_HERE_DEPLOYMENT.md](START_HERE_DEPLOYMENT.md)
+📄 [docs/deployment/START_HERE_DEPLOYMENT.md](./docs/deployment/START_HERE_DEPLOYMENT.md)
 - Quick overview
 - 5 simple steps
 - What you need
 
 ### 2️⃣ Ready to Deploy? (15 min)
-📄 [DEPLOYMENT_GUIDE_COMPLETE.md](DEPLOYMENT_GUIDE_COMPLETE.md)
+📄 [docs/deployment/DEPLOYMENT_GUIDE_COMPLETE.md](./docs/deployment/DEPLOYMENT_GUIDE_COMPLETE.md)
 - Step-by-step instructions
 - Copy-paste commands
 - Troubleshooting
 
 ### 3️⃣ Understand the System? (20 min)
-📄 [ARCHITECTURE.md](ARCHITECTURE.md)
+📄 [ARCHITECTURE.md](./ARCHITECTURE.md)
 - Complete system design
-- 5 core components
-- 7 database tables
+- Core components
+- Database schema
+- Performance metrics
 
 ### 4️⃣ Need API Documentation? (10 min)
-📄 [API_REFERENCE.md](API_REFERENCE.md)
+📄 [API_REFERENCE.md](./API_REFERENCE.md)
 - All endpoints
 - Request/response examples
 - Error handling
+- SDK examples
 
 ### 5️⃣ Executive Summary? (5 min)
-📄 [DEPLOYMENT_SUMMARY.md](DEPLOYMENT_SUMMARY.md)
+📄 [docs/deployment/DEPLOYMENT_SUMMARY.md](./docs/deployment/DEPLOYMENT_SUMMARY.md)
 - What was deployed
 - File inventory
 - Next steps
 
+### 6️⃣ Git Setup (Dual Repository)
+📄 [docs/DUAL_REPOSITORY_SETUP.md](./docs/DUAL_REPOSITORY_SETUP.md)
+- Working with two repositories
+- Fetch, pull, push workflows
+- Sync strategies
+- Quick reference: [docs/.git-remotes-cheatsheet.md](./docs/.git-remotes-cheatsheet.md)
+
 ---
 
-## 🚀 Deploy in 5 Steps
+## 🏗️ Architecture Documentation
 
-### Step 1: Create Supabase Project
-```
-https://app.supabase.com → New Project
-```
-⏱️ 5 minutes
+### Core Components
+- **[MANUS Core](./src/lib/manus-core/README.md)** - Foundational architecture
+  - Agent Loop (4-phase)
+  - Real-Time News (5 tools)
+  - Memory & RAG
+  - Wide Research (6 agents)
+  - LLM Router (12 models)
 
-### Step 2: Get Credentials
-- Project ID
-- Project URL
-- Anon Key
-- Service Role Key
+### Production Implementation  
+Located in `src/lib/agent/`:
+- **manusArchitecture.ts** - Extended architecture
+- **researchAgent.ts** - Full research capabilities
+- **wideResearch.ts** - Production web scraping
+- **memorySystem.ts** - Supabase integration
 
-⏱️ 1 minute
+---
 
-### Step 3: Add GitHub Secrets
-```
-https://github.com/sarazakhary1988-create/data-muse-express-main/settings/secrets/actions
-```
+## 🚀 Deployment Guides
 
-⏱️ 5 minutes
+### Quick Deploy (Netlify)
+📄 [docs/deployment/NETLIFY_DEPLOYMENT.md](./docs/deployment/NETLIFY_DEPLOYMENT.md)
 
-### Step 4: Deploy Database
-```bash
-supabase link --project-ref [PROJECT_ID]
-supabase db push
-```
-⏱️ 5 minutes
+### GitHub Deployment
+📄 [docs/deployment/GITHUB_DEPLOYMENT_COMPLETE.md](./docs/deployment/GITHUB_DEPLOYMENT_COMPLETE.md)
 
-### Step 5: Deploy Functions
-```bash
-supabase functions deploy
-```
-⏱️ 5 minutes
-
-**Total: ~25 minutes to production ✅**
+### Complete Repository Deployment
+📄 [docs/deployment/COMPLETE_REPO_DEPLOYMENT.md](./docs/deployment/COMPLETE_REPO_DEPLOYMENT.md)
 
 ---
 
 ## 📦 What's Inside
 
 ### 🧠 AI Components (5,500+ lines)
-- **Real-Time News**: 5 autonomous tools
-- **Agent Loop**: 4-phase execution
-- **Memory & RAG**: Hybrid + vector search
-- **Wide Research**: 6 specialist agents
-- **LLM Orchestration**: 12 models
+- **Real-Time News**: 5 autonomous tools (GPT Research, Browser-Use, Playwright, Crawl4AI, CodeAct)
+- **Agent Loop**: 4-phase execution (Analyze → Plan → Execute → Observe)
+- **Memory & RAG**: Hybrid memory + vector search (pgvector)
+- **Wide Research**: 6 specialist agents with consensus building
+- **LLM Orchestration**: 12 models with automatic failover
 
 ### 💾 Database (7 Tables)
-- agent_tasks
-- agent_steps
-- memory_items
-- news_cache
-- research_findings
-- user_sessions
-- llm_logs
+- agent_tasks - Task execution tracking
+- agent_steps - Step-by-step execution logs
+- memory_items - Knowledge store with vector embeddings
+- news_cache - Cached articles with metadata
+- research_findings - Research results with confidence scores
+- user_sessions - Session management
+- llm_logs - LLM interaction logs
 
 ### 📚 Documentation (6,000+ lines)
-- Complete guides
-- API reference
-- Architecture docs
-- Deployment procedures
+- Complete deployment guides
+- API reference with examples
+- Architecture documentation
+- Component-level READMEs
 
 ---
 
-## ✅ Status
+## ✅ Implementation Status
 
-- ✅ GitHub deployment complete
-- ✅ All code pushed
-- ✅ CI/CD configured
-- ✅ Documentation ready
-- ⏳ Ready for Supabase deployment
-
----
-
-## 🎉 Next Action
-
-**→ Read [START_HERE_DEPLOYMENT.md](START_HERE_DEPLOYMENT.md)**
-
-Takes 5 minutes and tells you exactly what to do next.
+- ✅ Documentation merged from both repositories
+- ✅ MANUS 1.6 MAX core components added
+- ✅ Production implementations in place
+- ✅ Documentation structured and organized
+- ✅ Build verified (no errors)
+- ✅ Git dual-repository setup configured
+- ⏳ Ready for deployment
 
 ---
 
-**Overall Status**: 🚀 **READY FOR DEPLOYMENT**
+## 🎉 Next Actions
+
+**For Development**:
+1. Read [src/lib/manus-core/README.md](./src/lib/manus-core/README.md) - Core architecture
+2. Explore `src/lib/agent/` - Production implementations
+3. Check [ARCHITECTURE.md](./ARCHITECTURE.md) - System design
+
+**For Deployment**:
+1. Read [docs/deployment/START_HERE_DEPLOYMENT.md](./docs/deployment/START_HERE_DEPLOYMENT.md)
+2. Follow [docs/deployment/DEPLOYMENT_GUIDE_COMPLETE.md](./docs/deployment/DEPLOYMENT_GUIDE_COMPLETE.md)
+3. For Netlify: [docs/deployment/NETLIFY_DEPLOYMENT.md](./docs/deployment/NETLIFY_DEPLOYMENT.md)
+
+---
+
+**Overall Status**: 🚀 **READY FOR DEVELOPMENT & DEPLOYMENT**
