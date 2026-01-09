@@ -14,8 +14,7 @@
  * - Cookie and session management
  */
 
-// Note: Playwright types - in production, install: npm install playwright
-// For now using type assertions for the architectural reference
+import { supabase } from '@/integrations/supabase/client';
 
 export interface PlaywrightConfig {
   browser?: 'chromium' | 'firefox' | 'webkit';
@@ -47,20 +46,27 @@ export interface PlaywrightSearchResult {
  * Initialize Playwright browser with optimal settings
  */
 export async function initPlaywrightBrowser(config: PlaywrightConfig = {}) {
-  // TODO: Implement actual Playwright browser initialization
-  // Production implementation available via src/lib/agent/
-  
-  const browserType = config.browser || 'chromium';
-  const headless = config.headless !== false;
-  
-  console.log(`🚀 Initializing Playwright ${browserType} browser (headless: ${headless})`);
-  
-  // Mock browser instance
-  return {
-    browserType,
-    headless,
-    timeout: config.timeout || 30000,
-  };
+  try {
+    console.log('🚀 Initializing Playwright browser via Edge Function...');
+    
+    const { data, error } = await supabase.functions.invoke('playwright-browser', {
+      body: { 
+        action: 'init',
+        config 
+      },
+    });
+
+    if (error) {
+      console.error('[Playwright] Browser initialization failed:', error);
+      return null;
+    }
+
+    console.log('[Playwright] Browser initialized successfully');
+    return data;
+  } catch (error) {
+    console.error('[Playwright] Unexpected error:', error);
+    return null;
+  }
 }
 
 /**
@@ -71,35 +77,32 @@ export async function playwrightSearch(
   query: string,
   config: PlaywrightConfig = {}
 ): Promise<PlaywrightSearchResult[]> {
-  console.log(`🔍 Playwright search: "${query}"`);
-  
-  // TODO: Implement actual Playwright search automation
-  // Steps:
-  // 1. Launch browser
-  // 2. Navigate to search engine (Google, Bing, DuckDuckGo)
-  // 3. Enter query and submit
-  // 4. Wait for results to load
-  // 5. Extract result elements (title, URL, snippet)
-  // 6. Handle pagination if needed
-  // 7. Close browser
-  
-  // Production implementation available via src/lib/agent/
-  
-  // Mock results
-  return [
-    {
-      title: `Results for: ${query}`,
-      url: 'https://example.com/1',
-      snippet: `Information about ${query}...`,
-      rank: 1,
-    },
-    {
-      title: `More about ${query}`,
-      url: 'https://example.com/2',
-      snippet: `Additional details on ${query}...`,
-      rank: 2,
-    },
-  ];
+  try {
+    console.log(`🔍 Playwright search: "${query}"`);
+    
+    const { data, error } = await supabase.functions.invoke('playwright-browser', {
+      body: {
+        action: 'search',
+        query,
+        config,
+      },
+    });
+
+    if (error) {
+      console.error('[Playwright] Search failed:', error);
+      return [];
+    }
+
+    return (data?.results || []).map((r: any, index: number) => ({
+      title: r.title,
+      url: r.url,
+      snippet: r.snippet || r.description || '',
+      rank: index + 1,
+    }));
+  } catch (error) {
+    console.error('[Playwright] Search error:', error);
+    return [];
+  }
 }
 
 /**
@@ -110,35 +113,34 @@ export async function playwrightScrape(
   url: string,
   config: PlaywrightConfig = {}
 ): Promise<ScrapedData> {
-  console.log(`📄 Playwright scraping: ${url}`);
-  
-  // TODO: Implement actual Playwright scraping
-  // Steps:
-  // 1. Launch browser
-  // 2. Create new page
-  // 3. Navigate to URL
-  // 4. Wait for content to load (networkidle, domcontentloaded)
-  // 5. Execute JavaScript if needed
-  // 6. Extract text content, metadata, links, images
-  // 7. Clean and structure data
-  // 8. Close browser
-  
-  // Production implementation available via src/lib/agent/
-  
-  // Mock scraped data
-  return {
-    url,
-    title: `Page Title for ${url}`,
-    content: `Main content from ${url}...`,
-    metadata: {
-      author: 'Unknown',
-      publishDate: new Date().toISOString(),
-      description: 'Page description',
-    },
-    links: [],
-    images: [],
-    timestamp: new Date(),
-  };
+  try {
+    console.log(`📄 Playwright scraping: ${url}`);
+    
+    const { data, error } = await supabase.functions.invoke('ai-web-scrape', {
+      body: {
+        url,
+        config,
+      },
+    });
+
+    if (error) {
+      console.error('[Playwright] Scrape failed:', error);
+      throw error;
+    }
+
+    return {
+      url,
+      title: data.title || '',
+      content: data.content || data.text || '',
+      metadata: data.metadata || {},
+      links: data.links || [],
+      images: data.images || [],
+      timestamp: new Date(),
+    };
+  } catch (error) {
+    console.error('[Playwright] Scrape error:', error);
+    throw error;
+  }
 }
 
 /**
@@ -186,12 +188,33 @@ export async function playwrightScreenshot(
   options: { fullPage?: boolean; selector?: string } = {},
   config: PlaywrightConfig = {}
 ): Promise<Buffer> {
-  console.log(`📸 Taking screenshot: ${url}`);
-  
-  // TODO: Implement screenshot capture
-  // Production implementation available via src/lib/agent/
-  
-  return Buffer.from('mock-screenshot-data');
+  try {
+    console.log(`📸 Taking screenshot: ${url}`);
+    
+    const { data, error } = await supabase.functions.invoke('playwright-browser', {
+      body: {
+        action: 'screenshot',
+        url,
+        ...options,
+        config,
+      },
+    });
+
+    if (error) {
+      console.error('[Playwright] Screenshot failed:', error);
+      return Buffer.from('');
+    }
+
+    // Convert base64 to Buffer if needed
+    if (data?.screenshot) {
+      return Buffer.from(data.screenshot, 'base64');
+    }
+    
+    return Buffer.from('');
+  } catch (error) {
+    console.error('[Playwright] Screenshot error:', error);
+    return Buffer.from('');
+  }
 }
 
 /**
@@ -202,12 +225,33 @@ export async function playwrightPDF(
   options: { format?: 'A4' | 'Letter'; landscape?: boolean } = {},
   config: PlaywrightConfig = {}
 ): Promise<Buffer> {
-  console.log(`📑 Generating PDF: ${url}`);
-  
-  // TODO: Implement PDF generation
-  // Production implementation available via src/lib/agent/
-  
-  return Buffer.from('mock-pdf-data');
+  try {
+    console.log(`📑 Generating PDF: ${url}`);
+    
+    const { data, error } = await supabase.functions.invoke('playwright-browser', {
+      body: {
+        action: 'pdf',
+        url,
+        ...options,
+        config,
+      },
+    });
+
+    if (error) {
+      console.error('[Playwright] PDF generation failed:', error);
+      return Buffer.from('');
+    }
+
+    // Convert base64 to Buffer if needed
+    if (data?.pdf) {
+      return Buffer.from(data.pdf, 'base64');
+    }
+    
+    return Buffer.from('');
+  } catch (error) {
+    console.error('[Playwright] PDF error:', error);
+    return Buffer.from('');
+  }
 }
 
 /**

@@ -13,6 +13,8 @@
  * NO mock, synthesized, or dummy data is used.
  */
 
+import { supabase } from '@/integrations/supabase/client';
+
 export interface NewsSource {
   name: string;
   url: string;
@@ -33,12 +35,31 @@ export interface FetchedArticle {
 }
 
 export async function discoverNewsSourcesViaGPT(topic: string): Promise<NewsSource[]> {
-  // TODO: Implement GPT/Claude integration for source discovery
-  // Use LLM to identify authoritative news sources for the given topic
-  // Production implementation available via src/lib/agent/researchAgent.ts
-  // REAL-TIME: Queries actual news APIs and aggregators
-  console.log(`Discovering REAL-TIME news sources for: ${topic}`);
-  return [];
+  try {
+    console.log(`Discovering REAL-TIME news sources for: ${topic}`);
+    
+    const { data, error } = await supabase.functions.invoke('ai-research-agent', {
+      body: {
+        action: 'discover-sources',
+        topic,
+      },
+    });
+
+    if (error) {
+      console.error('[GPT Source Discovery] Failed:', error);
+      return [];
+    }
+
+    return (data?.sources || []).map((s: any) => ({
+      name: s.name,
+      url: s.url,
+      category: s.category || 'general',
+      reliability: s.reliability || 0.8,
+    }));
+  } catch (error) {
+    console.error('[GPT Source Discovery] Error:', error);
+    return [];
+  }
 }
 
 export async function fetchViaBrowserUse(source: NewsSource): Promise<FetchedArticle[]> {
@@ -50,11 +71,36 @@ export async function fetchViaBrowserUse(source: NewsSource): Promise<FetchedArt
 }
 
 export async function fetchViaPlaywright(source: NewsSource): Promise<FetchedArticle[]> {
-  // TODO: Implement Playwright automation
-  // See production implementation in src/lib/agent/
-  // REAL-TIME: Scrapes live web pages with browser automation
-  console.log(`Fetching REAL-TIME data from ${source.name} via Playwright`);
-  return [];
+  try {
+    console.log(`Fetching REAL-TIME data from ${source.name} via Playwright`);
+    
+    const { data, error } = await supabase.functions.invoke('ai-web-scrape', {
+      body: {
+        url: source.url,
+        extractNews: true,
+      },
+    });
+
+    if (error) {
+      console.error(`[Playwright] Failed to fetch from ${source.name}:`, error);
+      return [];
+    }
+
+    return (data?.articles || []).map((article: any) => ({
+      id: `${source.name}-${Date.now()}-${Math.random()}`,
+      title: article.title,
+      content: article.content || article.text,
+      source: source.name,
+      url: article.url || source.url,
+      publishedAt: article.publishedAt ? new Date(article.publishedAt) : new Date(),
+      fetchMethod: 'playwright' as const,
+      relevanceTags: article.tags || [],
+      isRealTime: true,
+    }));
+  } catch (error) {
+    console.error(`[Playwright] Error fetching from ${source.name}:`, error);
+    return [];
+  }
 }
 
 export async function fetchViaCrawl4AI(source: NewsSource): Promise<FetchedArticle[]> {
@@ -74,18 +120,69 @@ export async function fetchViaCodeAct(source: NewsSource): Promise<FetchedArticl
 }
 
 export async function fetchViaOpenAIWebResearcher(source: NewsSource): Promise<FetchedArticle[]> {
-  // TODO: Implement OpenAI Web Researcher integration
-  // REAL-TIME: Uses OpenAI's web research capabilities for live data
-  console.log(`Fetching REAL-TIME data from ${source.name} via OpenAI Web Researcher`);
-  return [];
+  try {
+    console.log(`Fetching REAL-TIME data from ${source.name} via OpenAI Web Researcher`);
+    
+    const { data, error } = await supabase.functions.invoke('ai-web-search', {
+      body: {
+        query: `Latest news from ${source.name}`,
+        source: source.url,
+      },
+    });
+
+    if (error) {
+      console.error(`[OpenAI Web] Failed to search ${source.name}:`, error);
+      return [];
+    }
+
+    return (data?.results || []).map((result: any) => ({
+      id: `openai-${source.name}-${Date.now()}-${Math.random()}`,
+      title: result.title,
+      content: result.content || result.snippet,
+      source: source.name,
+      url: result.url,
+      publishedAt: result.publishedAt ? new Date(result.publishedAt) : new Date(),
+      fetchMethod: 'openai_web_researcher' as const,
+      relevanceTags: result.tags || [],
+      isRealTime: true,
+    }));
+  } catch (error) {
+    console.error(`[OpenAI Web] Error searching ${source.name}:`, error);
+    return [];
+  }
 }
 
 export async function fetchViaPerplexityResearch(source: NewsSource): Promise<FetchedArticle[]> {
-  // TODO: Implement Perplexity Research integration
-  // See implementation in perplexityResearch.ts
-  // REAL-TIME: Uses Playwright + LLM for multi-source verified news
-  console.log(`Fetching REAL-TIME verified data from ${source.name} via Perplexity Research`);
-  return [];
+  try {
+    console.log(`Fetching REAL-TIME verified data from ${source.name} via Perplexity Research`);
+    
+    const { data, error } = await supabase.functions.invoke('perplexity-research', {
+      body: {
+        query: `Latest news from ${source.name}`,
+        source: source.url,
+      },
+    });
+
+    if (error) {
+      console.error(`[Perplexity] Failed to research ${source.name}:`, error);
+      return [];
+    }
+
+    return (data?.articles || []).map((article: any) => ({
+      id: `perplexity-${source.name}-${Date.now()}-${Math.random()}`,
+      title: article.title,
+      content: article.content || article.answer,
+      source: source.name,
+      url: article.url || source.url,
+      publishedAt: new Date(),
+      fetchMethod: 'perplexity_research' as const,
+      relevanceTags: article.tags || [],
+      isRealTime: true,
+    }));
+  } catch (error) {
+    console.error(`[Perplexity] Error researching ${source.name}:`, error);
+    return [];
+  }
 }
 
 export async function getRealtimeNews(query: string, limit: number = 20): Promise<FetchedArticle[]> {

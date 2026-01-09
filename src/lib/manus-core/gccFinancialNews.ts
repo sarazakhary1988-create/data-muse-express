@@ -14,6 +14,7 @@
  * 100% REAL-TIME DATA - No mock, synthetic, or dummy data
  */
 
+import { supabase } from '@/integrations/supabase/client';
 import { crawlFinancialData, crawlRealtimeNews } from './advancedCrawlers';
 import { perplexityResearch } from './perplexityResearch';
 import { playwrightScrapeWithRules } from './playwrightEngine';
@@ -386,15 +387,76 @@ async function fetchFromSource(source: GCCNewsSource, keywords: string[], timeRa
 }
 
 async function fetchViaPlaywrightScraper(source: GCCNewsSource, keywords: string[], timeRange: string): Promise<Partial<GCCNewsArticle>[]> {
-  // TODO: Implement using playwrightScrapeWithRules
-  console.log(`[Playwright] Scraping ${source.name} for keywords: ${keywords.join(', ')}`);
-  return [];
+  try {
+    console.log(`[Playwright] Scraping ${source.name} for keywords: ${keywords.join(', ')}`);
+    
+    const { data, error } = await supabase.functions.invoke('ai-web-scrape', {
+      body: {
+        url: source.url,
+        extractNews: true,
+        keywords,
+      },
+    });
+
+    if (error) {
+      console.error(`[Playwright] Failed to scrape ${source.name}:`, error);
+      return [];
+    }
+
+    return (data?.articles || []).map((article: any) => ({
+      id: `${source.name}-${Date.now()}-${Math.random()}`,
+      title: article.title,
+      content: article.content || article.text,
+      summary: (article.content || article.text || '').substring(0, 200) + '...',
+      source: source.name,
+      sourceUrl: article.url || source.url,
+      publishedAt: article.publishedAt ? new Date(article.publishedAt) : new Date(),
+      fetchedAt: new Date(),
+      language: source.language === 'both' ? 'en' : source.language,
+      region: source.region[0],
+      isRealTime: true,
+      relevanceScore: 0.8,
+    }));
+  } catch (error) {
+    console.error(`[Playwright] Error scraping ${source.name}:`, error);
+    return [];
+  }
 }
 
 async function fetchViaPerplexityResearch(source: GCCNewsSource, keywords: string[], timeRange: string): Promise<Partial<GCCNewsArticle>[]> {
-  // TODO: Implement using perplexityResearch
-  console.log(`[Perplexity] Researching ${source.name} for keywords: ${keywords.join(', ')}`);
-  return [];
+  try {
+    console.log(`[Perplexity] Researching ${source.name} for keywords: ${keywords.join(', ')}`);
+    
+    const { data, error } = await supabase.functions.invoke('perplexity-research', {
+      body: {
+        query: `Latest ${keywords.join(' OR ')} news from ${source.name}`,
+        sources: [source.url],
+      },
+    });
+
+    if (error) {
+      console.error(`[Perplexity] Failed to research ${source.name}:`, error);
+      return [];
+    }
+
+    return (data?.articles || data?.results || []).map((article: any) => ({
+      id: `perplexity-${source.name}-${Date.now()}-${Math.random()}`,
+      title: article.title,
+      content: article.content || article.answer,
+      summary: (article.content || article.answer || '').substring(0, 200) + '...',
+      source: source.name,
+      sourceUrl: article.url || source.url,
+      publishedAt: new Date(),
+      fetchedAt: new Date(),
+      language: source.language === 'both' ? 'en' : source.language,
+      region: source.region[0],
+      isRealTime: true,
+      relevanceScore: 0.85,
+    }));
+  } catch (error) {
+    console.error(`[Perplexity] Error researching ${source.name}:`, error);
+    return [];
+  }
 }
 
 async function fetchViaNewsCrawler(source: GCCNewsSource, keywords: string[], timeRange: string): Promise<Partial<GCCNewsArticle>[]> {
@@ -431,72 +493,141 @@ async function fetchViaNewsCrawler(source: GCCNewsSource, keywords: string[], ti
  * Categorize news article using AI (LLM)
  */
 async function categorizeNewsWithAI(article: Partial<GCCNewsArticle>): Promise<GCCNewsArticle> {
-  // TODO: Implement LLM-based categorization using GPT-5/Claude/Gemini
-  // For now, use keyword-based heuristics
-  
-  const text = `${article.title} ${article.content}`.toLowerCase();
-  
-  let aiCategory: GCCNewsCategory = 'general_financial';
-  let aiConfidence = 0.5;
-  
-  // Simple keyword matching (will be replaced with LLM)
-  if (text.includes('cma fine') || text.includes('penalty') || text.includes('violation')) {
-    aiCategory = 'regulator_violation';
-    aiConfidence = 0.9;
-  } else if (text.includes('ipo approved') || text.includes('listing') || text.includes('prospectus')) {
-    aiCategory = 'listing_approved';
-    aiConfidence = 0.85;
-  } else if (text.includes('ceo') || text.includes('board') || text.includes('director') || text.includes('appointment')) {
-    aiCategory = 'management_change';
-    aiConfidence = 0.8;
-  } else if (text.includes('merger') || text.includes('acquisition') || text.includes('m&a')) {
-    aiCategory = 'merger_acquisition';
-    aiConfidence = 0.85;
-  } else if (text.includes('shareholder') || text.includes('ownership') || text.includes('stake')) {
-    aiCategory = 'shareholder_change';
-    aiConfidence = 0.8;
-  }
-  
-  return {
-    ...(article as GCCNewsArticle),
-    aiCategory,
-    aiConfidence,
-    sentiment: 'neutral',
-    tags: [],
-    extractedEntities: {
-      companies: [],
-      regulators: [],
-      people: [],
-      amounts: [],
-      locations: []
+  try {
+    const text = `${article.title} ${article.content}`;
+    
+    const { data, error } = await supabase.functions.invoke('llm-router', {
+      body: {
+        model: 'gpt-4o-mini',
+        prompt: `Categorize this GCC financial news article into one of these categories:\n- country_outlook\n- management_change\n- regulator_violation\n- listing_approved\n- regulator_regulation\n- merger_acquisition\n- joint_venture\n- shareholder_change\n- government_announcement\n- market_moving\n- general_financial\n\nArticle: ${text}\n\nRespond with ONLY the category name and confidence (0-1), format: category|confidence`,
+        temperature: 0.3,
+      },
+    });
+
+    if (error || !data?.response) {
+      // Fallback to keyword-based
+      const textLower = text.toLowerCase();
+      let aiCategory: GCCNewsCategory = 'general_financial';
+      let aiConfidence = 0.5;
+      
+      if (textLower.includes('cma fine') || textLower.includes('penalty') || textLower.includes('violation')) {
+        aiCategory = 'regulator_violation';
+        aiConfidence = 0.9;
+      } else if (textLower.includes('ipo approved') || textLower.includes('listing') || textLower.includes('prospectus')) {
+        aiCategory = 'listing_approved';
+        aiConfidence = 0.85;
+      } else if (textLower.includes('ceo') || textLower.includes('board') || textLower.includes('director') || textLower.includes('appointment')) {
+        aiCategory = 'management_change';
+        aiConfidence = 0.8;
+      } else if (textLower.includes('merger') || textLower.includes('acquisition') || textLower.includes('m&a')) {
+        aiCategory = 'merger_acquisition';
+        aiConfidence = 0.85;
+      } else if (textLower.includes('shareholder') || textLower.includes('ownership') || textLower.includes('stake')) {
+        aiCategory = 'shareholder_change';
+        aiConfidence = 0.8;
+      }
+      
+      return {
+        ...(article as GCCNewsArticle),
+        aiCategory,
+        aiConfidence,
+        sentiment: 'neutral',
+        tags: [],
+        extractedEntities: {
+          companies: [],
+          regulators: [],
+          people: [],
+          amounts: [],
+          locations: []
+        }
+      };
     }
-  };
+
+    // Parse AI response
+    const [category, confidence] = data.response.split('|');
+    
+    return {
+      ...(article as GCCNewsArticle),
+      aiCategory: (category.trim() as GCCNewsCategory) || 'general_financial',
+      aiConfidence: parseFloat(confidence) || 0.8,
+      sentiment: 'neutral',
+      tags: [],
+      extractedEntities: {
+        companies: [],
+        regulators: [],
+        people: [],
+        amounts: [],
+        locations: []
+      }
+    };
+  } catch (error) {
+    console.error('[AI Categorization] Error:', error);
+    return {
+      ...(article as GCCNewsArticle),
+      aiCategory: 'general_financial',
+      aiConfidence: 0.5,
+      sentiment: 'neutral',
+      tags: [],
+      extractedEntities: {
+        companies: [],
+        regulators: [],
+        people: [],
+        amounts: [],
+        locations: []
+      }
+    };
+  }
 }
 
 /**
  * Extract entities using AI (companies, people, amounts, etc.)
  */
 async function extractEntitiesWithAI(article: GCCNewsArticle): Promise<GCCNewsArticle> {
-  // TODO: Implement LLM-based entity extraction
-  // For now, use simple pattern matching
-  
-  const text = `${article.title} ${article.content}`;
-  
-  // Extract amounts (SAR, $, etc.)
-  const amountPattern = /(SAR|USD|\$|€|£)\s*([\d,]+(?:\.\d{2})?)\s*(million|billion|M|B)?/gi;
-  const amounts: Array<{ value: number; currency: string; }> = [];
-  let match;
-  while ((match = amountPattern.exec(text)) !== null) {
-    const currency = match[1];
-    const value = parseFloat(match[2].replace(/,/g, ''));
-    const multiplier = match[3]?.toLowerCase().includes('b') ? 1000000000 : 
-                      match[3]?.toLowerCase().includes('m') ? 1000000 : 1;
-    amounts.push({ value: value * multiplier, currency });
+  try {
+    const text = `${article.title} ${article.content}`;
+    
+    const { data, error } = await supabase.functions.invoke('llm-router', {
+      body: {
+        model: 'gpt-4o-mini',
+        prompt: `Extract entities from this text. Respond in JSON format:\n{\n  "companies": [{"name": "", "ticker": ""}],\n  "people": [{"name": "", "role": ""}],\n  "amounts": [{"value": 0, "currency": ""}],\n  "locations": [],\n  "regulators": []\n}\n\nText: ${text}`,
+        temperature: 0.2,
+      },
+    });
+
+    if (!error && data?.response) {
+      try {
+        const entities = JSON.parse(data.response);
+        article.extractedEntities = {
+          companies: entities.companies || [],
+          regulators: entities.regulators || [],
+          people: entities.people || [],
+          amounts: entities.amounts || [],
+          locations: entities.locations || [],
+        };
+        return article;
+      } catch (parseError) {
+        console.error('[Entity Extraction] JSON parse error:', parseError);
+      }
+    }
+
+    // Fallback to pattern matching
+    const amountPattern = /(SAR|USD|\$|€|£)\s*([\d,]+(?:\.\d{2})?)\s*(million|billion|M|B)?/gi;
+    const amounts: Array<{ value: number; currency: string; }> = [];
+    let match;
+    while ((match = amountPattern.exec(text)) !== null) {
+      const currency = match[1];
+      const value = parseFloat(match[2].replace(/,/g, ''));
+      const multiplier = match[3]?.toLowerCase().includes('b') ? 1000000000 : 
+                        match[3]?.toLowerCase().includes('m') ? 1000000 : 1;
+      amounts.push({ value: value * multiplier, currency });
+    }
+    
+    article.extractedEntities.amounts = amounts;
+    return article;
+  } catch (error) {
+    console.error('[Entity Extraction] Error:', error);
+    return article;
   }
-  
-  article.extractedEntities.amounts = amounts;
-  
-  return article;
 }
 
 /**

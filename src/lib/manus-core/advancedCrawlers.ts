@@ -11,6 +11,7 @@
  * - scraperai - AI-powered intelligent scraping
  */
 
+import { supabase } from '@/integrations/supabase/client';
 import { playwrightScrape, playwrightBatchScrape, playwrightSmartScrape } from './playwrightEngine';
 
 // ============================================
