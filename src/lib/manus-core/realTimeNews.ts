@@ -1,136 +1,361 @@
 /**
- * Real-Time News Engine
- * Autonomous news fetching using 7 MANUS tools - ALL REAL-TIME DATA
- * - GPT/Claude research for discovery
- * - Browser-Use for LLM-guided browsing
- * - Playwright for browser automation
- * - Crawl4AI for web crawling
- * - CodeAct for code execution
- * - OpenAI Web Researcher for AI-powered search
- * - Perplexity Research for multi-source verified news
+ * Real-Time News Engine - ACTUAL IMPLEMENTATION
  * 
- * NOTE: This module fetches 100% REAL-TIME data from live sources.
- * NO mock, synthesized, or dummy data is used.
+ * Autonomous news fetching using 7+ real data sources
+ * Integrates: RSS Parser, Crawl4AI, Web Scrapers
+ * Uses: Local LLMs (DeepSeek, Llama via Ollama)
+ * 
+ * NO mock, synthetic, or dummy data - 100% REAL-TIME DATA
  */
 
+import axios from 'axios';
+import * as cheerio from 'cheerio';
+
+export interface NewsArticle {
+    id: string;
+    title: string;
+    url: string;
+    source: string;
+    content: string;
+    publishedAt: Date;
+    category: string;
+    sentiment?: 'positive' | 'neutral' | 'negative';
+    images?: string[];
+    authors?: string[];
+}
+
 export interface NewsSource {
-  name: string;
-  url: string;
-  category: string;
-  reliability: number;
+    name: string;
+    url: string;
+    type: 'rss' | 'web' | 'api';
+    updateInterval: number;
 }
 
-export interface FetchedArticle {
-  id: string;
-  title: string;
-  content: string;
-  source: string;
-  url: string;
-  publishedAt: Date;
-  fetchMethod: 'gpt_research' | 'browser_use' | 'playwright' | 'crawl4ai' | 'codeact' | 'openai_web_researcher' | 'perplexity_research';
-  relevanceTags: string[];
-  isRealTime: boolean; // Always true - confirms real-time data
+/**
+ * Initialize news sources
+ */
+const newsSources: NewsSource[] = [
+    // Major News RSS Feeds
+  { name: 'BBC News', url: 'http://feeds.bbc.co.uk/news/rss.xml', type: 'rss', updateInterval: 300000 },
+  { name: 'Reuters', url: 'https://feeds.reuters.com/reuters/businessNews', type: 'rss', updateInterval: 300000 },
+  { name: 'Bloomberg', url: 'https://www.bloomberg.com/feed/podcast/etf-report.xml', type: 'rss', updateInterval: 300000 },
+  { name: 'CNBC', url: 'https://www.cnbc.com/id/100003114/device/rss/rss.html', type: 'rss', updateInterval: 300000 },
+  { name: 'TechCrunch', url: 'http://feeds.feedburner.com/TechCrunch/', type: 'rss', updateInterval: 300000 },
+  { name: 'Hacker News', url: 'https://news.ycombinator.com/rss', type: 'rss', updateInterval: 300000 },
+  { name: 'Google News Tech', url: 'https://news.google.com/rss/topics/CAAqJQgKIR5BVVNLUS1CRWFnQjBGV2EyOEExQjBGV2FnQjBDakkaGAoXQ0JBU0hRb0pMN21rTWVBTUF3QjBGV2EyOHA', type: 'rss', updateInterval: 300000 },
+  ];
+
+/**
+ * Fetch news using RSS parser
+ */
+export async function fetchNewsViaRSS(source: NewsSource): Promise<NewsArticle[]> {
+    try {
+          const response = await axios.get(source.url, { timeout: 10000 });
+          const $ = cheerio.load(response.data);
+          const articles: NewsArticle[] = [];
+
+      // Parse RSS/Atom feed
+      $('item, entry').each((index, elem) => {
+              const $item = $(elem);
+              const title = $item.find('title').first().text();
+              const link = $item.find('link').first().attr('href') || $item.find('link').first().text();
+              const description = $item.find('description, summary').first().text();
+              const pubDate = $item.find('pubDate, published').first().text();
+
+                                  if (title && link) {
+                                            articles.push({
+                                                        id: `${source.name}-${index}`,
+                                                        title: title.substring(0, 200),
+                                                        url: link,
+                                                        source: source.name,
+                                                        content: description.substring(0, 1000),
+                                                        publishedAt: new Date(pubDate),
+                                                        category: extractCategory(title + ' ' + description),
+                                                        images: extractImages($item),
+                                                        authors: extractAuthors($item),
+                                            });
+                                  }
+      });
+
+      return articles;
+    } catch (error) {
+          console.error(`Error fetching from ${source.name}:`, error);
+          return [];
+    }
 }
 
-export async function discoverNewsSourcesViaGPT(topic: string): Promise<NewsSource[]> {
-  // TODO: Implement GPT/Claude integration for source discovery
-  // Use LLM to identify authoritative news sources for the given topic
-  // Production implementation available via src/lib/agent/researchAgent.ts
-  // REAL-TIME: Queries actual news APIs and aggregators
-  console.log(`Discovering REAL-TIME news sources for: ${topic}`);
-  return [];
+/**
+ * Fetch news using Crawl4AI for dynamic content
+ */
+export async function fetchNewsViaCrawl4AI(url: string): Promise<NewsArticle[]> {
+    try {
+          // Crawl4AI integration - using Playwright-based scraping
+      const response = await axios.post('http://localhost:8000/crawl', {
+              url,
+              wait_for: '[data-article]',
+              remove_overlay: true,
+      });
+
+      const articles: NewsArticle[] = [];
+          const $ = cheerio.load(response.data.html);
+
+      $('[data-article]').each((index, elem) => {
+              const $article = $(elem);
+              const title = $article.find('[data-title]').text();
+              const link = $article.find('a').attr('href');
+              const content = $article.find('[data-content]').text();
+
+                                     if (title && link) {
+                                               articles.push({
+                                                           id: `crawl4ai-${index}`,
+                                                           title,
+                                                           url: link,
+                                                           source: 'Crawl4AI',
+                                                           content,
+                                                           publishedAt: new Date(),
+                                                           category: extractCategory(title + ' ' + content),
+                                               });
+                                     }
+      });
+
+      return articles;
+    } catch (error) {
+          console.error('Crawl4AI fetch error:', error);
+          return [];
+    }
 }
 
-export async function fetchViaBrowserUse(source: NewsSource): Promise<FetchedArticle[]> {
-  // TODO: Implement Browser-Use integration
-  // See production implementation in src/lib/agent/
-  // REAL-TIME: Autonomously browses live websites with LLM guidance
-  console.log(`Fetching REAL-TIME data from ${source.name} via Browser-Use`);
-  return [];
+/**
+ * Fetch news using web scraping
+ */
+export async function fetchNewsViaWebScraper(url: string, selectors: {
+    article: string;
+    title: string;
+    link: string;
+    content: string;
+}): Promise<NewsArticle[]> {
+    try {
+          const response = await axios.get(url, { 
+                                                 headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+                  timeout: 10000,
+          });
+
+      const $ = cheerio.load(response.data);
+          const articles: NewsArticle[] = [];
+
+      $(selectors.article).each((index, elem) => {
+              const $elem = $(elem);
+              const title = $elem.find(selectors.title).text();
+              const link = $elem.find(selectors.link).attr('href');
+              const content = $elem.find(selectors.content).text();
+
+                                      if (title && link) {
+                                                articles.push({
+                                                            id: `scraper-${url}-${index}`,
+                                                            title,
+                                                            url: link.startsWith('http') ? link : new URL(link, url).toString(),
+                                                            source: new URL(url).hostname || 'Unknown',
+                                                            content,
+                                                            publishedAt: new Date(),
+                                                            category: extractCategory(title + ' ' + content),
+                                                });
+                                      }
+      });
+
+      return articles;
+    } catch (error) {
+          console.error(`Web scraping error for ${url}:`, error);
+          return [];
+    }
 }
 
-export async function fetchViaPlaywright(source: NewsSource): Promise<FetchedArticle[]> {
-  // TODO: Implement Playwright automation
-  // See production implementation in src/lib/agent/
-  // REAL-TIME: Scrapes live web pages with browser automation
-  console.log(`Fetching REAL-TIME data from ${source.name} via Playwright`);
-  return [];
+/**
+ * Fetch all news from configured sources
+ */
+export async function fetchAllRealTimeNews(): Promise<NewsArticle[]> {
+    console.log('🔄 Fetching real-time news from all sources...');
+
+  const allArticles: NewsArticle[] = [];
+
+  // Fetch from all RSS sources in parallel
+  const rssPromises = newsSources.map(source => fetchNewsViaRSS(source));
+    const rssResults = await Promise.all(rssPromises);
+
+  rssResults.forEach(articles => allArticles.push(...articles));
+
+  console.log(`✅ Fetched ${allArticles.length} articles from real-time sources`);
+
+  return allArticles;
 }
 
-export async function fetchViaCrawl4AI(source: NewsSource): Promise<FetchedArticle[]> {
-  // TODO: Implement Crawl4AI integration
-  // See production implementation in src/lib/agent/
-  // REAL-TIME: Crawls live websites with AI-powered extraction
-  console.log(`Fetching REAL-TIME data from ${source.name} via Crawl4AI`);
-  return [];
+/**
+ * Categorize news with local LLM (DeepSeek/Llama via Ollama)
+ */
+export async function categorizeNewsWithAI(article: NewsArticle): Promise<string> {
+    try {
+          // Call local Ollama LLM (DeepSeek or Llama)
+      const response = await axios.post('http://localhost:11434/api/generate', {
+              model: 'deepseek-coder', // or 'llama2', 'neural-chat', etc.
+              prompt: `Categorize this news article in ONE word (Technology, Business, Politics, Sports, Health, Science, Entertainment, Other):\n\nTitle: ${article.title}\nContent: ${article.content.substring(0, 500)}`,
+              stream: false,
+      });
+
+      const category = response.data.response.split('\n')[0].trim().split(' ')[0];
+          return category || 'Other';
+    } catch (error) {
+          // Fallback to keyword-based categorization
+      return extractCategory(article.title + ' ' + article.content);
+    }
 }
 
-export async function fetchViaCodeAct(source: NewsSource): Promise<FetchedArticle[]> {
-  // TODO: Implement CodeAct code generation and execution
-  // See production implementation in src/lib/agent/
-  // REAL-TIME: Generates and executes code to fetch live data
-  console.log(`Fetching REAL-TIME data from ${source.name} via CodeAct`);
-  return [];
+/**
+ * Extract entities from news (people, companies, locations)
+ */
+export async function extractEntitiesWithAI(article: NewsArticle): Promise<{
+    people: string[];
+    companies: string[];
+    locations: string[];
+}> {
+    try {
+          const response = await axios.post('http://localhost:11434/api/generate', {
+                  model: 'deepseek-coder',
+                  prompt: `Extract entities from this text. Return JSON format only.\n\nText: ${article.content.substring(0, 500)}`,
+                  stream: false,
+          });
+
+      const result = JSON.parse(response.data.response);
+          return result;
+    } catch (error) {
+          return { people: [], companies: [], locations: [] };
+    }
 }
 
-export async function fetchViaOpenAIWebResearcher(source: NewsSource): Promise<FetchedArticle[]> {
-  // TODO: Implement OpenAI Web Researcher integration
-  // REAL-TIME: Uses OpenAI's web research capabilities for live data
-  console.log(`Fetching REAL-TIME data from ${source.name} via OpenAI Web Researcher`);
-  return [];
-}
+/**
+ * Get news summary using local LLM
+ */
+export async function generateNewsSummary(articles: NewsArticle[]): Promise<string> {
+    if (articles.length === 0) return 'No articles to summarize.';
 
-export async function fetchViaPerplexityResearch(source: NewsSource): Promise<FetchedArticle[]> {
-  // TODO: Implement Perplexity Research integration
-  // See implementation in perplexityResearch.ts
-  // REAL-TIME: Uses Playwright + LLM for multi-source verified news
-  console.log(`Fetching REAL-TIME verified data from ${source.name} via Perplexity Research`);
-  return [];
-}
+  const articleText = articles
+      .slice(0, 5)
+      .map(a => `${a.title}: ${a.content.substring(0, 200)}`)
+      .join('\n\n');
 
-export async function getRealtimeNews(query: string, limit: number = 20): Promise<FetchedArticle[]> {
   try {
-    // Phase 1: Discover sources via GPT/Claude - REAL-TIME source discovery
-    const sources = await discoverNewsSourcesViaGPT(query);
-    
-    // Phase 2-7: Execute all tools in parallel - ALL FETCH REAL-TIME DATA
-    const results = await Promise.all([
-      ...sources.map(s => fetchViaBrowserUse(s)),
-      ...sources.map(s => fetchViaPlaywright(s)),
-      ...sources.map(s => fetchViaCrawl4AI(s)),
-      ...sources.map(s => fetchViaCodeAct(s)),
-      ...sources.map(s => fetchViaOpenAIWebResearcher(s)),
-      ...sources.map(s => fetchViaPerplexityResearch(s)),
-    ]);
-    
-    // Flatten and deduplicate
-    const articles = results.flat();
-    const unique = Array.from(new Map(articles.map(a => [a.id, a])).values());
-    
-    // Mark all articles as real-time
-    const realTimeArticles = unique.map(article => ({
-      ...article,
-      isRealTime: true, // Confirm this is real-time data
-    }));
-    
-    return realTimeArticles.slice(0, limit);
+        const response = await axios.post('http://localhost:11434/api/generate', {
+                model: 'deepseek-coder', // or 'llama2:7b'
+                prompt: `Summarize these news articles in 2-3 sentences:\n\n${articleText}`,
+                stream: false,
+        });
+
+      return response.data.response;
   } catch (error) {
-    console.error('Error fetching REAL-TIME news:', error);
-    return [];
+        console.error('Summarization error:', error);
+        return 'Unable to generate summary.';
   }
 }
 
-export async function subscribeToNews(query: string, callback: (articles: FetchedArticle[]) => void) {
-  // Real-time subscription - fetches LIVE data every update
-  const interval = setInterval(async () => {
-    const articles = await getRealtimeNews(query);
-    callback(articles);
-  }, 3600000); // Update every hour with REAL-TIME data
-  
-  return () => clearInterval(interval);
+/**
+ * Filter news by category
+ */
+export function filterNewsByCategory(articles: NewsArticle[], category: string): NewsArticle[] {
+    return articles.filter(a => a.category.toLowerCase() === category.toLowerCase());
 }
 
-export async function getTrendingNews(): Promise<FetchedArticle[]> {
-  // Get trending topics - REAL-TIME data only
-  return getRealtimeNews('trending');
+/**
+ * Helper: Extract category from text
+ */
+function extractCategory(text: string): string {
+    const categories = ['Technology', 'Business', 'Politics', 'Sports', 'Health', 'Science', 'Entertainment'];
+    const lowerText = text.toLowerCase();
+
+  for (const cat of categories) {
+        if (lowerText.includes(cat.toLowerCase())) return cat;
+  }
+
+  return 'Other';
+}
+
+/**
+ * Helper: Extract images from RSS item
+ */
+function extractImages(elem: any): string[] {
+    const images: string[] = [];
+    elem.find('image, media\\:content, enclosure').each((_: number, el: any) => {
+          const url = elem(el).attr('url') || elem(el).attr('href');
+          if (url) images.push(url);
+    });
+    return images;
+}
+
+/**
+ * Helper: Extract authors from RSS item
+ */
+function extractAuthors(elem: any): string[] {
+    const authors: string[] = [];
+    const author = elem.find('author, creator, dc\\:creator').text();
+    if (author) authors.push(author);
+    return authors;
+}
+
+/**
+ * Search news by keyword
+ */
+export function searchNews(articles: NewsArticle[], keyword: string): NewsArticle[] {
+    const lowerKeyword = keyword.toLowerCase();
+    return articles.filter(a => 
+                               a.title.toLowerCase().includes(lowerKeyword) || 
+                               a.content.toLowerCase().includes(lowerKeyword)
+                             );
+}
+
+/**
+ * Get trending topics
+ */
+export function getTrendingTopics(articles: NewsArticle[], topN: number = 5): string[] {
+    const words: { [key: string]: number } = {};
+
+  articles.forEach(article => {
+        const text = (article.title + ' ' + article.content).toLowerCase();
+        const tokens = text.split(/\s+/).filter(t => t.length > 3);
+
+                       tokens.forEach(token => {
+                               words[token] = (words[token] || 0) + 1;
+                       });
+  });
+
+  return Object.entries(words)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, topN)
+      .map(([word]) => word);
+}
+
+/**
+ * Export news to JSON
+ */
+export function exportNewsToJSON(articles: NewsArticle[]): string {
+    return JSON.stringify(articles, null, 2);
+}
+
+/**
+ * Initialize real-time news fetching
+ */
+export async function startRealTimeNewsFetching(intervalMs: number = 300000): Promise<NodeJS.Timer> {
+    const fetchAndProcess = async () => {
+          const articles = await fetchAllRealTimeNews();
+
+          // Process with local LLM
+          for (const article of articles) {
+                  article.category = await categorizeNewsWithAI(article);
+          }
+
+          console.log(`✅ Processed ${articles.length} articles with AI categorization`);
+          return articles;
+    };
+
+  // Initial fetch
+  await fetchAndProcess();
+
+  // Schedule periodic updates
+  return setInterval(fetchAndProcess, intervalMs);
 }
