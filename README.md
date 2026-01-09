@@ -1,36 +1,38 @@
+# ORKESTRA : Research Anything with Orchestrated Intelligence
+
 ## 🚀 Project Overview
 
 **ORKESTRA** is a production-ready autonomous AI agent system replica of **Manus 1.6 Max architecture**, featuring:
 
 - **12 LLM Models** with automatic failover and health checks
 - **Real-Time News** via 5 MANUS tools (no external APIs)
-- **4-Phase Agent Loop** (Analyze → Plan → Execute → Observe)
-- **Memory & RAG** with vector embeddings
+- **Advanced Web Scraping** with Playwright support
+- **Agentic Search** with intelligent routing
 - **6-Agent Research** consensus system
 - **Zero Mock Data** - all data is real-time and fresh
 
 ## 📚 Documentation
 
 ### Architecture & API
-- **[ARCHITECTURE.md](./ARCHITECTURE.md)** - Complete system architecture and component details
-- **[API_REFERENCE.md](./API_REFERENCE.md)** - Full API reference with examples
-- **[INDEX.md](./INDEX.md)** - Documentation index and navigation guide
+- [API Documentation](./API_DOCUMENTATION.md) - Comprehensive API guide
+- [Architecture Documentation](./ARCHITECTURE_DOCUMENTATION.md) - System design and components
+- [Tech Stack](./TECH_STACK.md) - Technologies and tools used
 
-### Deployment Guides
-- **[START HERE](./docs/deployment/START_HERE_DEPLOYMENT.md)** - Quick start deployment guide
-- **[Complete Deployment Guide](./docs/deployment/DEPLOYMENT_GUIDE_COMPLETE.md)** - Comprehensive deployment instructions
-- **[Netlify Deployment](./docs/deployment/NETLIFY_DEPLOYMENT.md)** - Netlify-specific deployment
-- **[GitHub Deployment](./docs/deployment/GITHUB_DEPLOYMENT_COMPLETE.md)** - GitHub Pages deployment
-- **[Deployment Summary](./docs/deployment/DEPLOYMENT_SUMMARY.md)** - All deployment options overview
+### Deployment & Configuration
+- [Environment Variables](./ENVIRONMENT_VARIABLES.md) - Configuration guide
+- [Netlify Deployment](./NETLIFY_DEPLOYMENT.md) - Deployment instructions
+- [Supabase Setup](./SUPABASE_SETUP.md) - Database configuration
 
-### Repository Configuration
+### Developer Guides
+- [Contributing Guide](./CONTRIBUTING.md) - How to contribute
+- [Code of Conduct](./CODE_OF_CONDUCT.md) - Community guidelines
+
+## 🔗 Repository Configuration
+
 This project is configured to work with two GitHub repositories:
-- **Primary (origin)**: https://github.com/sarazakhary1988-create/data-muse-express
-- **Secondary (upstream)**: https://github.com/sarazakhary1988-create/data-muse-express-main
 
-**Git Setup Docs**:
-- **[Quick Reference](./docs/.git-remotes-cheatsheet.md)** - Common git commands
-- **[Full Git Setup Guide](./docs/DUAL_REPOSITORY_SETUP.md)** - Detailed dual-repository workflow
+1. **Primary Repository**: `sarazakhary1988-create/data-muse-express`
+2. **Mirror Repository**: `sarazakhary1988-create/orkestra-ai-research`
 
 ## How can I edit this code?
 
@@ -83,7 +85,7 @@ This project is built with:
 ## How can I deploy this project?
 
 ### Deploy via Netlify
- 
+
 This project includes Netlify configuration for easy deployment. You have three options:
 
 **1. Deploy via Netlify Dashboard (Recommended)**
@@ -102,7 +104,7 @@ netlify deploy --prod
 **3. Automatic CI/CD**
 Once connected via the Netlify Dashboard, every push to your main branch will automatically deploy.
 
-For detailed instructions, see [NETLIFY_DEPLOYMENT.md](./docs/deployment/NETLIFY_DEPLOYMENT.md)
+For detailed instructions, see [NETLIFY_DEPLOYMENT.md](./NETLIFY_DEPLOYMENT.md)
 
 ## Can I connect a custom domain?
 
@@ -110,4 +112,4 @@ For detailed instructions, see [NETLIFY_DEPLOYMENT.md](./docs/deployment/NETLIFY
 
 Yes! Go to Site Settings → Domain management → Add custom domain and follow the DNS configuration instructions.
 
-For more details, see [NETLIFY_DEPLOYMENT.md](./docs/deployment/NETLIFY_DEPLOYMENT.md#custom-domain)
+For more details, see [NETLIFY_DEPLOYMENT.md](./NETLIFY_DEPLOYMENT.md#custom-domain)
