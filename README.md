@@ -11,7 +11,9 @@ This project is configured to work with two GitHub repositories for enhanced fle
 - **Primary Repository (origin)**: https://github.com/sarazakhary1988-create/data-muse-express
 - **Secondary Repository (upstream)**: https://github.com/sarazakhary1988-create/data-muse-express-main
 
-For detailed information on working with both repositories, including how to sync changes, push to both remotes, and manage branches, see [DUAL_REPOSITORY_SETUP.md](./DUAL_REPOSITORY_SETUP.md).
+**Quick Reference**: See [.git-remotes-cheatsheet.md](./.git-remotes-cheatsheet.md) for common commands.
+
+**Full Documentation**: See [DUAL_REPOSITORY_SETUP.md](./DUAL_REPOSITORY_SETUP.md) for detailed information on working with both repositories, including how to sync changes, push to both remotes, and manage branches.
 
 ## How can I edit this code?
 
