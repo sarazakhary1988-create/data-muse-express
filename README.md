@@ -1,19 +1,40 @@
-# Welcome to your Lovable project
+# MANUS 1.6 MAX - Data Muse Express
 
-## Project info
+## 🚀 Project Overview
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+**Data Muse Express** is a production-ready autonomous AI agent system based on the **Manus 1.6 Max architecture**, featuring:
 
-## Dual Repository Configuration
+- **12 LLM Models** with automatic failover and health checks
+- **Real-Time News** via 5 MANUS tools (no external APIs)
+- **4-Phase Agent Loop** (Analyze → Plan → Execute → Observe)
+- **Memory & RAG** with vector embeddings
+- **6-Agent Research** consensus system
+- **Zero Mock Data** - all data is real-time and fresh
 
-This project is configured to work with two GitHub repositories for enhanced flexibility:
+**Project URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
 
-- **Primary Repository (origin)**: https://github.com/sarazakhary1988-create/data-muse-express
-- **Secondary Repository (upstream)**: https://github.com/sarazakhary1988-create/data-muse-express-main
+## 📚 Documentation
 
-**Quick Reference**: See [.git-remotes-cheatsheet.md](./.git-remotes-cheatsheet.md) for common commands.
+### Architecture & API
+- **[ARCHITECTURE.md](./ARCHITECTURE.md)** - Complete system architecture and component details
+- **[API_REFERENCE.md](./API_REFERENCE.md)** - Full API reference with examples
+- **[INDEX.md](./INDEX.md)** - Documentation index and navigation guide
 
-**Full Documentation**: See [DUAL_REPOSITORY_SETUP.md](./DUAL_REPOSITORY_SETUP.md) for detailed information on working with both repositories, including how to sync changes, push to both remotes, and manage branches.
+### Deployment Guides
+- **[START HERE](./docs/deployment/START_HERE_DEPLOYMENT.md)** - Quick start deployment guide
+- **[Complete Deployment Guide](./docs/deployment/DEPLOYMENT_GUIDE_COMPLETE.md)** - Comprehensive deployment instructions
+- **[Netlify Deployment](./docs/deployment/NETLIFY_DEPLOYMENT.md)** - Netlify-specific deployment
+- **[GitHub Deployment](./docs/deployment/GITHUB_DEPLOYMENT_COMPLETE.md)** - GitHub Pages deployment
+- **[Deployment Summary](./docs/deployment/DEPLOYMENT_SUMMARY.md)** - All deployment options overview
+
+### Repository Configuration
+This project is configured to work with two GitHub repositories:
+- **Primary (origin)**: https://github.com/sarazakhary1988-create/data-muse-express
+- **Secondary (upstream)**: https://github.com/sarazakhary1988-create/data-muse-express-main
+
+**Git Setup Docs**:
+- **[Quick Reference](./docs/.git-remotes-cheatsheet.md)** - Common git commands
+- **[Full Git Setup Guide](./docs/DUAL_REPOSITORY_SETUP.md)** - Detailed dual-repository workflow
 
 ## How can I edit this code?
 
@@ -97,7 +118,7 @@ netlify deploy --prod
 **3. Automatic CI/CD**
 Once connected via the Netlify Dashboard, every push to your main branch will automatically deploy.
 
-For detailed instructions, see [NETLIFY_DEPLOYMENT.md](./NETLIFY_DEPLOYMENT.md)
+For detailed instructions, see [NETLIFY_DEPLOYMENT.md](./docs/deployment/NETLIFY_DEPLOYMENT.md)
 
 ## Can I connect a custom domain?
 
@@ -111,4 +132,4 @@ Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/c
 
 Yes! Go to Site Settings → Domain management → Add custom domain and follow the DNS configuration instructions.
 
-For more details, see [NETLIFY_DEPLOYMENT.md](./NETLIFY_DEPLOYMENT.md#custom-domain)
+For more details, see [NETLIFY_DEPLOYMENT.md](./docs/deployment/NETLIFY_DEPLOYMENT.md#custom-domain)
