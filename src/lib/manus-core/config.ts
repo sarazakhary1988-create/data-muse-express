@@ -240,6 +240,15 @@ export const MANUS_TOOLS = {
     apiEndpoint: null,
     useFor: ['url-scraping', 'data-extraction', 'linkedin-profiles', 'company-analysis', 'profile-scraping', 'comprehensive-extraction'],
   },
+  LEAD_ENRICHMENT: {
+    id: 'lead-enrichment',
+    name: 'Lead Enrichment System',
+    description: 'Professional person/company enrichment with LinkedIn, news, AI chat, disambiguation, and 7 export formats',
+    capabilities: ['person-enrichment', 'company-enrichment', 'linkedin-scraping', 'news-fetching', 'email-extraction', 'social-media-discovery', 'disambiguation', 'ai-chat', 'knowledge-base', 'multi-format-export'],
+    dataType: 'REAL-TIME',
+    apiEndpoint: null,
+    useFor: ['lead-enrichment', 'person-profiles', 'company-profiles', 'sales-intelligence', 'prospect-research', 'contact-discovery'],
+  },
 } as const;
 
 // ============================================

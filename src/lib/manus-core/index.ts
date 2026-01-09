@@ -160,3 +160,30 @@ export {
   type ScraperResult,
   type ExportOptions,
 } from './intelligentScraper';
+
+// Lead Enrichment - Person & Company Enrichment with LinkedIn, News, AI Chat
+export {
+  LeadEnrichment,
+  enrichPerson,
+  enrichCompany,
+  getLeadEnrichment,
+  type PersonSearchParams,
+  type CompanySearchParams,
+  type EnrichmentResult,
+  type Match,
+  type MatchPreview,
+  type PersonProfile,
+  type CompanyProfile,
+  type Experience,
+  type Education,
+  type NewsArticle as EnrichmentNewsArticle,
+  type SocialMediaLinks,
+  type FinancialMetrics,
+  type LeadershipMember,
+  type Product,
+  type ContactInfo,
+  type DataQualityScore,
+  type KnowledgeBase as EnrichmentKB,
+  type ChatSession as EnrichmentChatSession,
+  type ExportOptions as EnrichmentExportOptions,
+} from './leadEnrichment';
