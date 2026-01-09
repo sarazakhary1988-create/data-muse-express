@@ -146,3 +146,17 @@ export {
   type FetchGCCNewsOptions,
 } from './gccFinancialNews';
 
+// Intelligent URL Scraper - AI-Enhanced Multi-URL Scraper with Chat
+export {
+  IntelligentScraper,
+  intelligentScrape,
+  enhanceScraperPrompt,
+  type ScraperOptions,
+  type ScrapedData as ScraperData,
+  type ScraperReport,
+  type KnowledgeBase,
+  type ChatMessage,
+  type ChatSession,
+  type ScraperResult,
+  type ExportOptions,
+} from './intelligentScraper';

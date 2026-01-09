@@ -231,6 +231,15 @@ export const MANUS_TOOLS = {
     apiEndpoint: null,
     useFor: ['gcc-news', 'regulatory-monitoring', 'ipo-tracking', 'ma-monitoring', 'board-changes', 'cma-violations'],
   },
+  INTELLIGENT_SCRAPER: {
+    id: 'intelligent-scraper',
+    name: 'Intelligent URL Scraper',
+    description: 'AI-enhanced scraper with multi-URL support, route discovery, KB, and interactive chat',
+    capabilities: ['web-scraping', 'multi-url', 'route-discovery', 'ai-enhancement', 'knowledge-base', 'ai-chat', 'export', 'linkedin-support'],
+    dataType: 'REAL-TIME',
+    apiEndpoint: null,
+    useFor: ['url-scraping', 'data-extraction', 'linkedin-profiles', 'company-analysis', 'profile-scraping', 'comprehensive-extraction'],
+  },
 } as const;
 
 // ============================================
