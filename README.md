@@ -83,7 +83,7 @@ This project is built with:
 ## How can I deploy this project?
 
 ### Deploy via Netlify
-
+ 
 This project includes Netlify configuration for easy deployment. You have three options:
 
 **1. Deploy via Netlify Dashboard (Recommended)**
