@@ -3,12 +3,15 @@
  * 
  * This module provides the foundational components of the Manus 1.6 Max architecture:
  * - Agent Loop: 4-phase orchestration (Analyze → Plan → Execute → Observe)
- * - Real-Time News: Autonomous news fetching using 6 tools (100% REAL-TIME DATA)
+ * - Real-Time News: Autonomous news fetching using 15 tools (100% REAL-TIME DATA)
  * - Memory & RAG: Hybrid memory with semantic search
  * - Wide Research: 6 specialist agents with consensus building
  * - LLM Router: Multi-model orchestration with 15+ models
  * - Manus Full System: Complete integrated system
  * - Configuration: All models, tools, and real-time data settings
+ * - Advanced Enrichment: Sales Navigator, Apollo, SignalHire, Clay integration
+ * - News Deduplication: AI-powered duplicate detection (95%+ removal)
+ * - System Validator: Production readiness validation
  */
 
 // Configuration - Models, Tools, Real-Time Data Settings
@@ -187,3 +190,43 @@ export {
   type ChatSession as EnrichmentChatSession,
   type ExportOptions as EnrichmentExportOptions,
 } from './leadEnrichment';
+
+// Advanced Enrichment - Sales Navigator, Apollo, SignalHire, Clay
+export {
+  scrapeSalesNavigator,
+  fetchApolloData,
+  findContactsSignalHire,
+  aggregateWithClay,
+  enrichWithAllSources,
+  validateAcrossSources,
+  type EnrichedData,
+  type AggregatedProfile,
+  type EnrichmentSource,
+} from './advancedEnrichment';
+
+// News Deduplication - AI-Powered Duplicate Detection
+export {
+  deduplicateNews,
+  quickDeduplicate,
+  generateDeduplicationReport,
+  calculateContentSimilarity,
+  calculateTitleSimilarity,
+  calculateEntityOverlap,
+  type DuplicateGroup,
+  type DeduplicationResult,
+} from './newsDeduplication';
+
+// System Validator - Production Readiness Validation
+export {
+  validateSystem,
+  generateValidationReport,
+  compareWithMANUS,
+  validateTools,
+  validatePerformance,
+  validateRealTimeData,
+  validateExports,
+  validateFeatures,
+  validateLLMs,
+  type ValidationResult,
+  type SystemStatus,
+} from './systemValidator';
