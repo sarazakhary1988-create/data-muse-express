@@ -324,10 +324,6 @@ export class IntelligentScraper {
       return [];
     }
   }
-      },
-      scrapedAt: new Date().toISOString(),
-    }));
-  }
   
   private async buildKnowledgeBase(
     data: ScrapedData[]
